@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#071f1d" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <title>AHBA FieldOps · AHBA Development</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    #mapCanvas{height:356px;position:relative;overflow:hidden}
+    #leafletMap{position:absolute;inset:0;z-index:1}
+    #mapCanvas .map-legend{z-index:500}
+    .map-panel.expanded{position:fixed;inset:16px;z-index:65;margin:0;background:#fff;border-radius:15px;box-shadow:0 30px 80px rgba(4,24,22,.4)}
+    .map-panel.expanded #mapCanvas{height:calc(100vh - 130px)}
+    .leaflet-container{font-family:'DM Sans',sans-serif}
+    .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;padding:18px 25px;max-height:60vh;overflow:auto}
+    .photo-grid a{display:block;aspect-ratio:1;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+    .photo-grid img{width:100%;height:100%;object-fit:cover;display:block}
+    .photo-grid .none{grid-column:1/-1;text-align:center;color:#9aa6a2;padding:30px;font-size:13px}
+    .vbadge{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:4px 8px;font-size:8px;font-weight:700}
+    .vbadge.yes{background:#e7f7ef;color:#11825f}.vbadge.no{background:#fff4e1;color:#b97a16}
+    .form-sec{font:800 10px Manrope;letter-spacing:.1em;text-transform:uppercase;color:#107b5e;border-bottom:1px solid var(--line,#e3e8e2);padding-bottom:6px;margin-top:6px}
+    #orderModal.modal{width:min(760px,calc(100% - 30px))}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
+    .info-grid div{font-size:11px;color:#586965;border-bottom:1px dashed #eef1ed;padding-bottom:5px}
+    .info-grid div b{display:block;color:#9aa6a2;font-size:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:2px}
+    .doc-sec{padding:8px 25px}
+    .doc-sec h4{font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:10px 0 8px}
+    #valModal.modal{width:min(820px,calc(100% - 30px))}
+    #valModal{max-height:92vh;overflow:auto}
+    .dispatch-board{display:flex!important;grid-template-columns:none!important;gap:10px;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin}
+    .dispatch-board::-webkit-scrollbar{height:10px}
+    .dispatch-board::-webkit-scrollbar-thumb{background:#c2ccc8;border-radius:6px}
+    .board-column{flex:1 0 158px;min-width:158px}
+    /* compact dispatch cards — fit more on screen */
+    .dispatch-board .job-card.compact{padding:8px 9px;border-radius:9px;margin-bottom:7px}
+    .dispatch-board .job-card.compact .job-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+    .dispatch-board .job-card.compact .job-id{font:700 8.5px Manrope;color:#9aa6a2;letter-spacing:.02em}
+    .dispatch-board .job-card.compact .priority{font-size:8px;padding:1px 6px;border-radius:9px}
+    .dispatch-board .job-card.compact h3{font:700 12px/1.2 Manrope;margin:4px 0 5px;color:#13322d}
+    .dispatch-board .job-card.compact .jc-meta{display:flex;flex-direction:column;gap:3px;font-size:9px;color:#647571;line-height:1.25}
+    .dispatch-board .job-card.compact .jc-meta .status{font-size:8px;padding:1px 6px}
+    .dispatch-board .job-card.compact .assign-btn{margin-top:7px;width:100%;padding:5px 8px;font-size:9.5px}
+    .dispatch-board .column-head{padding:4px 2px 8px}
+    .dispatch-board .column-head strong{font-size:11px}
+    .status.negative{background:#fdecea;color:#c2503a}
+    .status.cancelled{background:#f1f1f1;color:#7a7f7d}
+    .job-card{cursor:pointer}
+    .job-card[draggable]{cursor:grab}
+    .job-card[draggable]:active{cursor:grabbing}
+    .board-column.drop-hover{outline:2px dashed var(--green,#18a57b);outline-offset:-2px;background:#e7f4ed}
+    .board-column[data-drop="pending"] .column-head strong:after{content:" ⤺";color:#9aa6a2;font-weight:400}
+    #jobDetailModal.modal{width:min(720px,calc(100% - 30px))}#jobDetailModal{max-height:92vh;overflow:auto}
+    #jdHistory{white-space:pre-wrap;font:11px/1.6 'DM Sans',sans-serif;color:#566b66;background:#f8f9f7;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:170px;overflow:auto;margin:6px 0}
+    /* Dashboard login gate */
+    .dash-gate{position:fixed;inset:0;z-index:1000;background:linear-gradient(150deg,#071f1d,#0c3a34);display:flex;align-items:center;justify-content:center;padding:20px}
+    .dash-card{width:min(380px,100%);background:#fff;border-radius:18px;padding:28px 26px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+    .dash-card h2{font:800 20px Manrope;margin:6px 0 2px;color:#0e2b27}
+    .dash-card p{font-size:12px;color:#7c8a87;margin:0 0 16px}
+    .dash-card .dg-brand{display:flex;align-items:center;gap:10px;margin-bottom:14px;font:800 14px Manrope;color:#0e2b27}
+    .dash-card .dg-brand .mk{width:30px;height:30px;border-radius:8px;background:var(--lime,#c9f36a);display:flex;align-items:center;justify-content:center}
+    .dash-card label{display:block;font:600 11px 'DM Sans';color:#52635f;margin:10px 0 0}
+    .dash-card input{width:100%;margin-top:5px;padding:11px 12px;border:1px solid #d9e0dc;border-radius:10px;font:500 14px 'DM Sans';box-sizing:border-box}
+    .dash-card .primary-btn{width:100%;justify-content:center;margin-top:16px}
+    .dg-err{background:#fdecea;color:#c2503a;font-size:11px;border-radius:8px;padding:8px 10px;margin-bottom:6px;display:none}
+    .dg-err.show{display:block}
+    .access-table input[type=checkbox]{width:16px;height:16px}
+    /* Messenger-style floating chat */
+    .hidden{display:none!important}
+    .dash-chat-fab{position:fixed;right:22px;bottom:22px;width:56px;height:56px;border-radius:50%;border:0;background:#18a57b;color:#fff;font-size:23px;box-shadow:0 12px 30px rgba(12,37,33,.4);z-index:95;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .dash-chat-fab #dashChatBadge{position:absolute;top:-2px;right:-2px;background:#ff765f;color:#fff;border-radius:12px;min-width:20px;height:20px;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 5px;border:2px solid #fff}
+    .dash-chat{position:fixed;right:20px;bottom:86px;width:330px;max-width:calc(100vw - 24px);height:min(460px,calc(100vh - 120px));background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(8,40,36,.32);z-index:91;display:flex;flex-direction:column;overflow:hidden;transition:height .18s ease}
+    .dash-chat.min{height:52px!important}
+    .dash-chat.min .dc-body,.dash-chat.min .dc-thread{display:none!important}
+    .dc-head{background:var(--deep);color:#fff;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;font:800 14px Manrope;cursor:pointer;flex:none}
+    .dc-head .dc-h-left{display:flex;align-items:center;gap:9px;min-width:0}
+    .dc-head .dc-h-av{width:30px;height:30px;border-radius:50%;background:var(--lime);color:var(--deep);display:flex;align-items:center;justify-content:center;font:800 11px Manrope;flex:none}
+    .dc-head strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dc-head .dc-h-sub{font:500 9px 'DM Sans';color:#9fc7bd;display:block;margin-top:1px}
+    .dc-head button{background:rgba(255,255,255,.16);border:0;color:#fff;width:28px;height:28px;border-radius:8px;font-size:15px;cursor:pointer;margin-left:6px;display:inline-flex;align-items:center;justify-content:center}
+    .dc-head button:hover{background:rgba(255,255,255,.28)}
+    .dc-body{flex:1;overflow-y:auto}
+    .dc-team{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #eef1ed;cursor:pointer}
+    .dc-team:hover{background:#f6f8f5}
+    .dc-av{width:38px;height:38px;border-radius:50%;background:#123b37;color:#fff;display:flex;align-items:center;justify-content:center;font:800 11px Manrope;flex:none}
+    .dc-tmeta{flex:1;min-width:0}.dc-tmeta strong{font-size:12px;display:block}.dc-tmeta p{margin:2px 0 0;font-size:10px;color:#8a9894;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dc-team time{font-size:9px;color:#a0aaa8}
+    .dc-ucount{background:#ff765f;color:#fff;border-radius:10px;padding:0 6px;font-size:9px;margin-left:4px}
+    .dc-thread{flex:1;display:flex;flex-direction:column;min-height:0}
+    .dc-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:7px;background:#f8f9f7}
+    .dc-msg{max-width:82%}.dc-msg>div{padding:8px 11px;border-radius:12px;font-size:12px}
+    .dc-msg span{font-size:8px;color:#9aa6a2;margin-top:2px;display:block}
+    .dc-msg.me{align-self:flex-end}.dc-msg.me>div{background:#18a57b;color:#fff}.dc-msg.me span{text-align:right}
+    .dc-msg.them{align-self:flex-start}.dc-msg.them>div{background:#fff;border:1px solid #e3e8e2;color:#26352f}
+    .dc-input{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line)}
+    .dc-input input{flex:1;border:1px solid #dfe5df;border-radius:9px;padding:9px 11px;font-size:12px}
+    .dc-input button{background:var(--deep);color:#fff;border:0;border-radius:9px;padding:0 14px;font-weight:700;font-size:12px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <!-- Dashboard login gate -->
+  <div id="dashGate" class="dash-gate" style="display:flex">
+    <div class="dash-card">
+      <div style="text-align:center;margin-bottom:6px"><img src="logo-ahba.png" alt="AHBA Development" style="height:54px;object-fit:contain"></div>
+      <h2 style="text-align:center;margin-top:0">AHBA FieldOps</h2>
+      <p style="text-align:center">by AHBA Development · Operations console</p>
+      <div class="dg-err" id="dlErr"></div>
+      <form id="dashLoginForm">
+        <label>Username<input id="dlUser" autocapitalize="characters" autocomplete="username"></label>
+        <label>Password<input id="dlPass" type="password" autocomplete="current-password"></label>
+        <button class="primary-btn" id="dlBtn" type="submit">Sign in</button>
+      </form>
+      <p style="font-size:11px;color:#8a9894;margin-top:14px;text-align:center">Forgot your password? Please coordinate with the Superadmin.</p>
+    </div>
+  </div>
+  <div id="dashPwGate" class="dash-gate" style="display:none">
+    <div class="dash-card">
+      <h2>Set a new password</h2>
+      <p>First sign-in — please replace the default password.</p>
+      <div class="dg-err" id="dpwErr"></div>
+      <form id="dashPwForm">
+        <label>New password<input id="dpw1" type="password" autocomplete="new-password"></label>
+        <label>Confirm new password<input id="dpw2" type="password" autocomplete="new-password"></label>
+        <button class="primary-btn" id="dpwBtn" type="submit">Save password</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <div class="sidebar-scrim" id="sidebarScrim" hidden></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <img src="logo-ahba.png" alt="AHBA Development" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:10px;padding:3px;flex:none">
+        <div><strong>AHBA FieldOps</strong><small>by AHBA Development</small></div>
+        <button class="icon-btn sidebar-close mobile-only" id="sidebarCloseBtn" aria-label="Close menu"><i data-icon="close"></i></button>
+      </div>
+      <nav class="nav-list" aria-label="Main navigation">
+        <button class="nav-item active" data-page="overview" aria-current="page"><i data-icon="grid"></i><span>Overview</span></button>
+        <button class="nav-item" data-page="validation"><i data-icon="clipboard"></i><span>Validator</span><b id="valBadge" style="display:none">0</b></button>
+        <button class="nav-item" data-page="dispatch"><i data-icon="route"></i><span>Dispatch Board</span><b id="pendingBadge">6</b></button>
+        <button class="nav-item" data-page="teams"><i data-icon="users"></i><span>Field Teams</span></button>
+        <button class="nav-item" data-page="workorders"><i data-icon="clipboard"></i><span>Work Orders</span></button>
+        <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
+        <button class="nav-item" data-page="accounts"><i data-icon="users"></i><span>Accounts</span></button>
+        <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
+        <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>Completed</span></button>
+        <button class="nav-item" data-page="remittance"><i data-icon="wallet"></i><span>Remittance</span></button>
+        <button class="nav-item" data-page="history"><i data-icon="clipboard"></i><span>Load History</span></button>
+        <button class="nav-item" data-page="access" style="display:none"><i data-icon="users"></i><span>Access Control</span></button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="shift-card">
+        <div class="shift-head"><span>Real time</span><span class="live-dot">LIVE</span></div>
+        <strong id="clockTime" style="font:800 22px/1.1 Manrope;letter-spacing:.01em">—</strong>
+        <small id="clockDate">Philippine Standard Time</small>
+      </div>
+      <button class="user-card" id="roleSwitcher" aria-haspopup="true" aria-expanded="false">
+        <span class="avatar">AZ</span>
+        <span><strong>Allec Zandre A. Halili</strong><small id="roleLabel">General Manager · Superadmin</small></span>
+        <i data-icon="chevron"></i>
+      </button>
+      <div class="role-menu" id="roleMenu" hidden>
+        <button id="dashChangeName">Change my display name</button>
+        <button id="dashChangePw">Change my password</button>
+        <button id="dashLogoutBtn" style="color:#c2503a">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn mobile-only" id="menuBtn" aria-label="Open menu"><i data-icon="menu"></i></button>
+        <div class="title-wrap"><p>OPERATIONS CENTER</p><h1 id="pageTitle">Good morning, Allec</h1></div>
+        <div class="top-actions">
+          <div class="date-chip"><i data-icon="calendar"></i><span id="todayLabel"></span></div>
+          <div class="notif-wrap">
+            <button class="icon-btn notification" id="notifBtn" aria-label="Notifications" aria-haspopup="true" aria-expanded="false"><i data-icon="bell"></i><span class="notif-dot" id="notifDot"></span></button>
+            <div class="notif-pop" id="notifPop" hidden>
+              <div class="notif-pop-head"><strong>Notifications</strong><button class="text-btn" id="notifClear">Mark all read</button></div>
+              <div class="notif-pop-list" id="notifPopList"></div>
+            </div>
+          </div>
+          <button class="secondary-btn" id="announceBtn"><i data-icon="bell"></i>Announce</button>
+          <button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>New work order</button>
+        </div>
+      </header>
+
+      <section id="overviewPage" class="page active">
+        <div class="summary-grid">
+          <article class="metric-card accent-green" data-go="completed" style="cursor:pointer">
+            <div class="metric-top"><span>Jobs completed today</span><i data-icon="check"></i></div>
+            <div class="metric-value"><strong id="completedCount">0</strong><span>/ <span id="completedTarget">0</span> today</span></div>
+            <div class="metric-foot positive"><b id="completedFoot">—</b><span>tap to view completed</span></div>
+            <div class="mini-bars" id="completionBars"></div>
+          </article>
+          <article class="metric-card" data-go="teams" style="cursor:pointer">
+            <div class="metric-top"><span>Teams on the road</span><i data-icon="truck"></i></div>
+            <div class="metric-value"><strong id="activeTeamCount">0</strong><span>online now</span></div>
+            <div class="metric-foot"><b class="amber-dot"></b><span id="availableTeamText">0 online</span></div>
+            <div class="avatar-stack" id="teamAvatars"></div>
+          </article>
+          <article class="metric-card" data-go="completed" style="cursor:pointer">
+            <div class="metric-top"><span>Avg. completion time</span><i data-icon="clock"></i></div>
+            <div class="metric-value"><strong id="avgTime">—</strong></div>
+            <div class="metric-foot positive"><b class="amber-dot"></b><span id="avgSub">no completed jobs yet today</span></div>
+            <div class="sparkline"><svg viewBox="0 0 220 44" preserveAspectRatio="none"><path class="spark-fill" d="M0,33 C24,33 28,14 52,22 S82,37 104,23 S140,8 158,18 S194,35 220,10 L220,44 L0,44Z"/><path d="M0,33 C24,33 28,14 52,22 S82,37 104,23 S140,8 158,18 S194,35 220,10"/></svg></div>
+          </article>
+          <article class="metric-card accent-coral" data-go="expenses" style="cursor:pointer">
+            <div class="metric-top"><span>Today’s expenses</span><i data-icon="wallet"></i></div>
+            <div class="metric-value"><strong id="todayExpense">₱18,450</strong></div>
+            <div class="metric-foot warning"><b id="budgetPercent">73% of ₱25,000</b><span>daily budget</span></div>
+            <div class="budget-bar"><span id="budgetBar"></span></div>
+          </article>
+        </div>
+
+        <div class="overview-layout">
+          <article class="panel map-panel">
+            <div class="panel-head">
+              <div><h2>Live team map</h2><p>Real-time field visibility · Metro Manila</p></div>
+              <div class="map-actions"><button class="seg active" data-seg="all">All teams</button><button class="seg" data-seg="active">Active only</button><button class="icon-btn" id="mapExpandBtn" aria-label="Toggle fullscreen map"><i data-icon="expand"></i></button></div>
+            </div>
+            <div class="map-canvas" id="mapCanvas">
+              <div id="leafletMap"></div>
+              <div class="map-legend"><span><i class="pin-green"></i>Online (≤15 min)</span><span><i class="pin-amber"></i>Idle</span><span><i class="pin-blue"></i>Awaiting GPS</span></div>
+            </div>
+          </article>
+
+          <article class="panel activity-panel">
+            <div class="panel-head"><div><h2>Live activity</h2><p>Latest field updates</p></div><button class="text-btn" data-page-link="dispatch">View dispatch</button></div>
+            <div class="activity-list" id="activityList"></div>
+          </article>
+        </div>
+
+        <div class="bottom-layout">
+          <article class="panel queue-panel">
+            <div class="panel-head"><div><h2>Dispatch queue</h2><p>Jobs needing attention</p></div><button class="text-btn" data-page-link="workorders">View all <i data-icon="arrow"></i></button></div>
+            <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Subscriber</th><th>Service</th><th>Area</th><th>Waiting</th><th></th></tr></thead><tbody id="queueBody"></tbody></table></div>
+          </article>
+          <article class="panel expense-panel">
+            <div class="panel-head"><div><h2>Expense breakdown</h2><p>Today across all teams</p></div><button class="text-btn" data-action="add-expense">+ Add</button></div>
+            <div class="expense-chart-wrap"><div class="donut" id="expenseDonut"><div><strong id="donutTotal">₱18.5k</strong><span>Total</span></div></div><div class="expense-legend" id="expenseLegend"></div></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="dispatchPage" class="page">
+        <div class="page-toolbar"><div><h2>Dispatch board</h2><p>Assign jobs and balance the workload across 20 teams.</p></div><div class="toolbar-actions"><div class="search-box" style="min-width:190px"><i data-icon="search"></i><input id="dispatchSearch" placeholder="Search subscriber name"></div><button class="secondary-btn" id="importTemplateBtn"><i data-icon="arrow"></i>Template</button><button class="secondary-btn" id="importXlsxBtn"><i data-icon="clipboard"></i>Import Excel</button><input type="file" id="importXlsxInput" accept=".xlsx,.xls,.csv" hidden><button class="secondary-btn" id="autoAssignBtn"><i data-icon="spark"></i>Suggest best team</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>Add job</button></div></div>
+        <div class="dispatch-stats" id="dispatchStats"></div>
+        <div class="dispatch-board" id="dispatchBoard"></div>
+      </section>
+
+      <section id="teamsPage" class="page">
+        <div class="page-toolbar"><div><h2>Field teams</h2><p>Live workload, location, and performance.</p></div><div class="search-box"><i data-icon="search"></i><input id="teamSearch" placeholder="Search team or location"></div></div>
+        <div class="team-grid" id="teamGrid"></div>
+      </section>
+
+      <section id="workordersPage" class="page">
+        <div class="page-toolbar"><div><h2>Work orders</h2><p>All installation and repair requests.</p></div><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>New work order</button></div>
+        <article class="panel full-table"><div class="filter-row"><div class="search-box"><i data-icon="search"></i><input id="jobSearch" placeholder="Search subscriber, ID, or area"></div><div class="filter-chips" id="jobFilters"><button class="active" data-filter="all">All</button><button data-filter="installation">Installation</button><button data-filter="repair">Repair</button><button data-filter="pending">Pending</button></div></div><div class="table-wrap"><table><thead><tr><th>Work order</th><th>Subscriber</th><th>Service</th><th>Location</th><th>Team</th><th>Status</th><th>Schedule</th></tr></thead><tbody id="workOrderBody"></tbody></table><div class="empty-row" id="workOrderEmpty" hidden>No work orders match your filters.</div></div></article>
+      </section>
+
+      <section id="expensesPage" class="page">
+        <div class="page-toolbar"><div><h2>Expense control</h2><p>Track daily spend and spot cost exposure early.</p></div><button class="primary-btn" data-action="add-expense"><i data-icon="plus"></i>Record expense</button></div>
+        <div class="expense-summary" id="expenseSummary"></div>
+        <div class="expense-page-grid"><article class="panel"><div class="panel-head"><div><h2>Daily spending</h2><p>Last 7 days</p></div><span class="budget-pill">Budget ₱25k/day</span></div><div class="bar-chart" id="weeklyChart"></div></article><article class="panel"><div class="panel-head"><div><h2>Cost by category</h2><p>Today’s expense mix</p></div></div><div class="category-list" id="categoryList"></div></article></div>
+        <article class="panel expense-log"><div class="panel-head"><div><h2>Expense log</h2><p>Receipts and team submissions</p></div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Team</th><th>Category</th><th>Description</th><th>Work order</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenseBody"></tbody></table></div></article>
+      </section>
+
+      <section id="accountsPage" class="page">
+        <div class="page-toolbar"><div><h2>Technician accounts</h2><p>Login accounts for the 20 field teams (AHBA_SLI001–AHBA_SLI020).</p></div></div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Total accounts</span><strong id="accountTotal">20</strong></div>
+          <div class="small-stat"><span>Active</span><strong id="accountActive">0</strong></div>
+          <div class="small-stat"><span>Needs password setup</span><strong id="accountPending">20</strong></div>
+          <div class="small-stat"><span>Has signed in</span><strong id="accountSignedIn">0</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Passwords are encrypted and never shown. Use Reset to issue a new one via Supabase.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Login email</th><th>Area</th><th>Status</th><th>Last sign-in</th><th>Password changed</th></tr></thead><tbody id="accountsBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="attendancePage" class="page">
+        <div class="page-toolbar"><div><h2>Attendance · Time records</h2><p>Technician time-in / time-out (Philippine time). Serves as the daily work-hours log.</p></div><div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="attDate" type="date"></div></div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Currently timed in</span><strong id="attIn">0</strong></div>
+          <div class="small-stat"><span>Timed out</span><strong id="attOut">0</strong></div>
+          <div class="small-stat"><span>Records this day</span><strong id="attTotal">0</strong></div>
+          <div class="small-stat"><span>Total hours logged</span><strong id="attHours">0h</strong></div>
+        </div>
+        <article class="panel full-table" style="margin-bottom:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Daily log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Time-in is recorded on sign-in; time-out on "Time out &amp; sign out".</p></div><button class="secondary-btn" id="attExport"><i data-icon="arrow"></i>Export attendance</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Technician</th><th>Date</th><th>Time in</th><th>Time out</th><th>Hours</th><th>Status</th></tr></thead><tbody id="attendanceBody"></tbody></table></div>
+        </article>
+
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Vehicles dispatched (gate-out)</span><strong id="gateCount">0</strong></div>
+          <div class="small-stat"><span>Crew OK</span><strong id="gateOk">0</strong></div>
+          <div class="small-stat"><span>With discrepancy</span><strong id="gateDisc">0</strong></div>
+          <div class="small-stat"><span>Earliest gate-out</span><strong id="gateFirst">—</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🚐 Security gate-out · Vehicle log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Plate no., odometer at oras ng paglabas — na-validate ng Security.</p></div><button class="secondary-btn" id="gateExport"><i data-icon="arrow"></i>Export vehicle log</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Gate-out time</th><th>Team</th><th>Account</th><th>Plate no.</th><th>Odometer (km)</th><th>Driver</th><th>Crew</th><th>Crew OK</th><th>Validated by</th></tr></thead><tbody id="gateBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="completedPage" class="page">
+        <div class="page-toolbar">
+          <div><h2>Completed jobs</h2><p>Review and validate finished jobs and their proof photos.</p></div>
+          <div class="toolbar-actions">
+            <div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="compDate" type="date"></div>
+            <button class="secondary-btn" id="exportBtn"><i data-icon="arrow"></i>Download ZIP</button>
+            <button class="secondary-btn" id="clearBtn" style="color:#c2503a;border-color:#f0c4b9"><i data-icon="close"></i>Clear photos</button>
+          </div>
+        </div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Completed (this day)</span><strong id="compTotal">0</strong></div>
+          <div class="small-stat"><span>Validated</span><strong id="compValidated">0</strong></div>
+          <div class="small-stat"><span>Pending validation</span><strong id="compPending">0</strong></div>
+          <div class="small-stat"><span>Proof photos</span><strong id="compPhotos">0</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Daily completed log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Tip: Download the ZIP archive first, then Clear photos to free up cloud storage. Job records are kept.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Team</th><th>Subscriber</th><th>Area</th><th>Completed</th><th>Photos</th><th>Validation</th></tr></thead><tbody id="completedBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="validationPage" class="page">
+        <div class="page-toolbar"><div><h2>Validator · New job orders</h2><p>Review subscriber info and documents from sales agents. Approve legit orders to send them to dispatch.</p></div></div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Awaiting validation</span><strong id="valPending">0</strong></div>
+          <div class="small-stat"><span>Approved today</span><strong id="valApproved">0</strong></div>
+          <div class="small-stat"><span>Rejected today</span><strong id="valRejected">0</strong></div>
+          <div class="small-stat"><span>Sales agents</span><strong id="valAgents">—</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For validation</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Check the ID, Proof of Billing, and Premise photos before approving.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>Area</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="remittancePage" class="page">
+        <div class="page-toolbar">
+          <div><h2>Remittance · Daily collection</h2><p>Monitor lahat ng koleksyon ng team kada araw. I-click ang "Mark received" kada JO bago mag-export para ma-validate kung natanggap na ang pera.</p></div>
+          <div class="toolbar-actions">
+            <div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="remDate" type="date"></div>
+            <button class="primary-btn" id="remExport"><i data-icon="arrow"></i>Download Excel</button>
+          </div>
+        </div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Total collection</span><strong id="remTotal">₱0</strong></div>
+          <div class="small-stat"><span>Received</span><strong id="remReceived">₱0</strong></div>
+          <div class="small-stat"><span>Pending</span><strong id="remPending">₱0</strong></div>
+          <div class="small-stat"><span>JO with collection</span><strong id="remCount">0</strong></div>
+          <div class="small-stat"><span>Gcash</span><strong id="remGcash">₱0</strong></div>
+          <div class="small-stat"><span>Cash Remittance</span><strong id="remCash">₱0</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Daily collection log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Bawat na-tanggap ay naka-record sa load history (sino at kailan).</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>J.O. No</th><th>Team</th><th>Account</th><th>Subscriber</th><th>Mode</th><th>Amount</th><th>AR No.</th><th>Received</th></tr></thead><tbody id="remittanceBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="historyPage" class="page">
+        <div class="page-toolbar">
+          <div><h2>Load History</h2><p>Lahat ng loads sa loob ng linggo — kasama ang buong subscriber info. Na-a-archive dito (hindi nawawala), at ma-e-extract sa Excel.</p></div>
+          <div class="toolbar-actions">
+            <div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#7e8d89">From</span><input id="histFrom" type="date"></div>
+            <div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#7e8d89">To</span><input id="histTo" type="date"></div>
+            <button class="primary-btn" id="histExport"><i data-icon="arrow"></i>Download Excel</button>
+          </div>
+        </div>
+        <div class="dispatch-stats">
+          <div class="small-stat"><span>Total loads</span><strong id="histTotal">0</strong></div>
+          <div class="small-stat"><span>Completed</span><strong id="histCompleted">0</strong></div>
+          <div class="small-stat"><span>Negative (bounced)</span><strong id="histNegative">0</strong></div>
+          <div class="small-stat"><span>Cancelled</span><strong id="histCancelled">0</strong></div>
+        </div>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-click ang isang load para makita ang buong detalye at history.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Date</th><th>Work order</th><th>J.O. No</th><th>Subscriber</th><th>Team</th><th>Status</th><th>Dispatched</th><th>Area</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+        </article>
+      </section>
+      <section id="accessPage" class="page">
+        <div class="page-toolbar"><div><h2>Access control</h2><p>Gumawa ng user, mag-assign ng role/access, at mag-reset ng password. Superadmin lang ang makaka-access dito.</p></div></div>
+        <article class="panel full-table" style="margin-bottom:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create new user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Gagawa ng login account. I-set ang access sa table sa baba pagkatapos. Kailangan ng admin secret.</p></div></div>
+          <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
+            <label class="field"><span>Username *</span><input id="cuUser" autocapitalize="characters"></label>
+            <label class="field"><span>Display name</span><input id="cuName"></label>
+            <label class="field"><span>Role label</span><input id="cuRole"></label>
+            <label class="field"><span>Temp password * (min 8)</span><input id="cuPass"></label>
+            <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cuSuper" style="width:16px;height:16px"><span style="margin:0">Make superadmin (full access)</span></label>
+            <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="cuCreate" type="button">Create user</button></div>
+          </div>
+        </article>
+        <article class="panel full-table">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Dashboard users</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-tick ang access, tapos i-click ang Save sa bawat user. Default password: Ahba@2026 (papalitan sa unang login).</p></div></div>
+          <div class="table-wrap access-table" id="accessWrap"></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop"></div>
+  <dialog id="orderModal" class="modal">
+    <form method="dialog" id="orderForm">
+      <div class="modal-head"><div><span class="eyebrow">SALES INTAKE</span><h2>Add job order</h2><p>Same requirements as the sales-agent app. Goes to the Validator for review.</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+      <div class="form-grid">
+        <div class="field full form-sec">Subscriber</div>
+        <label class="field"><span>First name *</span><input name="first_name" required></label>
+        <label class="field"><span>Middle name</span><input name="middle_name"></label>
+        <label class="field"><span>Last name *</span><input name="last_name" required></label>
+        <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
+        <label class="field"><span>Other contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+
+        <div class="field full form-sec">Address</div>
+        <label class="field"><span>House no.</span><input name="house_no"></label>
+        <label class="field"><span>Street name</span><input name="street_name"></label>
+        <label class="field"><span>Village / Subdivision</span><input name="village"></label>
+        <label class="field"><span>Barangay *</span><input name="brgy" required></label>
+        <label class="field"><span>City *</span><input name="city" required></label>
+
+        <div class="field full form-sec">Service</div>
+        <label class="field"><span>Plan / Ref no.</span><input name="plan"></label>
+        <label class="field"><span>1P / 2P</span><select name="play_type"><option>1-PLAY</option><option>2-PLAY</option></select></label>
+        <label class="field"><span>Source of sales</span><select name="source_of_sales"><option>Referral</option><option>Organic</option></select></label>
+        <label class="field"><span>Referral name</span><input name="referral_name"></label>
+        <label class="field full"><span>Special note</span><textarea name="special_note" rows="2"></textarea></label>
+
+        <div class="field full form-sec">Documents</div>
+        <label class="field full"><span>Valid ID <em style="font-style:normal;color:#c2503a">*required</em> · <b data-cnt="id">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="id"></label>
+        <label class="field full"><span>Proof of Billing <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="billing">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="billing"></label>
+        <label class="field full"><span>Subscriber Premise <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="premise">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="premise"></label>
+      </div>
+      <div class="err" id="orderErr" style="padding:2px 25px;color:#c2503a;font-size:11px;min-height:14px"></div>
+      <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Cancel</button><button type="submit" class="primary-btn" id="orderSubmit">Submit for validation</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="expenseModal" class="modal small-modal">
+    <form method="dialog" id="expenseForm">
+      <div class="modal-head"><div><span class="eyebrow">COST CONTROL</span><h2>Record expense</h2><p>Log a field expense for approval.</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+      <div class="form-grid">
+        <label class="field"><span>Team</span><select name="team" id="expenseTeam"></select></label>
+        <label class="field"><span>Category</span><select name="category"><option>Permit</option><option>Gas</option><option>Parking</option><option>Violation</option><option>Other</option></select></label>
+        <label class="field full"><span>Description</span><input name="description" required></label>
+        <label class="field"><span>Amount (₱)</span><input name="amount" type="number" min="1" required></label>
+        <label class="field"><span>Work order (optional)</span><input name="workOrder"></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Cancel</button><button type="submit" class="primary-btn">Save expense</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="assignModal" class="modal small-modal">
+    <div class="modal-head"><div><span class="eyebrow">DISPATCH</span><h2>Assign a field team</h2><p id="assignJobLabel"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div style="padding:14px 20px 2px"><label class="field"><span>J.O. Number <em style="font-style:normal;color:#c2503a">*required</em> <em id="joLock" style="font-style:normal;color:#9aa6a2"></em></span><input id="assignJONum" required><span style="font-size:9px;color:#8a9894">Kailangan bago mag-dispatch. Makikita ng technician. Hindi na mabubura kapag naset na.</span></label></div>
+    <div style="padding:2px 20px 6px"><label class="field"><span>Dispatch remarks <em style="font-style:normal;color:#9aa6a2">(makikita ng technician)</em></span><input id="assignRemarks"></label></div>
+    <div class="assignment-list" id="assignmentList"></div>
+  </dialog>
+
+  <dialog id="resetModal" class="modal small-modal">
+    <div class="modal-head"><div><span class="eyebrow">ADMIN · PASSWORD RESET</span><h2>Reset password</h2><p>For <strong id="resetUser">AHBA_SLI001</strong> (<span id="resetEmail"></span>)</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div class="form-grid" style="grid-template-columns:1fr">
+      <label class="field"><span>Temporary password (min 8 chars)</span><input id="resetNewPw"></label>
+      <label class="field"><span>Admin secret</span><input id="resetSecret" type="password"></label>
+      <p style="font-size:11px;color:#7c8a87;margin:0">The user will be asked to choose their own new password on next login. Tell them this temporary password.</p>
+    </div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><a class="text-btn" href="https://supabase.com/dashboard/project/avjzkfxgzeyxtihkofed/auth/users" target="_blank" rel="noopener" style="align-self:center">Or reset in Supabase</a><button type="button" class="primary-btn" id="resetNow">Reset now</button></div>
+  </dialog>
+
+  <dialog id="jobDetailModal" class="modal">
+    <div class="modal-head"><div><span class="eyebrow">JOB ORDER</span><h2 id="jdTitle">Job order</h2><p id="jdSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div style="padding:18px 25px 4px"><div class="info-grid" id="jdInfo"></div></div>
+    <div style="padding:8px 25px 0"><label class="field"><span>Load priority</span><select id="jdPriority"><option>1st Load</option><option>2nd Load</option><option>3rd Load</option><option>4th Load</option><option>5th Load</option></select></label></div>
+    <div style="padding:8px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 4px">Status history</div><pre id="jdHistory"></pre></div>
+    <div style="padding:4px 25px 0"><label class="field"><span>Dispatcher status update</span><select id="jdStatus"><option value="">— Select status —</option><option value="completed">Completed</option><option value="incomplete">Incomplete → For Dispatch</option><option value="redispatch">Re-dispatch → For Dispatch</option><option value="cancelled">Cancelled</option></select></label></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="jdApply">Apply update</button></div>
+  </dialog>
+
+  <dialog id="teamDetailModal" class="modal">
+    <div class="modal-head"><div><span class="eyebrow">FIELD TEAM</span><h2 id="tdTitle">Team</h2><p id="tdSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div style="padding:18px 25px 8px"><div class="info-grid" id="tdInfo"></div></div>
+    <div style="padding:2px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 6px">🚐 Security gate-out</div><div id="tdGate" style="font-size:11px;color:#566b66"></div></div>
+    <div style="padding:6px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 6px">🧭 Travel history today</div><div id="tdTrack" style="max-height:170px;overflow:auto;font-size:11px;color:#566b66"></div></div>
+    <div style="padding:8px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 6px">💬 Messages</div>
+      <div id="tdChat" style="max-height:200px;overflow:auto;display:flex;flex-direction:column;gap:6px;background:#f8f9f7;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="tdChatInput" class="" placeholder="Message this team…" style="flex:1;border:1px solid #dfe5df;border-radius:9px;padding:9px 11px;font-size:12px"><button type="button" class="primary-btn" id="tdChatSend" style="width:auto;padding:0 16px">Send</button></div>
+    </div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="tdVerify">Verify as deployed</button></div>
+  </dialog>
+
+  <dialog id="announceModal" class="modal small-modal">
+    <div class="modal-head"><div><span class="eyebrow">BROADCAST</span><h2>Post announcement</h2><p>Makikita ng mga team sa mobile app (ayon sa audience).</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div class="form-grid" style="grid-template-columns:1fr">
+      <label class="field"><span>Audience</span><select id="annAudience"><option value="all">All teams (Technician + Sales)</option><option value="technician">Technicians only</option><option value="sales">Sales agents only</option></select></label>
+      <label class="field"><span>Title</span><input id="annTitle"></label>
+      <label class="field"><span>Message</span><textarea id="annBody" rows="3"></textarea></label>
+    </div>
+    <div style="padding:2px 25px 6px"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:6px 0">Recent announcements</div><div id="annRecent" style="max-height:170px;overflow:auto;font-size:11px"></div></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="annPost">Post announcement</button></div>
+  </dialog>
+
+  <dialog id="photoModal" class="modal">
+    <div class="modal-head"><div><span class="eyebrow">PROOF PHOTOS</span><h2 id="photoTitle">Job photos</h2><p id="photoSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div class="photo-grid" id="photoGrid"></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
+  </dialog>
+
+  <dialog id="valModal" class="modal">
+    <div class="modal-head"><div><span class="eyebrow">VALIDATOR · REVIEW</span><h2 id="valTitle">Job order review</h2><p id="valSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div style="padding:18px 25px 4px"><div class="info-grid" id="valInfo"></div></div>
+    <div id="valDocs"></div>
+    <div style="padding:6px 25px 14px"><label class="field"><span>Rejection reason (if rejecting)</span><input id="valReason"></label></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="valReject" style="color:#c2503a;border-color:#f0c4b9">Reject</button><button type="button" class="primary-btn" id="valApprove">Approve → Dispatch</button></div>
+  </dialog>
+
+  <!-- Messenger-style floating team chat -->
+  <button id="dashChatFab" class="dash-chat-fab" title="Team messages">💬<span id="dashChatBadge" class="hidden">0</span></button>
+  <div id="dashChatWidget" class="dash-chat" style="display:none">
+    <div class="dc-head" id="dcHead">
+      <div class="dc-h-left"><button id="dcBack" class="hidden" title="Back">←</button><span class="dc-h-av" id="dcHeadAv">💬</span><div style="min-width:0"><strong id="dcTitle">Team messages</strong><span class="dc-h-sub" id="dcSub">Tap a team to chat</span></div></div>
+      <div style="flex:none"><button id="dcMin" title="Minimize">—</button><button id="dcClose" title="Close">✕</button></div>
+    </div>
+    <div id="dcTeams" class="dc-body"></div>
+    <div id="dcThread" class="dc-thread hidden">
+      <div id="dcMsgs" class="dc-msgs"></div>
+      <div class="dc-input"><input id="dcInput" placeholder="Message this team…"><button id="dcSend">Send</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="ahba-cloud.js"></script>
+</body>
+</html>
