@@ -45,13 +45,18 @@ html,body{overflow-x:hidden;max-width:100%}
   .overview-layout,.bottom-layout{grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr)}
 }
 
-/* Access control: compact so the whole matrix fits on screen; scrolls both ways if needed */
-.row-actions{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;min-width:92px}
-.access-table{overflow:auto;-webkit-overflow-scrolling:touch;max-width:100%;max-height:72vh}
-.access-table table{min-width:720px;width:100%}
-.access-table th,.access-table td{padding:6px 7px;font-size:9px}
-.access-table td strong{font-size:9px}
-.access-table td span{font-size:8px;color:#9aa6a2}
-.access-table thead th{position:sticky;top:0;z-index:2;background:#f8f9f7}
-.access-table input[type=checkbox]{width:14px;height:14px}
+/* Access control: clear sideways scroll with a visible scrollbar; sticky header + user column */
+.row-actions{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;min-width:96px}
+.access-table{overflow:auto;max-width:100%;max-height:74vh;-webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;scrollbar-color:#18a57b #eef1ed}
+.access-table::-webkit-scrollbar{height:12px;width:12px}
+.access-table::-webkit-scrollbar-track{background:#eef1ed;border-radius:8px}
+.access-table::-webkit-scrollbar-thumb{background:#18a57b;border-radius:8px;border:2px solid #eef1ed}
+.access-table table{min-width:1180px}
+.access-table th,.access-table td{padding:7px 9px;font-size:9px;white-space:nowrap}
+.access-table thead th{position:sticky;top:0;z-index:3;background:#f8f9f7}
+/* keep the User name visible while scrolling sideways */
+.access-table th:first-child,.access-table td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:1px 0 0 var(--line)}
+.access-table thead th:first-child{z-index:4;background:#f8f9f7}
+.access-table input[type=checkbox]{width:15px;height:15px}
 .access-table .assign-btn{font-size:8px;padding:4px 6px}
