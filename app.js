@@ -1348,6 +1348,17 @@ function chatWidgetOpen(){ const w=$('#dashChatWidget'); return w && w.style.dis
 function openChatWidget(){ try{ if('Notification'in window&&Notification.permission==='default')Notification.requestPermission(); }catch(e){} const w=$('#dashChatWidget'); w.classList.remove('min'); w.style.display='flex'; showCwTeams(); }
 function closeChatWidget(){ const w=$('#dashChatWidget'); w.style.display='none'; w.classList.remove('min'); }
 function minimizeChat(){ $('#dashChatWidget').classList.add('min'); }
+// Make the floating chat icon draggable so it never blocks on-screen info (position is saved).
+function enableFabDrag(){
+  const fab=$('#dashChatFab'); if(!fab) return;
+  function clamp(){ const m=6,w=fab.offsetWidth,h=fab.offsetHeight; const r=fab.getBoundingClientRect(); let nx=Math.max(m,Math.min(window.innerWidth-w-m,r.left)), ny=Math.max(m,Math.min(window.innerHeight-h-m,r.top)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; }
+  try{ const p=JSON.parse(localStorage.getItem('ahba_fab_pos')||'null'); if(p&&p.left!=null){ fab.style.left=p.left+'px'; fab.style.top=p.top+'px'; fab.style.right='auto'; fab.style.bottom='auto'; clamp(); } }catch(e){}
+  let dragging=false,moved=false,sx=0,sy=0,ox=0,oy=0;
+  fab.addEventListener('pointerdown',e=>{ dragging=true; moved=false; sx=e.clientX; sy=e.clientY; const r=fab.getBoundingClientRect(); ox=r.left; oy=r.top; try{fab.setPointerCapture(e.pointerId);}catch(_){} });
+  fab.addEventListener('pointermove',e=>{ if(!dragging)return; const dx=e.clientX-sx,dy=e.clientY-sy; if(Math.abs(dx)+Math.abs(dy)>4) moved=true; const m=6,w=fab.offsetWidth,h=fab.offsetHeight; let nx=Math.max(m,Math.min(window.innerWidth-w-m,ox+dx)), ny=Math.max(m,Math.min(window.innerHeight-h-m,oy+dy)); fab.style.left=nx+'px'; fab.style.top=ny+'px'; fab.style.right='auto'; fab.style.bottom='auto'; });
+  fab.addEventListener('pointerup',e=>{ if(!dragging)return; dragging=false; if(moved){ fab._dragged=true; setTimeout(()=>{fab._dragged=false;},60); const r=fab.getBoundingClientRect(); localStorage.setItem('ahba_fab_pos',JSON.stringify({left:Math.round(r.left),top:Math.round(r.top)})); } });
+  window.addEventListener('resize',clamp);
+}
 async function showCwTeams(){
   cwCur=null; $('#dcThread').classList.add('hidden'); $('#dcTeams').classList.remove('hidden'); $('#dcBack').classList.add('hidden');
   $('#dcTitle').textContent='Messages'; if($('#dcHeadAv'))$('#dcHeadAv').textContent='💬'; if($('#dcSub'))$('#dcSub').textContent='Team threads + direct messages';
@@ -1653,7 +1664,8 @@ function init(){
   $('#autoAssignBtn').onclick=()=>{const pending=jobs.find(j=>j.status==='pending');pending?openAssign(pending.id):showToast('No unassigned jobs in the queue')};
   $('#announceBtn')?.addEventListener('click',openAnnounce);
   $('#annPost')?.addEventListener('click',postAnnounce);
-  $('#dashChatFab')?.addEventListener('click',()=>{ chatWidgetOpen()?closeChatWidget():openChatWidget(); });
+  $('#dashChatFab')?.addEventListener('click',()=>{ const f=$('#dashChatFab'); if(f&&f._dragged) return; chatWidgetOpen()?closeChatWidget():openChatWidget(); });
+  enableFabDrag();
   $('#dcClose')?.addEventListener('click',e=>{e.stopPropagation();closeChatWidget();});
   $('#dcMin')?.addEventListener('click',e=>{e.stopPropagation();minimizeChat();});
   $('#dcBack')?.addEventListener('click',e=>{e.stopPropagation();showCwTeams();});
