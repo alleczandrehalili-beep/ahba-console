@@ -45,8 +45,13 @@ html,body{overflow-x:hidden;max-width:100%}
   .overview-layout,.bottom-layout{grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr)}
 }
 
-/* Access control: wrap row action buttons so they never get clipped; keep table scrollable */
-.row-actions{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;min-width:120px}
-.access-table{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
-.access-table table{min-width:1040px}
-.access-table thead th{position:sticky;top:0;z-index:2}
+/* Access control: compact so the whole matrix fits on screen; scrolls both ways if needed */
+.row-actions{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;min-width:92px}
+.access-table{overflow:auto;-webkit-overflow-scrolling:touch;max-width:100%;max-height:72vh}
+.access-table table{min-width:720px;width:100%}
+.access-table th,.access-table td{padding:6px 7px;font-size:9px}
+.access-table td strong{font-size:9px}
+.access-table td span{font-size:8px;color:#9aa6a2}
+.access-table thead th{position:sticky;top:0;z-index:2;background:#f8f9f7}
+.access-table input[type=checkbox]{width:14px;height:14px}
+.access-table .assign-btn{font-size:8px;padding:4px 6px}
