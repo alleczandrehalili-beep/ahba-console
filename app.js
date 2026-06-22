@@ -1144,15 +1144,18 @@ async function renderAccess(){
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/dashboard_users?select=*&order=is_super.desc,username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); accessUsers=r.ok?await r.json():[]; }catch(e){accessUsers=[];}
   const head=`<tr><th>User</th><th>Role</th>${PAGE_KEYS.map(p=>`<th style="text-align:center;font-size:9px">${p[1]}</th>`).join('')}<th></th></tr>`;
   const rows=accessUsers.map(u=>{
-    if(u.is_super) return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>Superadmin</td><td colspan="${PAGE_KEYS.length}" style="text-align:center;color:#11825f">Full access (all sections)</td><td style="white-space:nowrap"><button class="assign-btn" data-renamedash="${u.username}">Rename</button> <button class="assign-btn" data-resetdash="${u.username}">Reset PW</button></td></tr>`;
+    if(u.is_super) return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>Superadmin</td><td colspan="${PAGE_KEYS.length}" style="text-align:center;color:#11825f">Full access (all sections)</td><td><div class="row-actions"><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button></div></td></tr>`;
     const allowed=Array.isArray(u.allowed_pages)?u.allowed_pages:[];
     const cells=PAGE_KEYS.map(p=>`<td style="text-align:center"><input type="checkbox" data-u="${u.username}" data-pg="${p[0]}" ${allowed.includes(p[0])?'checked':''}></td>`).join('');
-    return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td style="white-space:nowrap"><button class="assign-btn" data-saveaccess="${u.username}">Save</button> <button class="assign-btn" data-renamedash="${u.username}">Rename</button> <button class="assign-btn" data-resetdash="${u.username}">Reset PW</button></td></tr>`;
+    const canDel = (window.dashUser&&window.dashUser.is_super) && u.username!==(window.dashUser&&window.dashUser.username);
+    const delBtn = canDel ? `<button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deldash="${u.username}">Delete</button>` : '';
+    return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td><div class="row-actions"><button class="assign-btn" data-saveaccess="${u.username}">Save</button><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button>${delBtn}</div></td></tr>`;
   }).join('');
   wrap.innerHTML=`<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
   $$('#accessWrap [data-saveaccess]').forEach(b=>b.onclick=()=>saveAccess(b.dataset.saveaccess));
   $$('#accessWrap [data-resetdash]').forEach(b=>b.onclick=()=>resetDashUser(b.dataset.resetdash));
   $$('#accessWrap [data-renamedash]').forEach(b=>b.onclick=()=>renameDashUser(b.dataset.renamedash));
+  $$('#accessWrap [data-deldash]').forEach(b=>b.onclick=()=>deleteDashUser(b.dataset.deldash));
 }
 async function saveAccess(username){
   const pages=$$(`#accessWrap input[data-u="${username}"]`).filter(c=>c.checked).map(c=>c.dataset.pg);
@@ -1219,10 +1222,41 @@ async function changeMyDisplayName(){
     showToast('Display name updated');
   }catch(e){ showToast('Could not update display name'); }
 }
+// Self-service: a console user changes THEIR OWN username (no admin secret;
+// authorized by their session token in the Edge Function).
+async function changeMyUsername(){
+  const u=window.dashUser; if(!u){ return; }
+  let nu=(prompt('Your NEW username (3+ chars, letters/numbers/._- , no spaces):', u.username)||'').trim().toUpperCase();
+  if(!nu||nu===u.username) return;
+  if(!/^[A-Z0-9._-]{3,}$/.test(nu)){ showToast('Username: 3+ chars, letters/numbers/._- only (no spaces).'); return; }
+  if(!confirm(`Change your username to "${nu}"?\nFrom now on you'll sign in with "${nu}". You'll be signed out to log in again.`)) return;
+  try{
+    await callAdminFn({action:'rename_self',target:'dash',new_username:nu});
+    showToast(`Username changed to ${nu}. Please sign in again.`);
+    setTimeout(()=>{ try{ dashAuth&&dashAuth.auth.signOut(); }catch(e){} location.reload(); }, 1600);
+  }catch(e){ showToast('Change failed: '+e.message); }
+}
+// Superadmin: permanently delete a dashboard user (login + profile).
+async function deleteDashUser(username){
+  if(username===(window.dashUser&&window.dashUser.username)){ showToast('You cannot delete your own account.'); return; }
+  if(!confirm(`Permanently DELETE user "${username}"?\nThis removes their login and dashboard access. This cannot be undone.`)) return;
+  const sec=getAdminSecret(); if(!sec){ showToast('Admin secret required'); return; }
+  try{
+    await callAdminFn({admin_secret:sec,action:'delete',target:'dash',username});
+    showToast(`${username} deleted.`);
+    renderAccess();
+  }catch(e){ showToast('Delete failed: '+e.message); }
+}
 // (Superadmin self-recovery removed — superadmin password is renewed in Supabase.)
 
 // ---------- Messenger-style team chat widget + global notifications ----------
-let cwTeam=null, cwUnread={}, cwChan=null;
+// cwCur: {kind:'team',code} for a broadcast team thread | {kind:'dm',a,b,team} for a private DM
+let cwCur=null, cwUnread={}, cwChan=null;
+function myCwCode(){ return 'C:'+((window.dashUser&&window.dashUser.username)||''); }
+function codeDisplay(code){ if(!code) return ''; if(code.startsWith('T:')) return 'Team '+code.slice(2); if(code.startsWith('C:')) return code.slice(2); return code; }
+function msgThreadKey(m){ return m.dm_a ? ('dm:'+m.dm_a+'|'+m.dm_b) : ('team:'+m.team); }
+function curThreadKeyDash(){ if(!cwCur) return ''; return cwCur.kind==='dm' ? ('dm:'+cwCur.a+'|'+cwCur.b) : ('team:'+cwCur.code); }
+function setDcInputEnabled(on){ const i=$('#dcInput'),s=$('#dcSend'); if(i){ i.disabled=!on; i.placeholder=on?'Type a message…':'Monitoring only — read-only'; } if(s) s.disabled=!on; }
 function playBeepDash(){ try{ const C=window.AudioContext||window.webkitAudioContext; if(!C)return; const ctx=playBeepDash._c||(playBeepDash._c=new C()); if(ctx.state==='suspended')ctx.resume(); const o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(880,ctx.currentTime); o.frequency.setValueAtTime(1170,ctx.currentTime+0.12); o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.3,ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35); o.start(); o.stop(ctx.currentTime+0.36);}catch(e){} }
 function dcTotalUnread(){ return Object.values(cwUnread).reduce((a,b)=>a+(b||0),0); }
 function updateDcBadge(){ const t=dcTotalUnread(); const b=$('#dashChatBadge'); if(b){ b.textContent=t; b.classList.toggle('hidden',t<=0); } }
@@ -1231,49 +1265,99 @@ function openChatWidget(){ try{ if('Notification'in window&&Notification.permiss
 function closeChatWidget(){ const w=$('#dashChatWidget'); w.style.display='none'; w.classList.remove('min'); }
 function minimizeChat(){ $('#dashChatWidget').classList.add('min'); }
 async function showCwTeams(){
-  cwTeam=null; $('#dcThread').classList.add('hidden'); $('#dcTeams').classList.remove('hidden'); $('#dcBack').classList.add('hidden');
-  $('#dcTitle').textContent='Team messages'; if($('#dcHeadAv'))$('#dcHeadAv').textContent='💬'; if($('#dcSub'))$('#dcSub').textContent='Tap a team to chat';
+  cwCur=null; $('#dcThread').classList.add('hidden'); $('#dcTeams').classList.remove('hidden'); $('#dcBack').classList.add('hidden');
+  $('#dcTitle').textContent='Messages'; if($('#dcHeadAv'))$('#dcHeadAv').textContent='💬'; if($('#dcSub'))$('#dcSub').textContent='Team threads + direct messages';
   const el=$('#dcTeams'); el.innerHTML='<div style="padding:20px;text-align:center;color:#9aa6a2;font-size:12px">Loading…</div>';
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages?select=team,body,role,created_at&order=created_at.desc&limit=400`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages?select=team,sender,body,role,dm_a,dm_b,created_at&order=created_at.desc&limit=600`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const rows=r.ok?await r.json():[];
-    const last={}; rows.forEach(m=>{ if(!last[m.team]) last[m.team]=m; });
-    const arr=Object.keys(last).sort((a,b)=>new Date(last[b].created_at)-new Date(last[a].created_at));
-    if(!arr.length){ el.innerHTML='<div style="padding:24px;text-align:center;color:#9aa6a2;font-size:12px">No conversations yet.<br>Open a team in Field Teams to start, or assign a load.</div>'; return; }
-    el.innerHTML=arr.map(t=>{ const m=last[t]; const u=cwUnread[t]||0; return `<div class="dc-team" data-cw="${t}"><div class="dc-av">${t.slice(-3)}</div><div class="dc-tmeta"><strong>${t}${u?`<span class="dc-ucount">${u}</span>`:''}</strong><p>${m.role==='dispatch'?'You: ':''}${(m.body||'').replace(/</g,'&lt;').slice(0,42)}</p></div><time>${timeAgo(m.created_at)}</time></div>`; }).join('');
-    $$('#dcTeams [data-cw]').forEach(d=>d.onclick=()=>openCwThread(d.dataset.cw));
+    const last={}; const order=[];
+    rows.forEach(m=>{ const k=msgThreadKey(m); if(!last[k]){ last[k]=m; order.push(k); } });
+    showCwTeams._last=last;
+    if(!order.length){ el.innerHTML='<div style="padding:24px;text-align:center;color:#9aa6a2;font-size:12px">No conversations yet.<br>Open a team in Field Teams to start, or assign a load.</div>'; return; }
+    const me=myCwCode();
+    el.innerHTML=order.map(k=>{
+      const m=last[k]; const u=cwUnread[k]||0; const isDm=!!m.dm_a;
+      let title, av, lock='';
+      if(isDm){
+        lock='🔒 '; av='🔒';
+        const peer=(m.dm_a===me)?m.dm_b:(m.dm_b===me?m.dm_a:null);
+        const mobileName=(m.role==='team'&&m.sender)?m.sender:null;
+        title = peer ? (peer.startsWith('T:')?(mobileName||codeDisplay(peer)):codeDisplay(peer))
+                     : (codeDisplay(m.dm_a)+' ↔ '+codeDisplay(m.dm_b));
+      } else {
+        av=(m.team||'').slice(-3);
+        title=(m.role==='team'&&m.sender)?m.sender:(teamCrew(m.team)||m.team);
+      }
+      const sub=(m.role==='dispatch'?( (m.sender||'You')+': '):((m.sender? m.sender+': ':'')))+(m.body||'');
+      return `<div class="dc-team" data-k="${k}"><div class="dc-av">${av}</div><div class="dc-tmeta"><strong>${lock}${(title||'').replace(/</g,'&lt;')}${u?`<span class="dc-ucount">${u}</span>`:''}</strong><p>${(sub||'').replace(/</g,'&lt;').slice(0,46)}</p></div><time>${timeAgo(m.created_at)}</time></div>`;
+    }).join('');
+    $$('#dcTeams [data-k]').forEach(d=>d.onclick=()=>openCwByKey(d.dataset.k));
   }catch(e){ el.innerHTML='<div style="padding:20px;color:#c2503a;font-size:12px">Could not load.</div>'; }
 }
-async function openCwThread(code){
-  cwTeam=code; cwUnread[code]=0; updateDcBadge();
+function openCwByKey(k){
+  const m=(showCwTeams._last||{})[k]||{};
+  if(k.indexOf('team:')===0) return openCwThread(k.slice(5));
+  const [a,b]=k.slice(3).split('|');
+  openCwDm(a,b,m.team||'');
+}
+function dcThreadShell(title,av,sub){
   $('#dcTeams').classList.add('hidden'); $('#dcThread').classList.remove('hidden'); $('#dcBack').classList.remove('hidden');
-  $('#dcTitle').textContent=code; if($('#dcHeadAv'))$('#dcHeadAv').textContent=code.slice(-3); if($('#dcSub'))$('#dcSub').textContent=(teamCrew(code)||'Field team');
-  const el=$('#dcMsgs'); el.innerHTML='<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">Loading…</div>';
+  $('#dcTitle').textContent=title; if($('#dcHeadAv'))$('#dcHeadAv').textContent=av; if($('#dcSub'))$('#dcSub').textContent=sub;
+  $('#dcMsgs').innerHTML='<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">Loading…</div>';
+}
+async function openCwThread(code){
+  cwCur={kind:'team',code}; cwUnread['team:'+code]=0; updateDcBadge();
+  dcThreadShell(code, code.slice(-3), (teamCrew(code)||'Field team')); setDcInputEnabled(true);
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages?select=*&team=eq.${encodeURIComponent(code)}&order=created_at.asc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages?select=*&team=eq.${encodeURIComponent(code)}&dm_a=is.null&order=created_at.asc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     renderCwMsgs(r.ok?await r.json():[]);
-  }catch(e){ el.innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
+  }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
+}
+async function openCwDm(a,b,team){
+  cwCur={kind:'dm',a,b,team}; cwUnread['dm:'+a+'|'+b]=0; updateDcBadge();
+  const me=myCwCode(); const peer=(a===me)?b:(b===me?a:null); const iAmPart=(a===me||b===me);
+  const title='🔒 '+(peer?codeDisplay(peer):(codeDisplay(a)+' ↔ '+codeDisplay(b)));
+  dcThreadShell(title, '🔒', iAmPart?'Private direct message':'Monitoring (read-only)'); setDcInputEnabled(iAmPart);
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages?select=*&dm_a=eq.${encodeURIComponent(a)}&dm_b=eq.${encodeURIComponent(b)}&order=created_at.asc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    renderCwMsgs(r.ok?await r.json():[]);
+  }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
 }
 function renderCwMsgs(rows){
-  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch';return `<div class="dc-msg ${d?'me':'them'}"><div>${(m.body||'').replace(/</g,'&lt;')}</div><span>${d?(m.sender||'You'):(m.sender||cwTeam)} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
+  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); return `<div class="dc-msg ${d?'me':'them'}"><div>${(m.body||'').replace(/</g,'&lt;')}</div><span>${who.replace(/</g,'&lt;')} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
 }
 async function sendCw(){
-  const inp=$('#dcInput'); const v=(inp.value||'').trim(); if(!v||!cwTeam)return; inp.value='';
+  const inp=$('#dcInput'); const v=(inp.value||'').trim(); if(!v||!cwCur)return;
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Dispatcher';
-  try{ await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify({team:cwTeam,sender:who,role:'dispatch',body:v})}); pushNotify({team:cwTeam,title:'Message from Dispatch',body:v}); openCwThread(cwTeam); }catch(e){ showToast('Send failed'); }
+  const row={sender:who, role:'dispatch', body:v};
+  if(cwCur.kind==='dm'){
+    const me=myCwCode(); if(cwCur.a!==me && cwCur.b!==me){ showToast('Monitoring only — you are not part of this DM.'); return; }
+    row.dm_a=cwCur.a; row.dm_b=cwCur.b;
+    row.team=cwCur.team||(cwCur.a.startsWith('T:')?cwCur.a.slice(2):(cwCur.b.startsWith('T:')?cwCur.b.slice(2):cwCur.a));
+  } else { row.team=cwCur.code; }
+  inp.value='';
+  try{ await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify(row)}); pushNotify({team:row.team,title:'Message from '+who,body:v}); if(cwCur.kind==='dm') openCwDm(cwCur.a,cwCur.b,cwCur.team); else openCwThread(cwCur.code); }catch(e){ showToast('Send failed'); }
 }
 function startDashChat(){
   if(cwChan||!window.supabase?.createClient) return;
   const cl=window.supabase.createClient(SUPA_URL,SUPA_KEY);
   window.__cwClient=cl; try{ cl.realtime.setAuth(window.__ahbaTok||SUPA_KEY); }catch(e){}
+  // RLS delivers only messages this console user may read (all broadcasts + their
+  // DMs; superadmin gets everything). Route each to the right thread.
   cwChan=cl.channel('dash-team-chat').on('postgres_changes',{event:'INSERT',schema:'public',table:'team_messages'},p=>{
-    const m=p.new; if(!m||m.role!=='team') return;   // only field-team messages notify the console
-    playBeepDash();
+    const m=p.new; if(!m) return;
+    const k=msgThreadKey(m);
     const widgetOpen=chatWidgetOpen();
-    if(widgetOpen && cwTeam===m.team){ openCwThread(m.team); }
-    else { cwUnread[m.team]=(cwUnread[m.team]||0)+1; updateDcBadge(); if(widgetOpen) showCwTeams(); }
-    showToast('💬 '+m.team+': '+(m.body||'').slice(0,45));
-    try{ if('Notification'in window&&Notification.permission==='granted') new Notification('💬 '+m.team,{body:m.body,icon:'favicon.png'}); }catch(e){}
+    const onThis = widgetOpen && curThreadKeyDash()===k;
+    if(onThis){ if(cwCur.kind==='dm') openCwDm(cwCur.a,cwCur.b,cwCur.team); else openCwThread(cwCur.code); }
+    if(m.role==='team'){   // incoming from a mobile user (field/sales) -> notify
+      playBeepDash();
+      if(!onThis){ cwUnread[k]=(cwUnread[k]||0)+1; updateDcBadge(); if(widgetOpen) showCwTeams(); }
+      const nm=(m.sender||m.team||'Message')+(m.dm_a?' (DM)':'');
+      showToast('💬 '+nm+': '+(m.body||'').slice(0,40));
+      try{ if('Notification'in window&&Notification.permission==='granted') new Notification('💬 '+nm,{body:m.body,icon:'favicon.png'}); }catch(e){}
+    } else if(!onThis && widgetOpen){ showCwTeams(); }
   }).subscribe();
 }
 
@@ -1531,6 +1615,7 @@ function init(){
   $('#dashLogoutBtn')?.addEventListener('click',dashLogout);
   $('#dashChangePw')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); showDashGate('#dashPwGate'); });
   $('#dashChangeName')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); changeMyDisplayName(); });
+  $('#dashChangeUser')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); changeMyUsername(); });
   $('#cuCreate')?.addEventListener('click',createDashUser);
   startDashAuth();
 }

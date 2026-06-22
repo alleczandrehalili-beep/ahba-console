@@ -44,3 +44,9 @@ html,body{overflow-x:hidden;max-width:100%}
   .summary-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
   .overview-layout,.bottom-layout{grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr)}
 }
+
+/* Access control: wrap row action buttons so they never get clipped; keep table scrollable */
+.row-actions{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;min-width:120px}
+.access-table{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.access-table table{min-width:1040px}
+.access-table thead th{position:sticky;top:0;z-index:2}
