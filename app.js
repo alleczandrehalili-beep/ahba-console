@@ -455,7 +455,8 @@ const PER_HEAD=955;       // bawat driver / technician na naka-declare sa Start 
 const GAS_PER_TEAM=400;   // gasolina kada na-deploy na team
 const CONSOLE_COST=1415;  // bawat dashboard user na nag-login ngayong araw
 async function renderExpenses(){
-  const date=manilaToday(), H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
+  const dEl=$('#expDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderExpenses;}
+  const date=dEl&&dEl.value?dEl.value:manilaToday(), H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
   let cloudExp=[], att=[];
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/expenses?select=*&work_date=eq.${date}&order=created_at.desc`,{headers:H}); cloudExp=r.ok?await r.json():[]; }catch(e){}
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=username,crew_driver,crew_tech1,crew_tech2,time_in&work_date=eq.${date}&order=time_in.desc`,{headers:H}); att=r.ok?await r.json():[]; }catch(e){}
@@ -743,8 +744,12 @@ async function renderGateLog(date){
   if(!gateRows.length){ body.innerHTML=`<tr><td colspan="9" class="empty-cell">No gate-out records for this day.</td></tr>`; return; }
   body.innerHTML=gateRows.map(g=>{
     const crew=[g.crew_tech1,g.crew_tech2].filter(Boolean).join(', ');
-    const okb=g.crew_ok?'<span class="status completed">OK</span>':`<span class="status pending">Diff</span>`;
-    return `<tr><td><strong>${fmtTime(g.checked_at)}</strong></td><td><strong>${g.team||'—'}</strong></td><td>${g.account||'—'}</td><td><strong>${g.plate_no||'—'}</strong></td><td>${g.odometer!=null?g.odometer:'—'}</td><td>${g.crew_driver||'—'}</td><td>${crew||'—'}</td><td>${okb}${g.crew_remarks?` <span style="color:#c2503a;font-size:9px">${g.crew_remarks}</span>`:''}</td><td>${g.security_user||'—'}</td></tr>`;
+    const isIn=(g.gate_type==='incoming');
+    const typeBadge=isIn?'<span class="status assigned">IN</span>':'<span class="status completed">OUT</span>';
+    const okb=isIn?'—':(g.crew_ok?'<span class="status completed">OK</span>':`<span class="status pending">Diff</span>`);
+    const rem=isIn?(g.vehicle_remarks||''):(g.crew_remarks||'');
+    const odoFuel=`${g.odometer!=null?g.odometer:'—'}${g.fuel_level?(' · '+g.fuel_level):''}`;
+    return `<tr><td><strong>${fmtTime(g.checked_at)}</strong> ${typeBadge}</td><td><strong>${g.team||'—'}</strong></td><td>${g.account||'—'}</td><td><strong>${g.plate_no||'—'}</strong></td><td>${odoFuel}</td><td>${g.crew_driver||'—'}</td><td>${crew||'—'}</td><td>${okb}${rem?` <span style="color:#c2503a;font-size:9px">${rem}</span>`:''}</td><td>${g.security_user||'—'}</td></tr>`;
   }).join('');
 }
 function exportAttendance(){
@@ -760,7 +765,7 @@ function exportGateLog(){
   if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
   if(!gateRows.length){showToast('No vehicle log to export');return}
   const date=$('#attDate')?.value||manilaToday();
-  const rows=gateRows.map(g=>({'GATE-OUT TIME':fmtWhen(g.checked_at),'TEAM':g.team||'','ACCOUNT':g.account||'','PLATE NO.':g.plate_no||'','ODOMETER (KM)':(g.odometer!=null?g.odometer:''),'DRIVER':g.crew_driver||'','TECH 1':g.crew_tech1||'','TECH 2':g.crew_tech2||'','CREW OK':g.crew_ok?'YES':'NO','REMARKS':g.crew_remarks||'','VALIDATED BY':g.security_user||'','DATE':g.work_date||date}));
+  const rows=gateRows.map(g=>({'TIME':fmtWhen(g.checked_at),'TYPE':(g.gate_type==='incoming'?'INCOMING':'OUTGOING'),'TEAM':g.team||'','ACCOUNT':g.account||'','PLATE NO.':g.plate_no||'','ODOMETER (KM)':(g.odometer!=null?g.odometer:''),'FUEL':g.fuel_level||'','DRIVER':g.crew_driver||'','TECH 1':g.crew_tech1||'','TECH 2':g.crew_tech2||'','CREW OK':(g.gate_type==='incoming'?'':(g.crew_ok?'YES':'NO')),'CREW REMARKS':g.crew_remarks||'','VEHICLE REMARKS':g.vehicle_remarks||'','VALIDATED BY':g.security_user||'','DATE':g.work_date||date}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Vehicle log');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_vehicle_log_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Vehicle log exported');
