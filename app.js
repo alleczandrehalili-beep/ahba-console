@@ -1258,6 +1258,43 @@ function msgThreadKey(m){ return m.dm_a ? ('dm:'+m.dm_a+'|'+m.dm_b) : ('team:'+m
 function curThreadKeyDash(){ if(!cwCur) return ''; return cwCur.kind==='dm' ? ('dm:'+cwCur.a+'|'+cwCur.b) : ('team:'+cwCur.code); }
 function setDcInputEnabled(on){ const i=$('#dcInput'),s=$('#dcSend'); if(i){ i.disabled=!on; i.placeholder=on?'Type a message…':'Monitoring only — read-only'; } if(s) s.disabled=!on; }
 function playBeepDash(){ try{ const C=window.AudioContext||window.webkitAudioContext; if(!C)return; const ctx=playBeepDash._c||(playBeepDash._c=new C()); if(ctx.state==='suspended')ctx.resume(); const o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(880,ctx.currentTime); o.frequency.setValueAtTime(1170,ctx.currentTime+0.12); o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.3,ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35); o.start(); o.stop(ctx.currentTime+0.36);}catch(e){} }
+// ---- Team-monitoring alert sounds (travel overdue / idle team) ----
+function dashCtx(){ const C=window.AudioContext||window.webkitAudioContext; if(!C)return null; const ctx=dashCtx._c||(dashCtx._c=new C()); if(ctx.state==='suspended')ctx.resume(); return ctx; }
+function dashTone(freq,start,dur,gain,type){ const ctx=dashCtx(); if(!ctx)return; const o=ctx.createOscillator(),g=ctx.createGain(); o.type=type||'sine'; o.frequency.value=freq; o.connect(g); g.connect(ctx.destination); const t=ctx.currentTime+start; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(gain||0.35,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.start(t); o.stop(t+dur+0.02); }
+// Travel over 45 min: urgent repeating two-tone
+function playAlertTravel(){ [0,0.42].forEach(off=>{ dashTone(988,off,0.18,0.4,'square'); dashTone(1319,off+0.18,0.22,0.42,'square'); }); }
+// Idle team 30 min, no load: LOUD but SHORT single sharp beep
+function playAlertIdle(){ dashTone(1175,0,0.22,0.6,'square'); }
+// Monitor online teams and alert all console users when thresholds are crossed.
+let alertTravel={}, alertIdle={};
+const ALERT_RE=10*60*1000;   // re-remind every 10 min while still overdue
+function teamHasActiveLoad(code){ return jobs.some(j=>j.team===code && ['assigned','en-route','on-site','in-progress'].includes(j.status)); }
+async function monitorTeams(){
+  try{
+    if(!window.dashUser) return;
+    await loadTeamShifts();
+    const now=Date.now(); const travelMsgs=[], idleMsgs=[];
+    // 1) A job stuck in travel (en-route) for 45+ min
+    jobs.forEach(j=>{
+      if(j.status!=='en-route'||!j.updatedAt){ if(j&&j.id) delete alertTravel[j.id]; return; }
+      const mins=(now-new Date(j.updatedAt).getTime())/60000;
+      if(mins>=45){ if(now-(alertTravel[j.id]||0)>ALERT_RE){ alertTravel[j.id]=now; travelMsgs.push((j.team||'Team')+' · '+(j.subscriber||j.id)+' — '+Math.floor(mins)+'m'); } }
+      else delete alertTravel[j.id];
+    });
+    // 2) An online team idle 30+ min with no current load
+    Object.entries(shiftByTeam).forEach(([code,s])=>{
+      if(!s.online || teamHasActiveLoad(code)){ delete alertIdle[code]; return; }
+      let lastAct = s.time_in ? new Date(s.time_in).getTime() : 0;
+      jobs.forEach(j=>{ if(j.team===code && j.updatedAt){ const t=new Date(j.updatedAt).getTime(); if(t>lastAct) lastAct=t; } });
+      if(!lastAct) return;
+      const mins=(now-lastAct)/60000;
+      if(mins>=30){ if(now-(alertIdle[code]||0)>ALERT_RE){ alertIdle[code]=now; idleMsgs.push(code+' — '+Math.floor(mins)+'m'); } }
+      else delete alertIdle[code];
+    });
+    if(travelMsgs.length){ playAlertTravel(); showToast('⏱️ Travel over 45 min: '+travelMsgs.join(' · ')); try{ if('Notification'in window&&Notification.permission==='granted') new Notification('⏱️ Team travel over 45 min',{body:travelMsgs.join('\n'),icon:'favicon.png'}); }catch(e){} }
+    if(idleMsgs.length){ playAlertIdle(); showToast('🚨 Idle 30 min (no load): '+idleMsgs.join(' · ')); try{ if('Notification'in window&&Notification.permission==='granted') new Notification('🚨 Team idle 30 min — no load',{body:idleMsgs.join('\n'),icon:'favicon.png'}); }catch(e){} }
+  }catch(e){}
+}
 function dcTotalUnread(){ return Object.values(cwUnread).reduce((a,b)=>a+(b||0),0); }
 function updateDcBadge(){ const t=dcTotalUnread(); const b=$('#dashChatBadge'); if(b){ b.textContent=t; b.classList.toggle('hidden',t<=0); } }
 function chatWidgetOpen(){ const w=$('#dashChatWidget'); return w && w.style.display!=='none'; }
@@ -1325,12 +1362,13 @@ async function openCwDm(a,b,team){
   }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
 }
 function renderCwMsgs(rows){
-  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); return `<div class="dc-msg ${d?'me':'them'}"><div>${(m.body||'').replace(/</g,'&lt;')}</div><span>${who.replace(/</g,'&lt;')} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
+  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; return `<div class="dc-msg ${d?'me':'them'}"><div>${(m.body||'').replace(/</g,'&lt;')}</div><span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
 }
 async function sendCw(){
   const inp=$('#dcInput'); const v=(inp.value||'').trim(); if(!v||!cwCur)return;
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Dispatcher';
-  const row={sender:who, role:'dispatch', body:v};
+  const myRoleLabel=(window.dashUser&&window.dashUser.is_super)?'Superadmin':((window.dashUser&&window.dashUser.role_label)||'Console');
+  const row={sender:who, sender_role:myRoleLabel, role:'dispatch', body:v};
   if(cwCur.kind==='dm'){
     const me=myCwCode(); if(cwCur.a!==me && cwCur.b!==me){ showToast('Monitoring only — you are not part of this DM.'); return; }
     row.dm_a=cwCur.a; row.dm_b=cwCur.b;
@@ -1548,6 +1586,8 @@ function init(){
   $$('.map-actions [data-seg]').forEach(b=>b.onclick=()=>{$$('.map-actions [data-seg]').forEach(x=>x.classList.remove('active'));b.classList.add('active');mapFilter=b.dataset.seg;renderTeamLocations()});
   $('#mapExpandBtn')?.addEventListener('click',()=>{$('.map-panel').classList.toggle('expanded');setTimeout(()=>{if(leafMap)leafMap.invalidateSize()},250)});
   setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
+  // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
+  setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
 
   // Forms
   $('#orderForm').onsubmit=submitOrder;
