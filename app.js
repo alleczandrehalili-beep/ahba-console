@@ -775,14 +775,16 @@ function exportGateLog(){
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
 let compJobs=[], compPhotos={};
 async function fetchCompleted(date){
-  // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and
-  // any past date's history loads. completed_at is fixed at completion time (won't drift).
-  const start=encodeURIComponent(date+'T00:00:00+08:00'), end=encodeURIComponent(date+'T23:59:59.999+08:00');
+  // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and any
+  // past date loads. Prefer completed_at (fixed at completion); fall back to updated_at for
+  // older rows that have no completed_at yet — works regardless of backfill/deploy order.
+  const s=(date+'T00:00:00+08:00').replace('+','%2B'), e=(date+'T23:59:59.999+08:00').replace('+','%2B');
+  const or=`or=(and(completed_at.gte.${s},completed_at.lte.${e}),and(completed_at.is.null,updated_at.gte.${s},updated_at.lte.${e}))`;
   try{
-    const q=`status=eq.completed&completed_at=gte.${start}&completed_at=lte.${end}&select=*&order=completed_at.desc&limit=2000`;
+    const q=`status=eq.completed&${or}&select=*&order=updated_at.desc&limit=2000`;
     const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     return r.ok?await r.json():[];
-  }catch(e){return[]}
+  }catch(e2){return[]}
 }
 async function fetchPhotosFor(ids){
   if(!ids.length)return{};
