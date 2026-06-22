@@ -1137,8 +1137,26 @@ function applyAccess(u){
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
+  const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = u.is_super ? 'inline-flex' : 'none';
   const first=(allowed[0]||'overview');
   switchPage(first);
+}
+// Superadmin: wipe ALL loads/job orders from the dispatch board (and their photos/docs).
+async function deleteAllLoads(){
+  if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
+  if(!confirm('⚠️ Buburahin ang LAHAT ng loads/job orders sa dispatch board (pati litrato at docs nila). Hindi na ito mababawi. Magpatuloy?')) return;
+  const t=(prompt('Para kumpirmahin, i-type ang: DELETE ALL')||'').trim();
+  if(t!=='DELETE ALL'){ showToast('Cancelled — hindi tumugma ang confirmation.'); return; }
+  showToast('Deleting all loads…');
+  try{
+    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'};
+    await fetch(`${SUPA_URL}/rest/v1/job_photos?id=not.is.null`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA_URL}/rest/v1/job_docs?id=not.is.null`,{method:'DELETE',headers:H});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=not.is.null`,{method:'DELETE',headers:H});
+    if(!r.ok){ throw new Error('HTTP '+r.status+' '+(await r.text()).slice(0,120)); }
+    jobs=[]; try{ localStorage.setItem('fieldflow_jobs','[]'); }catch(e){}
+    renderJobs(); renderOverview(); showToast('✓ All loads deleted.');
+  }catch(e){ showToast('Delete failed: '+e.message); }
 }
 function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
@@ -1593,6 +1611,7 @@ function init(){
   setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
   // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
   setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
+  $('#clearLoadsBtn')?.addEventListener('click',deleteAllLoads);
 
   // Forms
   $('#orderForm').onsubmit=submitOrder;
