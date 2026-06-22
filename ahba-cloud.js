@@ -38,7 +38,8 @@
     'house_no','street_name','village','brgy','city','in_charge','source_of_sales','referral_name',
     'negative_remark','negative_at','dispatch_count','history','created_at',
     'payment_mode','payment_amount','ar_no','work_account','crew_driver','crew_tech1','crew_tech2',
-    'remittance_received','remittance_received_by','remittance_received_at'];
+    'remittance_received','remittance_received_by','remittance_received_at',
+    'dwelling_type','install_fee_type','amount_to_collect'];
 
   function normalizeJob(row) {
     var j = {
