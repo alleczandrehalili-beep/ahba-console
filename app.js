@@ -1,3 +1,4 @@
+/* © 2026 AHBA Development — Proprietary & confidential. Unauthorized copying, reuse, or distribution is prohibited. */
 const $ = (s, el=document) => el.querySelector(s);
 const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const money = n => `₱${Number(n).toLocaleString('en-PH')}`;
@@ -55,6 +56,7 @@ const activity=[
 
 // UI state
 let mapFilter='all';
+let notifReadAt=Number(localStorage.getItem('ahba_notif_read')||0);
 
 function save(){localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs));localStorage.setItem('fieldflow_expenses',JSON.stringify(expenses))}
 function statusLabel(s){return s.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
@@ -98,6 +100,7 @@ function renderOverview(){
   const mx=Math.max(...bars,1); if($('#completionBars')) $('#completionBars').innerHTML=bars.map(n=>`<span style="height:${6+Math.round(n/mx*34)}px"></span>`).join('');
   renderTeamLocations();
   renderLiveActivity();
+  renderNotifPop();
   injectIcons();
   renderExpenses();renderJobs();
 }
@@ -559,9 +562,25 @@ function toggleNotif(){
   closePopovers();
   if(open){np.hidden=false;btn.setAttribute('aria-expanded','true')}
 }
+// Build LIVE notifications from real data: urgent alerts (travel>45m, idle>30m) first,
+// then recent job-status events. Times are accurate (relative to now).
+function buildNotifs(){
+  const out=[], now=Date.now();
+  try{ jobs.forEach(j=>{ if(j.status==='en-route'&&j.updatedAt){ const mins=(now-new Date(j.updatedAt).getTime())/60000; if(mins>=45) out.push({icon:'truck',tone:'coral',title:'⏱️ Travel over 45 min',text:`${j.team?'<b>'+j.team+'</b> · ':''}${j.subscriber||j.id} (${Math.floor(mins)}m)`,ts:j.updatedAt,pri:0}); } }); }catch(e){}
+  try{ Object.entries(shiftByTeam).forEach(([code,s])=>{ if(!s.online||teamHasActiveLoad(code))return; let last=s.time_in?new Date(s.time_in).getTime():0; jobs.forEach(j=>{ if(j.team===code&&j.updatedAt){const t=new Date(j.updatedAt).getTime(); if(t>last)last=t;} }); if(last){ const mins=(now-last)/60000; if(mins>=30) out.push({icon:'info',tone:'coral',title:'🚨 Team idle — no load',text:`<b>${code}</b> (${Math.floor(mins)}m idle)`,ts:new Date(last).toISOString(),pri:0}); } }); }catch(e){}
+  const map={completed:['check','','Job completed'],'en-route':['truck','blue','Team en route'],'on-site':['pin','','Arrived on site'],'in-progress':['wrench','blue','Work in progress'],negative:['info','coral','Marked incomplete'],assigned:['truck','blue','Dispatched'],cancelled:['info','coral','Job cancelled'],for_validation:['clipboard','','New order for validation'],pending:['info','','For dispatch'],rejected:['info','coral','Order rejected']};
+  jobs.filter(j=>j.updatedAt).slice().sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).slice(0,12).forEach(j=>{ const m=map[j.status]||['info','','Updated']; out.push({icon:m[0],tone:m[1],title:m[2],text:`${j.team?'<b>'+j.team+'</b> · ':''}${j.subscriber||j.id}`,ts:j.updatedAt,pri:1}); });
+  out.sort((a,b)=>(a.pri-b.pri)||(new Date(b.ts)-new Date(a.ts)));
+  return out.slice(0,16);
+}
 function renderNotifPop(){
-  $('#notifPopList').innerHTML=activity.map(a=>`<div class="notif-item"><span class="activity-icon ${a.tone}" data-icon="${a.icon}"></span><div><strong>${a.title}</strong><p>${a.text}</p></div><time>${a.time}</time></div>`).join('');
+  const el=$('#notifPopList'); if(!el) return;
+  const list=buildNotifs();
+  el.innerHTML=list.length?list.map(a=>`<div class="notif-item"><span class="activity-icon ${a.tone}" data-icon="${a.icon}"></span><div><strong>${a.title}</strong><p>${a.text}</p></div><time>${timeAgo(a.ts)}</time></div>`).join(''):'<div style="padding:20px;text-align:center;color:#9aa6a2;font-size:11px">No notifications yet.</div>';
   injectIcons();
+  // red dot lights up when there's anything newer than the last "mark all read"
+  const newest=list.reduce((mx,a)=>Math.max(mx,new Date(a.ts).getTime()||0),0);
+  const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
 function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',accounts:'Technician accounts',attendance:'Attendance · Time records',completed:'Completed jobs',validation:'Validator · New job orders',history:'Load history',remittance:'Remittance · Daily collection',access:'Access control'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='accounts')renderAccounts();if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
@@ -1170,11 +1189,11 @@ async function renderAccess(){
   const wrap=$('#accessWrap'); if(!wrap)return;
   wrap.innerHTML='Loading…';
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/dashboard_users?select=*&order=is_super.desc,username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); accessUsers=r.ok?await r.json():[]; }catch(e){accessUsers=[];}
-  const head=`<tr><th>User</th><th>Role</th>${PAGE_KEYS.map(p=>`<th style="text-align:center;font-size:9px">${p[1]}</th>`).join('')}<th></th></tr>`;
+  const head=`<tr><th>User</th><th>Role</th>${PAGE_KEYS.map(p=>`<th class="perm">${p[1]}</th>`).join('')}<th>Actions</th></tr>`;
   const rows=accessUsers.map(u=>{
     if(u.is_super) return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>Superadmin</td><td colspan="${PAGE_KEYS.length}" style="text-align:center;color:#11825f">Full access (all sections)</td><td><div class="row-actions"><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button></div></td></tr>`;
     const allowed=Array.isArray(u.allowed_pages)?u.allowed_pages:[];
-    const cells=PAGE_KEYS.map(p=>`<td style="text-align:center"><input type="checkbox" data-u="${u.username}" data-pg="${p[0]}" ${allowed.includes(p[0])?'checked':''}></td>`).join('');
+    const cells=PAGE_KEYS.map(p=>`<td class="perm"><input type="checkbox" data-u="${u.username}" data-pg="${p[0]}" ${allowed.includes(p[0])?'checked':''}></td>`).join('');
     const canDel = (window.dashUser&&window.dashUser.is_super) && u.username!==(window.dashUser&&window.dashUser.username);
     const delBtn = canDel ? `<button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deldash="${u.username}">Delete</button>` : '';
     return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td><div class="row-actions"><button class="assign-btn" data-saveaccess="${u.username}">Save</button><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button>${delBtn}</div></td></tr>`;
@@ -1599,7 +1618,7 @@ function init(){
   // Notification popover
   $('#notifBtn').onclick=e=>{e.stopPropagation();toggleNotif()};
   $('#notifPop').onclick=e=>e.stopPropagation();
-  $('#notifClear').onclick=()=>{$('#notifDot').style.display='none';closePopovers();showToast('All notifications marked as read')};
+  $('#notifClear').onclick=()=>{notifReadAt=Date.now();localStorage.setItem('ahba_notif_read',String(notifReadAt));renderNotifPop();closePopovers();showToast('All notifications marked as read')};
 
   // Role switcher
   $('#roleSwitcher').onclick=e=>{e.stopPropagation();const rm=$('#roleMenu'),open=rm.hidden;closePopovers();if(open){rm.hidden=false;$('#roleSwitcher').setAttribute('aria-expanded','true')}};
