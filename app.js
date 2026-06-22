@@ -775,10 +775,13 @@ function exportGateLog(){
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
 let compJobs=[], compPhotos={};
 async function fetchCompleted(date){
+  // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and
+  // any past date's history loads. completed_at is fixed at completion time (won't drift).
+  const start=encodeURIComponent(date+'T00:00:00+08:00'), end=encodeURIComponent(date+'T23:59:59.999+08:00');
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.completed&select=*&order=updated_at.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const all=r.ok?await r.json():[];
-    return all.filter(j=>j.updated_at && new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ})===date);
+    const q=`status=eq.completed&completed_at=gte.${start}&completed_at=lte.${end}&select=*&order=completed_at.desc&limit=2000`;
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    return r.ok?await r.json():[];
   }catch(e){return[]}
 }
 async function fetchPhotosFor(ids){
