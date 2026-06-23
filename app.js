@@ -109,7 +109,7 @@ const AREA_COORDS={'Quezon City':[14.676,121.043],'Manila':[14.599,120.984],'Mak
 function areaCoord(a){if(!a)return null;if(AREA_COORDS[a])return AREA_COORDS[a];const k=Object.keys(AREA_COORDS).find(x=>x.toLowerCase()===String(a).toLowerCase());return k?AREA_COORDS[k]:null;}
 const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','brgy','city','in_charge','source_of_sales','referral_name'];
 const safeName=s=>(s||'subscriber').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()||'subscriber';
-let leafMap=null, teamMarkers={}, techIndex={};
+let leafMap=null, teamMarkers={}, techIndex={}, trackLayer=null;
 function haversineKm(a,b,c,d){const R=6371,toR=x=>x*Math.PI/180;const dLat=toR(c-a),dLng=toR(d-b);const s=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(s))}
 function isOnline(loc){return loc && loc.location_at && (Date.now()-new Date(loc.location_at))<15*60*1000}
 
@@ -162,6 +162,7 @@ function initMap(){
   if(leafMap||typeof L==='undefined'||!document.getElementById('leafletMap'))return;
   leafMap=L.map('leafletMap',{zoomControl:true,attributionControl:false}).setView([14.5995,120.9842],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(leafMap);
+  leafMap.on('click',()=>clearTeamTrack());   // tap empty map to clear a shown route
   setTimeout(()=>leafMap.invalidateSize(),200);
 }
 async function fetchTechLocations(){
@@ -180,22 +181,59 @@ async function renderTeamLocations(){
     if(t.lat==null||t.lng==null)return;
     // map shows TODAY's positions only — auto-clears at the start of each new day
     if(!t.location_at || new Date(t.location_at).toLocaleDateString('en-CA',{timeZone:TZ})!==today) return;
-    const online=isOnline(t);
-    if(mapFilter==='active'&&!online)return;
+    if(!isOnline(t)) return;                       // STANDBY: show ONLINE (green) pins only
     seen[t.username]=1;
-    const color=online?'#18a57b':'#e9a93d';
-    const popup=`<b>${t.username}</b><br>${t.area||''}<br>${t.location_at?'Updated '+fmtWhen(t.location_at):'—'}`;
+    const color='#18a57b';
+    const popup=`<b>${t.username}</b><br>${t.area||''}<br>${t.location_at?'Updated '+fmtWhen(t.location_at):'—'}<br><span style="color:#178262;font-weight:700">Tap pin → show route history</span>`;
     if(teamMarkers[t.username]){
       teamMarkers[t.username].setLatLng([t.lat,t.lng]).setStyle({fillColor:color,color:color}).bindPopup(popup);
     }else{
-      teamMarkers[t.username]=L.circleMarker([t.lat,t.lng],{radius:8,weight:2,color,fillColor:color,fillOpacity:.85}).addTo(leafMap).bindPopup(popup);
+      teamMarkers[t.username]=L.circleMarker([t.lat,t.lng],{radius:9,weight:2,color,fillColor:color,fillOpacity:.9}).addTo(leafMap).bindPopup(popup);
     }
+    teamMarkers[t.username].off('click').on('click',e=>{ if(window.L&&L.DomEvent)L.DomEvent.stopPropagation(e); showTeamTrackOnMap(t.username); });
   });
   // remove markers no longer shown
   Object.keys(teamMarkers).forEach(u=>{if(!seen[u]){leafMap.removeLayer(teamMarkers[u]);delete teamMarkers[u]}});
   const withGps=rows.filter(t=>t.lat!=null).length;
   const onlineN=rows.filter(isOnline).length;
-  const at=$('#availableTeamText'); if(at) at.textContent=`${onlineN} online · ${withGps} sharing GPS`;
+  const at=$('#availableTeamText'); if(at) at.textContent=`${onlineN} online · tap a pin for route`;
+}
+// Remove any route currently drawn on the map.
+function clearTeamTrack(){ if(trackLayer&&leafMap){ try{ leafMap.removeLayer(trackLayer); }catch(e){} } trackLayer=null; }
+// Click an online pin → draw that team's location trail for today as a connecting line + numbered stops.
+async function showTeamTrackOnMap(code){
+  if(!leafMap) return;
+  clearTeamTrack();
+  let pts=[];
+  try{
+    const date=manilaToday();
+    const r=await fetch(`${SUPA_URL}/rest/v1/location_history?select=lat,lng,area,reason,created_at&username=eq.${encodeURIComponent(code)}&work_date=eq.${date}&order=created_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    pts=(r.ok?await r.json():[]).filter(p=>p.lat!=null&&p.lng!=null);
+  }catch(e){}
+  // append the latest known position as the "NOW" stop
+  const cur=techIndex[code];
+  if(cur&&cur.lat!=null&&cur.lng!=null){
+    const last=pts[pts.length-1];
+    if(!last || Math.abs(+last.lat-+cur.lat)>1e-6 || Math.abs(+last.lng-+cur.lng)>1e-6)
+      pts.push({lat:cur.lat,lng:cur.lng,area:cur.area,reason:'current',created_at:cur.location_at});
+  }
+  if(!pts.length){ showToast(`No location history yet for ${code} today`); return; }
+  const latlngs=pts.map(p=>[+p.lat,+p.lng]);
+  const grp=L.layerGroup();
+  if(latlngs.length>1) L.polyline(latlngs,{color:'#0e6b50',weight:3,opacity:.85}).addTo(grp);
+  pts.forEach((p,i)=>{
+    const isLast=i===pts.length-1;
+    const label=isLast?'NOW':String(i+1);
+    const fill=isLast?'#18a57b':'#f5c518', txt=isLast?'#fff':'#3a2c08';
+    const icon=L.divIcon({className:'trk-pin',html:`<div style="background:${fill};color:${txt};border:2px solid #fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:800 9px Manrope;box-shadow:0 2px 6px rgba(0,0,0,.35)">${label}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
+    const time=p.created_at?fmtTime(p.created_at):'—';
+    const place=p.area||`${(+p.lat).toFixed(4)}, ${(+p.lng).toFixed(4)}`;
+    const why=(p.reason&&p.reason!=='current'&&p.reason!=='auto')?(' · '+p.reason):'';
+    L.marker([+p.lat,+p.lng],{icon}).bindPopup(`<b>${code}</b> · stop ${label}<br>${place}<br>${time}${why}`).addTo(grp);
+  });
+  grp.addTo(leafMap); trackLayer=grp;
+  try{ leafMap.fitBounds(L.latLngBounds(latlngs).pad(0.25)); }catch(e){}
+  showToast(`Route history: ${code} — ${pts.length} stop${pts.length===1?'':'s'} (tap empty map to clear)`);
 }
 function renderJobs(){
   maybePromptRollover();
