@@ -1419,7 +1419,17 @@ async function monitorTeams(){
 function dcTotalUnread(){ return Object.values(cwUnread).reduce((a,b)=>a+(b||0),0); }
 function updateDcBadge(){ const t=dcTotalUnread(); const b=$('#dashChatBadge'); if(b){ b.textContent=t; b.classList.toggle('hidden',t<=0); } }
 function chatWidgetOpen(){ const w=$('#dashChatWidget'); return w && w.style.display!=='none'; }
-function openChatWidget(){ try{ if('Notification'in window&&Notification.permission==='default')Notification.requestPermission(); }catch(e){} const w=$('#dashChatWidget'); w.classList.remove('min'); w.style.display='flex'; showCwTeams(); }
+function openChatWidget(){ try{ if('Notification'in window&&Notification.permission==='default')Notification.requestPermission(); }catch(e){} const w=$('#dashChatWidget'); w.classList.remove('min'); w.style.display='flex'; positionChatToFab(); showCwTeams(); }
+// Open the chat panel anchored to the (draggable) chat icon's current position.
+function positionChatToFab(){
+  const fab=$('#dashChatFab'), w=$('#dashChatWidget'); if(!fab||!w) return;
+  const ww=w.offsetWidth||330, wh=w.offsetHeight||460, m=8, gap=12, r=fab.getBoundingClientRect();
+  let left=Math.max(m, Math.min(window.innerWidth-ww-m, r.right-ww));   // align widget's right edge to the icon
+  let top=r.top-wh-gap;                                                  // prefer opening ABOVE the icon
+  if(top<m) top=r.bottom+gap;                                            // not enough room above → open below
+  top=Math.max(m, Math.min(window.innerHeight-wh-m, top));
+  w.style.left=left+'px'; w.style.top=top+'px'; w.style.right='auto'; w.style.bottom='auto';
+}
 function closeChatWidget(){ const w=$('#dashChatWidget'); w.style.display='none'; w.classList.remove('min'); }
 function minimizeChat(){ $('#dashChatWidget').classList.add('min'); }
 // Make the floating chat icon draggable so it never blocks on-screen info (position is saved).
@@ -1786,6 +1796,7 @@ function init(){
   $('#annPost')?.addEventListener('click',postAnnounce);
   $('#dashChatFab')?.addEventListener('click',()=>{ const f=$('#dashChatFab'); if(f&&f._dragged) return; chatWidgetOpen()?closeChatWidget():openChatWidget(); });
   enableFabDrag();
+  window.addEventListener('resize',()=>{ if(chatWidgetOpen()) positionChatToFab(); });
   document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{ const inp=$('#'+b.dataset.eye); if(!inp)return; const reveal=inp.type==='password'; inp.type=reveal?'text':'password'; b.textContent=reveal?'Hide':'Show'; });
   $('#dcClose')?.addEventListener('click',e=>{e.stopPropagation();closeChatWidget();});
   $('#dcMin')?.addEventListener('click',e=>{e.stopPropagation();minimizeChat();});
