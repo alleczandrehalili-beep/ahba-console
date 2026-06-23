@@ -1252,10 +1252,11 @@ let ordDocs={id:[],billing:[],premise:[]};
 // Plan dropdowns for the console New work order form (match the mobile sales app)
 const ORD_PLANS_SDU=['PLAN 999 - 100MBPS','PLAN 1500 - 300MBPS','PLAN 1699 - 600MBPS / 400MBPS (VICE VERSA)','PLAN 2000 - 500MBPS','PLAN 2500 - 2500MBPS','PLAN 3000 - 700MBPS / 1GBPS (VICE VERSA)','PLAN 3500 - 1GBPS'];
 const ORD_PLANS_MDU=['PLAN 999 - 100MBPS','PLAN 1399 - 200MBPS','PLAN 1500 - 300MBPS','PLAN 2000 - 500MBPS'];
+const ORD_PLANS_MDU_DOCSIS=['SKY FIBER 999 - 100MBPS','SKY FIBER 1399 - 200MBPS','SKY FIBER 1500 - 300MBPS','SKY FIBER 2000 - 500MBPS'];
 const ORD_ADDONS=['SKY TV 99','SKY TV 299','SKY TV 499'];
 function ordPopulatePlans(){
   const dw=($('#ord_dwelling')&&$('#ord_dwelling').value)||'SDU';
-  const list=dw==='MDU'?ORD_PLANS_MDU:ORD_PLANS_SDU;
+  const list=dw==='MDU DOCSIS'?ORD_PLANS_MDU_DOCSIS:(dw==='MDU'?ORD_PLANS_MDU:ORD_PLANS_SDU);
   const sel=$('#ord_plan'); if(sel){ const cur=sel.value; sel.innerHTML='<option value="">— Select plan —</option>'+list.map(p=>`<option>${p}</option>`).join(''); sel.value=list.includes(cur)?cur:''; }
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
