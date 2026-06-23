@@ -914,6 +914,16 @@ async function renderAttendance(){
     return `<tr><td><strong>${r.username}</strong></td><td>${r.work_date}</td><td>${fmtTime(r.time_in)}</td><td>${r.time_out?fmtTime(r.time_out):'—'}</td><td>${fmtDur(r.time_in,r.time_out)}</td><td>${status}${acctFree}</td></tr>`;
   }).join('');
   $$('#attendanceBody [data-freeacct]').forEach(b=>b.onclick=()=>freeWorkAccount(b.dataset.freeacct));
+  // Locked work accounts panel — all accounts currently held by a timed-in team
+  const locked=[...new Set(rows.filter(r=>!r.time_out && r.work_account).map(r=>r.work_account))];
+  const lp=$('#lockedAcctsPanel'), lc=$('#lockedAccts');
+  if(lp&&lc){
+    if(locked.length){
+      lp.style.display='';
+      lc.innerHTML=locked.map(acc=>{ const who=rows.find(r=>!r.time_out&&r.work_account===acc); return `<span style="display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-size:11px"><b>${acc}</b><span style="color:#8a9894">${who?who.username:''}</span><button class="assign-btn" data-freeacct="${acc.replace(/"/g,'&quot;')}" style="color:#a4690f;border-color:#f0d9a8">Free</button></span>`; }).join('');
+      $$('#lockedAccts [data-freeacct]').forEach(b=>b.onclick=()=>freeWorkAccount(b.dataset.freeacct));
+    } else { lp.style.display='none'; lc.innerHTML=''; }
+  }
   attRows=rows;            // keep for export
   renderGateLog(date);
 }
