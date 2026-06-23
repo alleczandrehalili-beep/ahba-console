@@ -294,7 +294,7 @@
           <div class="small-stat"><span>Earliest gate-out</span><strong id="gateFirst">—</strong></div>
         </div>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🚐 Security gate-out · Vehicle log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Plate no., odometer at oras ng paglabas — na-validate ng Security.</p></div><button class="secondary-btn" id="gateExport"><i data-icon="arrow"></i>Export vehicle log</button></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🚐 Security gate-out · Vehicle log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Plate no., odometer, and departure time — validated by Security.</p></div><button class="secondary-btn" id="gateExport"><i data-icon="arrow"></i>Export vehicle log</button></div>
           <div class="table-wrap"><table><thead><tr><th>Gate-out time</th><th>Team</th><th>Account</th><th>Plate no.</th><th>Odometer (km)</th><th>Driver</th><th>Crew</th><th>Crew OK</th><th>Validated by</th></tr></thead><tbody id="gateBody"></tbody></table></div>
         </article>
       </section>
@@ -336,7 +336,7 @@
 
       <section id="remittancePage" class="page">
         <div class="page-toolbar">
-          <div><h2>Remittance · Daily collection</h2><p>Monitor lahat ng koleksyon ng team kada araw. I-click ang "Mark received" kada JO bago mag-export para ma-validate kung natanggap na ang pera.</p></div>
+          <div><h2>Remittance · Daily collection</h2><p>Monitor all team collections each day. Click "Mark received" for each JO before exporting to validate that the money has been received.</p></div>
           <div class="toolbar-actions">
             <div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="remDate" type="date"></div>
             <button class="primary-btn" id="remExport"><i data-icon="arrow"></i>Download Excel</button>
@@ -351,14 +351,14 @@
           <div class="small-stat"><span>Cash Remittance</span><strong id="remCash">₱0</strong></div>
         </div>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Daily collection log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Bawat na-tanggap ay naka-record sa load history (sino at kailan).</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Daily collection log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Each receipt is recorded in the load history (who and when).</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Work order</th><th>J.O. No</th><th>Team</th><th>Account</th><th>Subscriber</th><th>Mode</th><th>Amount</th><th>AR No.</th><th>Received</th></tr></thead><tbody id="remittanceBody"></tbody></table></div>
         </article>
       </section>
 
       <section id="historyPage" class="page">
         <div class="page-toolbar">
-          <div><h2>Billing Validation</h2><p>Lahat ng loads sa loob ng linggo — kasama ang buong subscriber info. Na-a-archive dito (hindi nawawala), at ma-e-extract sa Excel.</p></div>
+          <div><h2>Billing Validation</h2><p>All loads within the week — including full subscriber info. Archived here (never lost), and exportable to Excel.</p></div>
           <div class="toolbar-actions">
             <div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#7e8d89">From</span><input id="histFrom" type="date"></div>
             <div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#7e8d89">To</span><input id="histTo" type="date"></div>
@@ -372,14 +372,14 @@
           <div class="small-stat"><span>Cancelled</span><strong id="histCancelled">0</strong></div>
         </div>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-click ang isang load para makita ang buong detalye at history.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Click a load to see its full details and history.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Date</th><th>Work order</th><th>J.O. No</th><th>Subscriber</th><th>Team</th><th>Status</th><th>Dispatched</th><th>Area</th></tr></thead><tbody id="historyBody"></tbody></table></div>
         </article>
       </section>
       <section id="accessPage" class="page">
-        <div class="page-toolbar"><div><h2>Access control</h2><p>Gumawa ng user, mag-assign ng role/access, at mag-reset ng password. Superadmin lang ang makaka-access dito.</p></div></div>
+        <div class="page-toolbar"><div><h2>Access control</h2><p>Create users, assign roles/access, and reset passwords. Only Superadmin can access this.</p></div></div>
         <article class="panel full-table" style="margin-bottom:14px">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create dashboard (console) user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Gagawa ng console login account. I-set ang access sa table sa baba pagkatapos. Hihingin ang sarili mong password bilang kumpirmasyon.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create dashboard (console) user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Creates a console login account. Set the access in the table below afterward. Your own password will be required as confirmation.</p></div></div>
           <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
             <label class="field"><span>Username *</span><input id="cuUser" autocapitalize="characters"></label>
             <label class="field"><span>Display name</span><input id="cuName"></label>
@@ -390,7 +390,7 @@
           </div>
         </article>
         <article class="panel full-table" style="margin-bottom:14px">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create mobile / field account</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Para sa mobile app: Technician, Sales agent, o Security. Login: <i>username</i>@ahbafield.app. Superadmin lang.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create mobile / field account</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">For the mobile app: Technician, Sales agent, or Security. Login: <i>username</i>@ahbafield.app. Superadmin only.</p></div></div>
           <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
             <label class="field"><span>Username * (e.g. AHBA_SLI021)</span><input id="cfUser" autocapitalize="characters"></label>
             <label class="field"><span>Role *</span><select id="cfRole"><option value="technician">Technician</option><option value="sales_agent">Sales agent</option><option value="security">Security</option></select></label>
@@ -400,11 +400,11 @@
           </div>
         </article>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Dashboard users</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-tick ang access, tapos i-click ang Save sa bawat user. Default password: Ahba@2026 (papalitan sa unang login).</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Dashboard users</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Tick the access, then click Save for each user. Default password: Ahba@2026 (changed on first login).</p></div></div>
           <div class="table-wrap access-table" id="accessWrap"></div>
         </article>
         <article class="panel full-table" style="margin-top:14px">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Field / mobile accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Login accounts ng field teams (Technician / Sales / Security). Passwords are encrypted at hindi ipinapakita. Use Reset to issue a new one.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Field / mobile accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Login accounts of field teams (Technician / Sales / Security). Passwords are encrypted and not displayed. Use Reset to issue a new one.</p></div></div>
           <div class="dispatch-stats" style="margin:12px 0">
             <div class="small-stat"><span>Total accounts</span><strong id="accountTotal">0</strong></div>
             <div class="small-stat"><span>Active</span><strong id="accountActive">0</strong></div>
@@ -475,8 +475,8 @@
 
   <dialog id="assignModal" class="modal small-modal">
     <div class="modal-head"><div><span class="eyebrow">DISPATCH</span><h2>Assign a field team</h2><p id="assignJobLabel"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
-    <div style="padding:14px 20px 2px"><label class="field"><span>J.O. Number <em style="font-style:normal;color:#c2503a">*required</em> <em id="joLock" style="font-style:normal;color:#9aa6a2"></em></span><input id="assignJONum" required><span style="font-size:9px;color:#8a9894">Kailangan bago mag-dispatch. Makikita ng technician. Hindi na mabubura kapag naset na.</span></label></div>
-    <div style="padding:2px 20px 6px"><label class="field"><span>Dispatch remarks <em style="font-style:normal;color:#9aa6a2">(makikita ng technician)</em></span><input id="assignRemarks"></label></div>
+    <div style="padding:14px 20px 2px"><label class="field"><span>J.O. Number <em style="font-style:normal;color:#c2503a">*required</em> <em id="joLock" style="font-style:normal;color:#9aa6a2"></em></span><input id="assignJONum" required><span style="font-size:9px;color:#8a9894">Required before dispatch. Visible to the technician. Cannot be changed once set.</span></label></div>
+    <div style="padding:2px 20px 6px"><label class="field"><span>Dispatch remarks <em style="font-style:normal;color:#9aa6a2">(visible to the technician)</em></span><input id="assignRemarks"></label></div>
     <div class="assignment-list" id="assignmentList"></div>
   </dialog>
 
@@ -512,7 +512,7 @@
   </dialog>
 
   <dialog id="announceModal" class="modal small-modal">
-    <div class="modal-head"><div><span class="eyebrow">BROADCAST</span><h2>Post announcement</h2><p>Makikita ng mga team sa mobile app (ayon sa audience).</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div class="modal-head"><div><span class="eyebrow">BROADCAST</span><h2>Post announcement</h2><p>Visible to teams in the mobile app (based on the audience).</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div class="form-grid" style="grid-template-columns:1fr">
       <label class="field"><span>Audience</span><select id="annAudience"><option value="all">All teams (Technician + Sales)</option><option value="technician">Technicians only</option><option value="sales">Sales agents only</option></select></label>
       <label class="field"><span>Title</span><input id="annTitle"></label>

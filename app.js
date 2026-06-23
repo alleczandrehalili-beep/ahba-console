@@ -215,6 +215,8 @@ function renderJobs(){
     if(keys==='negative'){ list=jobs.filter(j=>j.status==='negative'); }
     else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&isToday(j.updatedAt)); }
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
+    // For Dispatch: most re-dispatched loads first (highest dispatch_count on top).
+    if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
   // Turn-Ins = unique loads ENCODED today (by created_at). Loads encoded on other days
@@ -271,16 +273,16 @@ function maybePromptRollover(){
   if(!cands.length) return;                                 // nothing to ask yet
   rolloverChecking=true;
   const incs=cands.filter(j=>j.status==='negative').length;
-  const ok=confirm(`May ${cands.length} natirang load mula sa nakaraang araw (${incs} Incomplete).\n\nIbalik ba ang mga ito sa "For Dispatch" (1st Load priority)?\n\nOK = Ibalik   ·   Cancel = Iwan muna`);
+  const ok=confirm(`${cands.length} leftover loads from the previous day (${incs} Incomplete).\n\nReturn these to "For Dispatch" (1st Load priority)?\n\nOK = Return   ·   Cancel = Leave for now`);
   localStorage.setItem(key,today);                          // asked once today
   rolloverChecking=false;
-  if(!ok){ showToast('Iniwan muna ang mga incomplete load.'); return; }
+  if(!ok){ showToast('Left the incomplete loads for now.'); return; }
   cands.forEach(j=>{
     if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
     else { j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
     if(window.AHBASync) window.AHBASync(j);
   });
-  showToast(`${cands.length} load(s) ibinalik sa For Dispatch.`);
+  showToast(`${cands.length} load(s) returned to For Dispatch.`);
   if(typeof renderOverview==='function') renderOverview();
 }
 function unassignJob(jobId){
@@ -314,7 +316,7 @@ function openJobDetail(jobId){
     pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
     fetchPhotosFor([jobId]).then(m=>{
       const list=m[jobId]||[];
-      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ Wala pang litratong na-upload ang technician.</div>';
+      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
@@ -357,7 +359,7 @@ function jobCard(j){
   const drag=canBounce?` draggable="true" data-jobid="${j.id}"`:'';
   const prio=j.priority?`<span class="priority" style="${j.priority!=='1st Load'?'color:#687974;background:#f1f3f1':''}">${j.priority}</span>`:'';
   const dc=j.dispatch_count||0;
-  const dcBadge=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" title="Na-dispatch nang ${dc}x">⟳ ×${dc}</span>`:'';
+  const dcBadge=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" title="Dispatched ${dc}x">⟳ ×${dc}</span>`:'';
   const enc=j.created_at?fmtWhen(j.created_at):(j.load_date?String(j.load_date).slice(0,10):'—');
   const action=j.status==='pending'
     ? `<button class="assign-btn" data-assign="${j.id}" style="margin-top:8px;width:100%">Assign team</button>`
@@ -434,7 +436,7 @@ async function loadTeamGate(code){
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/gate_logs?select=*&team=eq.${encodeURIComponent(code)}&work_date=eq.${date}&order=checked_at.desc&limit=1`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const g=(r.ok?await r.json():[])[0];
-    if(!g){ el.innerHTML='<span style="color:#b97a16">⏳ Hindi pa na-validate ng Security ngayong araw.</span>'; return; }
+    if(!g){ el.innerHTML='<span style="color:#b97a16">⏳ Not yet validated by Security today.</span>'; return; }
     const crew=[g.crew_driver,g.crew_tech1,g.crew_tech2].filter(Boolean).join(', ');
     el.innerHTML=`<div style="display:grid;gap:3px">
       <div><b style="color:#11825f">✓ Gate-out validated</b> · ${fmtWhen(g.checked_at)}</div>
@@ -566,7 +568,7 @@ async function openAssign(jobId){
   const item=(e,best)=>{ const t=e.t,s=e.shift; const crew=[s.driver,s.tech1,s.tech2].filter(Boolean).join(', '); const acct=s.account?` · ${s.account}`:''; const distTxt=e.dist!=null?`${e.dist.toFixed(1)} km away`:(e.loc&&e.loc.area?e.loc.area:'no GPS'); const sub=e.online?`Online${acct}${crew?' · '+crew:''} · ${distTxt}`:`Offline · last seen ${e.loc&&e.loc.location_at?fmtWhen(e.loc.location_at):'—'}`; return `<div class="assignment-item ${best?'recommended':''}"><span class="team-avatar" style="background:${e.online?'#18a57b':t.color}">${t.short}</span><div><strong>${t.name}${best?'<span class="recommend">NEAREST</span>':e.online?'<span class="recommend">ONLINE</span>':''}</strong><p>${sub}</p></div><button class="assign-btn" data-team="${t.code}">Assign</button></div>`; };
   let html='';
   if(online.length){ html+=`<div class="form-sec" style="margin:4px 0 6px">Online now · ${online.length} team(s)</div>`+online.map((e,i)=>item(e,i===0&&e.dist!=null)).join(''); }
-  else { html+='<div class="empty-row">Walang online (naka-time in) na team ngayon. Pwede pa ring mag-assign mula sa listahan sa baba.</div>'; }
+  else { html+='<div class="empty-row">No online (timed-in) team right now. You can still assign from the list below.</div>'; }
   if(offline.length){ html+=`<div class="form-sec" style="margin:14px 0 6px;color:#8a9894">Offline / not signed in</div>`+offline.map(e=>item(e,false)).join(''); }
   $('#assignmentList').innerHTML=html;
   $$('#assignmentList [data-team]').forEach(b=>b.onclick=()=>assignTeam(jobId,b.dataset.team));
@@ -760,7 +762,7 @@ async function renameTechUser(username){
   let nu=(prompt(`New username for mobile account "${username}" (e.g. AHBA_SLI021):`,username)||'').trim().toUpperCase();
   if(!nu||nu===username) return;
   if(!/^[A-Z0-9._-]{3,}$/.test(nu)){ showToast('Username: 3+ chars, letters/numbers/._- only (no spaces).'); return; }
-  if(!confirm(`Rename "${username}" → "${nu}"?\nBagong login: ${nu.toLowerCase()}@ahbafield.app\nSusunod ang mga record (jobs, attendance, expenses, atbp.) sa bagong code.`)) return;
+  if(!confirm(`Rename "${username}" → "${nu}"?\nNew login: ${nu.toLowerCase()}@ahbafield.app\nRecords (jobs, attendance, expenses, etc.) will follow the new code.`)) return;
   if(!await confirmActorPassword()) return;
   try{
     await callAdminFn({action:'rename',target:'tech',username,new_username:nu});
@@ -770,7 +772,7 @@ async function renameTechUser(username){
 }
 // Superadmin: permanently delete a MOBILE/field account (login + profile).
 async function deleteTechUser(username){
-  if(!confirm(`Permanently DELETE mobile account "${username}"?\nMaaalis ang kanilang login at profile. Ang lumang records ay mananatili sa history. Hindi na mababawi.`)) return;
+  if(!confirm(`Permanently DELETE mobile account "${username}"?\nTheir login and profile will be removed. Old records will remain in history. This cannot be undone.`)) return;
   if(!await confirmActorPassword()) return;
   try{
     await callAdminFn({action:'delete',target:'tech',username});
@@ -1262,9 +1264,9 @@ function applyAccess(u){
 async function deleteAllLoads(){
   const u=window.dashUser;
   if(!hasDispatchAccess(u)){ showToast('No access to clear loads'); return; }
-  if(!confirm('⚠️ Buburahin ang LAHAT ng loads/job orders sa dispatch board (pati litrato at docs nila). Hindi na ito mababawi. Magpatuloy?')) return;
-  const t=(prompt('Para kumpirmahin, i-type ang: DELETE ALL')||'').trim();
-  if(t!=='DELETE ALL'){ showToast('Cancelled — hindi tumugma ang confirmation.'); return; }
+  if(!confirm('⚠️ This will delete ALL loads/job orders on the dispatch board (including their photos and docs). This cannot be undone. Continue?')) return;
+  const t=(prompt('To confirm, type: DELETE ALL')||'').trim();
+  if(t!=='DELETE ALL'){ showToast('Cancelled — the confirmation did not match.'); return; }
   if(!await confirmActorPassword()) return;   // extra safety vs. accidental clears
   showToast('Deleting all loads…');
   try{
@@ -1721,7 +1723,7 @@ function handleImportFile(file){
     catch(err){ showToast('Could not read file: '+err.message); return; }
     if(!parsed.rows.length){
       const seen=(parsed.headers||[]).filter(Boolean).join(', ').slice(0,300);
-      alert('Walang nakitang tugmang column.\n\nMga header na nakita: '+(seen||'(wala)')+'\n\nGamitin ang "Template" button para sa tamang format, o tiyaking may column gaya ng FIRST NAME / SUBSCRIBER / PRIMARY NO. / JOB ORDER NO.');
+      alert('No matching column found.\n\nHeaders detected: '+(seen||'(none)')+'\n\nUse the "Template" button for the correct format, or make sure there is a column like FIRST NAME / SUBSCRIBER / PRIMARY NO. / JOB ORDER NO.');
       return;
     }
     if(!confirm(`Sheet "${parsed.sheet}" · ${parsed.rows.length} row(s) detected.\n\nImport as new job orders straight to For Dispatch?`)) return;
@@ -1750,7 +1752,7 @@ async function importJobsFromRows(rows){
     out.push(o);
   });
   const skipped=rows.length-out.length;
-  if(!out.length){ alert('Walang valid na row na na-import.\n\nTiyaking may laman ang FIRST NAME/SUBSCRIBER, PRIMARY NO., o JOB ORDER NO. sa bawat row.'); return; }
+  if(!out.length){ alert('No valid rows were imported.\n\nMake sure FIRST NAME/SUBSCRIBER, PRIMARY NO., or JOB ORDER NO. is filled in for each row.'); return; }
   showToast(`Importing ${out.length} job order(s)…`);
   try{
     for(let i=0;i<out.length;i+=100){
