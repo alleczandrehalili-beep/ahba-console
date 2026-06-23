@@ -200,31 +200,43 @@ async function renderTeamLocations(){
 }
 // Remove any route currently drawn on the map.
 function clearTeamTrack(){ if(trackLayer&&leafMap){ try{ leafMap.removeLayer(trackLayer); }catch(e){} } trackLayer=null; }
-// Click an online pin → draw that team's location trail for today as a connecting line + numbered stops.
-async function showTeamTrackOnMap(code){
+// Populate the map's route-history team dropdown from all field accounts.
+async function populateMapHistTeams(){
+  const sel=$('#mapHistTeam'); if(!sel||sel.dataset.filled) return;
+  let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
+  const opts=(rows||[]).filter(r=>r.username).sort((a,b)=>String(a.username).localeCompare(String(b.username)))
+    .map(r=>`<option value="${r.username}">${r.username}${r.area?(' · '+r.area):''}</option>`).join('');
+  sel.innerHTML='<option value="">Route history…</option>'+opts;
+  sel.dataset.filled='1';
+  const d=$('#mapHistDate'); if(d&&!d.value) d.value=manilaToday();
+}
+// Draw a team's location trail for a given date as a connecting line + numbered stops.
+// Works for ANY team and ANY date (including offline teams / past days).
+async function showTeamTrackOnMap(code, date){
   if(!leafMap) return;
   clearTeamTrack();
+  date = date || manilaToday();
   let pts=[];
   try{
-    const date=manilaToday();
     const r=await fetch(`${SUPA_URL}/rest/v1/location_history?select=lat,lng,area,reason,created_at&username=eq.${encodeURIComponent(code)}&work_date=eq.${date}&order=created_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     pts=(r.ok?await r.json():[]).filter(p=>p.lat!=null&&p.lng!=null);
   }catch(e){}
-  // append the latest known position as the "NOW" stop
+  // append the latest known position as the "NOW" stop — only when viewing TODAY
   const cur=techIndex[code];
-  if(cur&&cur.lat!=null&&cur.lng!=null){
+  if(date===manilaToday() && cur&&cur.lat!=null&&cur.lng!=null){
     const last=pts[pts.length-1];
     if(!last || Math.abs(+last.lat-+cur.lat)>1e-6 || Math.abs(+last.lng-+cur.lng)>1e-6)
       pts.push({lat:cur.lat,lng:cur.lng,area:cur.area,reason:'current',created_at:cur.location_at});
   }
-  if(!pts.length){ showToast(`No location history yet for ${code} today`); return; }
+  if(!pts.length){ showToast(`No location history for ${code} on ${date}`); return; }
+  const isToday=date===manilaToday();
   const latlngs=pts.map(p=>[+p.lat,+p.lng]);
   const grp=L.layerGroup();
   if(latlngs.length>1) L.polyline(latlngs,{color:'#0e6b50',weight:3,opacity:.85}).addTo(grp);
   pts.forEach((p,i)=>{
     const isLast=i===pts.length-1;
-    const label=isLast?'NOW':String(i+1);
-    const fill=isLast?'#18a57b':'#f5c518', txt=isLast?'#fff':'#3a2c08';
+    const label=(isLast&&isToday)?'NOW':String(i+1);
+    const fill=(isLast&&isToday)?'#18a57b':'#f5c518', txt=(isLast&&isToday)?'#fff':'#3a2c08';
     const icon=L.divIcon({className:'trk-pin',html:`<div style="background:${fill};color:${txt};border:2px solid #fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font:800 9px Manrope;box-shadow:0 2px 6px rgba(0,0,0,.35)">${label}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
     const time=p.created_at?fmtTime(p.created_at):'—';
     const place=p.area||`${(+p.lat).toFixed(4)}, ${(+p.lng).toFixed(4)}`;
@@ -233,7 +245,7 @@ async function showTeamTrackOnMap(code){
   });
   grp.addTo(leafMap); trackLayer=grp;
   try{ leafMap.fitBounds(L.latLngBounds(latlngs).pad(0.25)); }catch(e){}
-  showToast(`Route history: ${code} — ${pts.length} stop${pts.length===1?'':'s'} (tap empty map to clear)`);
+  showToast(`Route history: ${code} · ${date} — ${pts.length} stop${pts.length===1?'':'s'} (tap empty map to clear)`);
 }
 function renderJobs(){
   maybePromptRollover();
@@ -1852,6 +1864,12 @@ function init(){
   // Map controls
   $$('.map-actions [data-seg]').forEach(b=>b.onclick=()=>{$$('.map-actions [data-seg]').forEach(x=>x.classList.remove('active'));b.classList.add('active');mapFilter=b.dataset.seg;renderTeamLocations()});
   $('#mapExpandBtn')?.addEventListener('click',()=>{$('.map-panel').classList.toggle('expanded');setTimeout(()=>{if(leafMap)leafMap.invalidateSize()},250)});
+  // Route history: pick any team + date (works for offline teams / past days)
+  populateMapHistTeams();
+  const mapHist=()=>{ const c=$('#mapHistTeam')?.value; const d=$('#mapHistDate')?.value||manilaToday(); if(c) showTeamTrackOnMap(c,d); else clearTeamTrack(); };
+  $('#mapHistTeam')?.addEventListener('change',mapHist);
+  $('#mapHistDate')?.addEventListener('change',()=>{ if($('#mapHistTeam')?.value) mapHist(); });
+  $('#mapHistClear')?.addEventListener('click',()=>{ clearTeamTrack(); const s=$('#mapHistTeam'); if(s)s.value=''; });
   setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
   // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
   setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
