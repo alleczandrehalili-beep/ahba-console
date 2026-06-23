@@ -742,9 +742,35 @@ async function renderAccounts(){
   $('#accountSignedIn').textContent=rows.filter(r=>r.last_login).length;
   body.innerHTML=rows.map(r=>{
     const status=r.must_change?'<span class="status pending">Needs setup</span>':'<span class="status completed">Active</span>';
-    return `<tr><td><strong>${r.username}</strong></td><td>${r.email||'—'}</td><td>${r.area||'—'}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}<button class="assign-btn" style="margin-left:8px" data-reset="${r.username}" data-email="${r.email||''}">Reset</button></td></tr>`;
+    const acts=`<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
+    return `<tr><td><strong>${r.username}</strong></td><td>${r.email||'—'}</td><td>${r.area||'—'}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}</td><td>${acts}</td></tr>`;
   }).join('');
   $$('#accountsBody [data-reset]').forEach(b=>b.onclick=()=>openReset(b.dataset.reset,b.dataset.email));
+  $$('#accountsBody [data-renametech]').forEach(b=>b.onclick=()=>renameTechUser(b.dataset.renametech));
+  $$('#accountsBody [data-deltech]').forEach(b=>b.onclick=()=>deleteTechUser(b.dataset.deltech));
+}
+// Superadmin: rename a MOBILE/field account (username == team code; cascades to records).
+async function renameTechUser(username){
+  let nu=(prompt(`New username for mobile account "${username}" (e.g. AHBA_SLI021):`,username)||'').trim().toUpperCase();
+  if(!nu||nu===username) return;
+  if(!/^[A-Z0-9._-]{3,}$/.test(nu)){ showToast('Username: 3+ chars, letters/numbers/._- only (no spaces).'); return; }
+  if(!confirm(`Rename "${username}" → "${nu}"?\nBagong login: ${nu.toLowerCase()}@ahbafield.app\nSusunod ang mga record (jobs, attendance, expenses, atbp.) sa bagong code.`)) return;
+  if(!await confirmActorPassword()) return;
+  try{
+    await callAdminFn({action:'rename',target:'tech',username,new_username:nu});
+    showToast(`${username} → ${nu}. New login: ${nu.toLowerCase()}@ahbafield.app`);
+    renderAccounts();
+  }catch(e){ showToast('Rename failed: '+e.message); }
+}
+// Superadmin: permanently delete a MOBILE/field account (login + profile).
+async function deleteTechUser(username){
+  if(!confirm(`Permanently DELETE mobile account "${username}"?\nMaaalis ang kanilang login at profile. Ang lumang records ay mananatili sa history. Hindi na mababawi.`)) return;
+  if(!await confirmActorPassword()) return;
+  try{
+    await callAdminFn({action:'delete',target:'tech',username});
+    showToast(`${username} deleted.`);
+    renderAccounts();
+  }catch(e){ showToast('Delete failed: '+e.message); }
 }
 function openReset(username,email){
   $('#resetUser').textContent=username;
