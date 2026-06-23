@@ -619,16 +619,18 @@ function tlFmtHour(h){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); const ap
 function renderTimeline(){
   const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
   const date=dEl?dEl.value:manilaToday();
-  // The whole timeline is scoped to loads ENCODED today (created_at = today, Manila):
-  // For Dispatch shows only newly-encoded loads; the team rows show only today's loads.
-  const encToday=j=>{ const t=j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):''; return t===manilaToday(); };
+  // Same dynamics as the Dispatch Board: For Dispatch = today's WORKING SET (load_date today
+  // or none). Leftover loads from previous days only appear here AFTER the dispatcher/superadmin
+  // confirms the end-of-day rollover — which we prompt for here too.
+  maybePromptRollover();
+  const loadToday=d=>!d || String(d).slice(0,10)===manilaToday();
   // Pull online status + newly-created technicians, then re-render so EVERY available
   // technician team (incl. brand-new accounts from Access Control) shows on the timeline.
   Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
-  // Backlog: newly-encoded pending loads not yet placed on the timeline — PRIORITIZED by how
-  // many times the load has been dispatched (most-redispatched first), then High priority, then JO id.
+  // Backlog: ALL for-dispatch loads in today's working set, not yet placed on the timeline —
+  // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
-  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at && encToday(j))
+  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date))
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
@@ -643,7 +645,7 @@ function renderTimeline(){
   teams.forEach(t=>{
     const s=shiftByTeam[t.code]||{};
     const dot=s.online?'#18a57b':'#b0bab7';
-    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date && encToday(j));
+    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date && loadToday(j.load_date));
     const laid=tlLayoutTeamJobs(dayJobs,date);
     const blocks=laid.map(({j,startMin,durMin,bumped})=>{
       const hh=startMin/60; const endMin=startMin+durMin;
