@@ -636,7 +636,7 @@ function openValidate(jobId){
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
-    F('Plan',j.plan),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),
+    F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
     F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
     F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)

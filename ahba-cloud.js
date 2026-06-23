@@ -1,3 +1,4 @@
+/* © 2026 AHBA Development — Proprietary & confidential. Unauthorized copying, reuse, or distribution is prohibited. */
 (function () {
   const config = {
     url: 'https://avjzkfxgzeyxtihkofed.supabase.co',
@@ -39,7 +40,7 @@
     'negative_remark','negative_at','dispatch_count','history','created_at',
     'payment_mode','payment_amount','ar_no','work_account','crew_driver','crew_tech1','crew_tech2',
     'remittance_received','remittance_received_by','remittance_received_at',
-    'dwelling_type','install_fee_type','amount_to_collect','completed_at'];
+    'dwelling_type','install_fee_type','amount_to_collect','completed_at','add_on'];
 
   function normalizeJob(row) {
     var j = {
