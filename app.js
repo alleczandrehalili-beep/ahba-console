@@ -606,6 +606,7 @@ function applyJobTableFilter(){
 // ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
 const TL_START=8, TL_END=21;                 // 8 AM – 9 PM
 const TL_HOURS=TL_END-TL_START;              // 13 hourly columns
+const TL_DEFMIN=90;                          // default Job Order duration: 1 hr 30 mins
 const tlDayStr=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
 function tlStatusColor(s){
   const m={pending:['#fff','#56655f','#d4dcd5'],assigned:['#eaf1ff','#0c447c','#b5d4f4'],acknowledged:['#eaf1ff','#0c447c','#b5d4f4'],
@@ -618,13 +619,16 @@ function tlFmtHour(h){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); const ap
 function renderTimeline(){
   const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
   const date=dEl?dEl.value:manilaToday();
+  // The whole timeline is scoped to loads ENCODED today (created_at = today, Manila):
+  // For Dispatch shows only newly-encoded loads; the team rows show only today's loads.
+  const encToday=j=>{ const t=j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):''; return t===manilaToday(); };
   // Pull online status + newly-created technicians, then re-render so EVERY available
   // technician team (incl. brand-new accounts from Access Control) shows on the timeline.
   Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
-  // Backlog: pending loads not yet placed on the timeline — PRIORITIZED by how many times
-  // the load has been dispatched (most-redispatched first), then High priority, then JO id.
+  // Backlog: newly-encoded pending loads not yet placed on the timeline — PRIORITIZED by how
+  // many times the load has been dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
-  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at)
+  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at && encToday(j))
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
@@ -632,19 +636,24 @@ function renderTimeline(){
   }
   // Status tally banner under the For Dispatch section
   renderTimelineCounts();
+  // Clicksoft-style status history feed
+  renderTimelineHistory();
   const hourHdr=Array.from({length:TL_HOURS}).map((_,i)=>{ const h=TL_START+i; const ap=h<12?'AM':'PM'; const h12=((h+11)%12)+1; return `<div class="tl-h">${h12} ${ap}</div>`; }).join('');
   let html=`<div class="tl-headrow"><div class="tl-team-h">Team</div><div class="tl-axis">${hourHdr}</div></div>`;
   teams.forEach(t=>{
     const s=shiftByTeam[t.code]||{};
     const dot=s.online?'#18a57b':'#b0bab7';
-    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date);
-    const blocks=dayJobs.map(j=>{
-      const dt=new Date(j.scheduled_at); const hh=dt.getHours()+dt.getMinutes()/60;
-      let left=((hh-TL_START)/TL_HOURS)*100; let w=((Number(j.est_minutes)||60)/60/TL_HOURS)*100;
+    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date && encToday(j));
+    const laid=tlLayoutTeamJobs(dayJobs,date);
+    const blocks=laid.map(({j,startMin,durMin,bumped})=>{
+      const hh=startMin/60; const endMin=startMin+durMin;
+      let left=((hh-TL_START)/TL_HOURS)*100; let w=((durMin/60)/TL_HOURS)*100;
       if(left+w<=0||left>=100) return '';
       if(left<0){ w+=left; left=0; } if(left+w>100) w=100-left; if(w<3.2) w=3.2;
       const c=tlStatusColor(j.status);
-      return `<div class="tl-block" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${tlFmtHour(hh)}">${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+      const win=`${tlFmtHour(startMin/60)}–${tlFmtHour(endMin/60)}`;
+      const mark=bumped?'↪ ':'';
+      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
     }).join('');
     // Assigned account + designated driver / technician for this team's current shift
     const acct=s.account||t.account||'';
@@ -659,6 +668,36 @@ function renderTimeline(){
   // Search box: highlight matching job orders (backlog + scheduled blocks)
   const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
   tlApplySearch();
+}
+// Per-hour cascade layout for one team's jobs on a day. A Job Order eats time based on
+// the team's actual update (start → completion / "now" if still running). If a JO runs
+// long, the queued ones after it auto-move later so they never overlap.
+// Default planned duration = 1 hr 30 mins (TL_DEFMIN).
+function tlMinOfDay(ts){ if(!ts) return null; const d=new Date(ts); if(isNaN(d)) return null; return d.getHours()*60+d.getMinutes(); }
+function tlLayoutTeamJobs(dayJobs,date){
+  const isToday=date===manilaToday();
+  const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
+  const sorted=dayJobs.slice().sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at));
+  const out=[]; let prevEnd=null;
+  sorted.forEach(j=>{
+    const planned=tlMinOfDay(j.scheduled_at);
+    let startMin=planned!=null?planned:TL_START*60;
+    let bumped=false;
+    if(prevEnd!=null && startMin<prevEnd){ startMin=prevEnd; bumped=true; } // cascade after previous
+    let dur=Number(j.est_minutes)||TL_DEFMIN;
+    const st=(j.status||'').toLowerCase();
+    // Actual time consumed, based on the team's status update
+    if(st==='completed' && j.completed_at){
+      const cm=tlMinOfDay(j.completed_at);
+      if(cm!=null && cm>startMin) dur=cm-startMin;            // real time it took
+    } else if(isToday && ['acknowledged','assigned','en-route','travel','on-site','in-progress'].includes(st)){
+      if(nowMin>startMin+dur) dur=nowMin-startMin;            // still running & overran → keeps eating time
+    }
+    if(dur<15) dur=15;
+    out.push({j,startMin,durMin:dur,bumped});
+    prevEnd=startMin+dur;
+  });
+  return out;
 }
 // Status tally banner — counts every load into the 7 dispatch buckets, colour-coded.
 function tlBucket(s){
@@ -683,12 +722,40 @@ function renderTimelineCounts(){
     ['completed','Completed','#e7f7ef','#11825f','#c4ecd9'],
     ['cancelled','Cancelled','#f2f2f2','#87928f','#dcdfdd']
   ];
+  // Only loads ENCODED today (by created_at, Manila) — same rule as Turn-Ins.
+  const today=manilaToday();
+  const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
+  const todayLoads=[...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
   const cnt={}; defs.forEach(d=>cnt[d[0]]=0);
-  jobs.forEach(j=>{ cnt[tlBucket(j.status)]++; });
-  const total=jobs.length;
+  todayLoads.forEach(j=>{ cnt[tlBucket(j.status)]++; });
+  const total=todayLoads.length;
   el.innerHTML=defs.map(([k,label,bg,fg,bd])=>
     `<span class="tl-count" style="background:${bg};color:${fg};border:1px solid ${bd}"><b>${cnt[k]}</b>${label}</span>`
   ).join('')+`<span class="tl-count tl-count-total"><b>${total}</b>Total</span>`;
+}
+// Clicksoft-style monitoring: a feed of today's loads with their full status progression.
+function renderTimelineHistory(){
+  const el=$('#tlHistory'); if(!el) return;
+  const today=manilaToday();
+  const encToday=j=>{ const t=j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):''; return t===today; };
+  const loads=jobs.filter(encToday)
+    .sort((a,b)=>new Date(b.updatedAt||b.created_at||0)-new Date(a.updatedAt||a.created_at||0));
+  if(!loads.length){ el.innerHTML='<div class="empty-row">Wala pang load na na-encode ngayong araw.</div>'; return; }
+  el.innerHTML=loads.map(j=>{
+    const cls=(j.status||'pending'); const lbl=statusLabel(j.status||'pending');
+    const lines=(j.history||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const log=lines.length?lines.map(l=>{ const m=l.match(/^\[(.+?)\]\s*(.*)$/);
+      return m?`<div class="tl-hist-line"><span class="tl-hist-time">${m[1].replace(/</g,'&lt;')}</span><span>${m[2].replace(/</g,'&lt;')}</span></div>`
+              :`<div class="tl-hist-line"><span class="tl-hist-time"></span><span>${l.replace(/</g,'&lt;')}</span></div>`;
+    }).join(''):'<div class="tl-hist-line"><span class="tl-hist-time"></span><span style="color:#9aa6a2">No status updates yet.</span></div>';
+    const jo=(j.job_order_no||'—').replace(/</g,'&lt;'); const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;');
+    const dc=Number(j.dispatch_count)||0;
+    return `<div class="tl-hist-item" data-tlhist="${j.id}" data-tlsearch="${tlSearchText(j)}">`
+      +`<div class="tl-hist-head"><b>${sub}</b><span class="tl-hist-jo">J.O. ${jo}</span><span class="status ${cls}">${lbl}</span>${j.team?`<span class="tl-hist-team">${j.team.replace(/</g,'&lt;')}</span>`:''}${dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px">⟳${dc}</span>`:''}</div>`
+      +`<div class="tl-hist-log">${log}</div></div>`;
+  }).join('');
+  $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
+  const tg=$('#tlHistToggle'); if(tg&&!tg._wired){ tg._wired=true; tg.onclick=()=>{ const h=$('#tlHistory'); const hidden=h.style.display==='none'; h.style.display=hidden?'':'none'; tg.textContent=hidden?'Hide':'Show'; }; }
 }
 // Build a lowercase searchable string per job (JO #, subscriber, team, area, address, JO number)
 function tlSearchText(j){
@@ -698,7 +765,7 @@ function tlSearchText(j){
 // Highlight matches and dim the rest; clears when the box is empty
 function tlApplySearch(){
   const sb=$('#tlSearch'); const q=(sb?sb.value:'').trim().toLowerCase();
-  const all=$$('#tlBacklog [data-tlsearch], #tlGrid [data-tlsearch]');
+  const all=$$('#tlBacklog [data-tlsearch], #tlGrid [data-tlsearch], #tlHistory [data-tlsearch]');
   let firstHit=null;
   all.forEach(el=>{
     el.classList.remove('tl-hit','tl-dim');
@@ -731,7 +798,7 @@ function tlPickTime(jobId, team, date, defHour){
     m=document.createElement('dialog'); m.id='tlTimeModal'; m.className='modal small-modal';
     m.innerHTML='<div class="modal-head"><div><h2>Set preferred schedule</h2><p id="tlTimeSub"></p></div><button class="icon-btn" data-x>✕</button></div>'
       +'<div class="form-grid"><label class="field full"><span>Preferred time (technician arrival)</span><input type="time" id="tlTimeInput" step="900" min="08:00" max="21:00"></label>'
-      +'<label class="field full"><span>Estimated duration</span><select id="tlTimeDur"><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="90">1.5 hours</option><option value="120">2 hours</option><option value="180">3 hours</option><option value="240">4 hours</option></select></label></div>'
+      +'<label class="field full"><span>Estimated duration</span><select id="tlTimeDur"><option value="30">30 minutes</option><option value="60">1 hour</option><option value="90" selected>1.5 hours</option><option value="120">2 hours</option><option value="180">3 hours</option><option value="240">4 hours</option></select></label></div>'
       +'<div class="modal-actions"><button class="secondary-btn" data-x>Cancel</button><button class="primary-btn" id="tlTimeOk">Schedule</button></div>';
     document.body.appendChild(m);
     m.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>closeModals());
@@ -739,7 +806,7 @@ function tlPickTime(jobId, team, date, defHour){
   const hh=Math.max(TL_START,Math.min(TL_END-0.5,defHour||TL_START));
   const H=Math.floor(hh), M=Math.round((hh-H)*60/15)*15;
   m.querySelector('#tlTimeInput').value=String(H).padStart(2,'0')+':'+String(M%60).padStart(2,'0');
-  m.querySelector('#tlTimeDur').value=String(j.est_minutes||60);
+  m.querySelector('#tlTimeDur').value=String(j.est_minutes||TL_DEFMIN);
   m.querySelector('#tlTimeSub').textContent=jobId+' · '+(j.subscriber||'').slice(0,28)+' → '+team;
   m.querySelector('#tlTimeOk').onclick=()=>{
     const v=m.querySelector('#tlTimeInput').value; if(!v){ showToast('Pumili ng oras'); return; }
@@ -763,7 +830,7 @@ async function tlSchedule(jobId, team, date, hour, est){
   } else {
     j.history=appendHistory(j.history,`Rescheduled @ ${tlFmtHour(hour)}`);
   }
-  j.scheduled_at=iso; j.est_minutes=est||j.est_minutes||60;
+  j.scheduled_at=iso; j.est_minutes=est||j.est_minutes||TL_DEFMIN;
   save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
   showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`);
 }
