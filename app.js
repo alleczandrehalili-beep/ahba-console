@@ -14,7 +14,7 @@ const names=Array.from({length:20},(_,i)=>`AHBA_SLI${String(i+1).padStart(3,'0')
 const areas=['Quezon City','Manila','Makati','Pasig','Taguig','Caloocan','Parañaque','Mandaluyong','San Juan','Marikina'];
 const statuses=['on-site','en-route','on-site','available','en-route','on-site','en-route','available','on-site','en-route','on-site','offline','en-route','on-site','available','en-route','on-site','offline','available','en-route'];
 const colors=['#1a9d79','#4086e8','#9a6edb','#ee8564','#16a0ad','#e3a23c'];
-const teams=names.map((name,i)=>({id:i+1,name,code:name,short:String(i+1).padStart(3,'0'),status:statuses[i],area:areas[i%areas.length],jobs: i%4+1,completed: Math.max(0,(i*3)%7),rating:(4.6+(i%4)*.1).toFixed(1),x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2+(i%2)}));
+let teams=names.map((name,i)=>({id:i+1,name,code:name,short:String(i+1).padStart(3,'0'),status:statuses[i],area:areas[i%areas.length],jobs: i%4+1,completed: Math.max(0,(i*3)%7),rating:(4.6+(i%4)*.1).toFixed(1),x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2+(i%2)}));
 
 // Supabase (read-only here) for the Accounts panel
 const SUPA_URL='https://avjzkfxgzeyxtihkofed.supabase.co';
@@ -603,13 +603,36 @@ function applyJobTableFilter(){
   const empty=$('#workOrderEmpty'); if(empty) empty.hidden=shown!==0;
 }
 
+// Merge technician accounts from the DB into the team list so NEWLY-created technicians
+// (made in Access Control) appear everywhere: dispatch assign, Field Teams, dropdowns, monitoring.
+async function syncTeamsFromDb(){
+  let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
+  if(!rows||!rows.length) return 0;
+  const have=new Set(teams.map(t=>String(t.code).toUpperCase()));
+  let added=0;
+  rows.forEach(r=>{
+    if((r.role||'technician')!=='technician') return;      // field technicians only (Sales/Security excluded here)
+    const code=String(r.username||'').toUpperCase(); if(!code||have.has(code)) return;
+    const i=teams.length;
+    teams.push({id:i+1,name:code,code,short:((code.replace(/[^0-9]/g,'').slice(-3))||String(i+1)).padStart(3,'0'),
+      status:'offline',area:r.area||'',jobs:0,completed:0,rating:'—',
+      x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2});
+    have.add(code); added++;
+  });
+  if(added) buildTeamDropdowns();
+  return added;
+}
+function buildTeamDropdowns(){
+  if($('#expenseTeam')) $('#expenseTeam').innerHTML=teams.map(t=>`<option>${t.name}</option>`).join('');
+  if($('#orderTeam')) $('#orderTeam').innerHTML='<option value="">— Unassigned —</option>'+teams.map(t=>`<option>${t.name}</option>`).join('');
+}
 async function openAssign(jobId){
   const job=jobs.find(j=>j.id===jobId);$('#assignJobLabel').textContent=`${job.id} · ${job.subscriber} · ${job.area}`;$('#assignModal').dataset.job=jobId;
   const joEl=$('#assignJONum'); if(joEl){ joEl.value=job.job_order_no||''; joEl.readOnly=!!job.job_order_no; joEl.style.background=job.job_order_no?'#f1f3f1':''; if($('#joLock'))$('#joLock').textContent=job.job_order_no?'(locked)':''; }
   const remEl=$('#assignRemarks'); if(remEl) remEl.value=job.dispatched_remarks||'';
   openModal($('#assignModal'));
   $('#assignmentList').innerHTML='<div class="empty-row">Loading online teams…</div>';
-  await Promise.all([fetchTechLocations(), loadTeamShifts()]);
+  await Promise.all([fetchTechLocations(), loadTeamShifts(), syncTeamsFromDb()]);
   const dest=areaCoord(job.area);
   const enrich=t=>{ const loc=techIndex[t.code]; let dist=null; if(loc&&loc.lat!=null&&loc.lng!=null&&dest)dist=haversineKm(loc.lat,loc.lng,dest[0],dest[1]); const s=shiftByTeam[t.code]||{}; return {t,loc,dist,online:!!s.online,shift:s}; };
   const all=teams.map(enrich);
@@ -800,12 +823,24 @@ async function renderAccounts(){
   $('#accountSignedIn').textContent=rows.filter(r=>r.last_login).length;
   body.innerHTML=rows.map(r=>{
     const status=r.must_change?'<span class="status pending">Needs setup</span>':'<span class="status completed">Active</span>';
-    const acts=`<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
+    const acts=`<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-areatech="${r.username}" data-area="${(r.area||'').replace(/"/g,'&quot;')}">Area</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
     return `<tr><td><strong>${r.username}</strong></td><td>${r.email||'—'}</td><td>${r.area||'—'}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}</td><td>${acts}</td></tr>`;
   }).join('');
   $$('#accountsBody [data-reset]').forEach(b=>b.onclick=()=>openReset(b.dataset.reset,b.dataset.email));
   $$('#accountsBody [data-renametech]').forEach(b=>b.onclick=()=>renameTechUser(b.dataset.renametech));
   $$('#accountsBody [data-deltech]').forEach(b=>b.onclick=()=>deleteTechUser(b.dataset.deltech));
+  $$('#accountsBody [data-areatech]').forEach(b=>b.onclick=()=>editTechArea(b.dataset.areatech, b.dataset.area));
+}
+// Edit the area of a MOBILE/field account (technicians.area) — allowed for console users via RLS.
+async function editTechArea(username, current){
+  const a=prompt(`Area for ${username}:`, current||'');
+  if(a===null) return;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/technicians?username=eq.${encodeURIComponent(username)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({area:a.trim(),updated_at:new Date().toISOString()})});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
+    showToast(`${username} area updated`);
+    renderAccounts();
+  }catch(e){ showToast('Area update failed: '+e.message); }
 }
 // Superadmin: rename a MOBILE/field account (username == team code; cascades to records).
 async function renameTechUser(username){
@@ -1818,12 +1853,13 @@ async function importJobsFromRows(rows){
 
 function init(){
   injectIcons();const d=new Date();$('#todayLabel').textContent=d.toLocaleDateString('en-PH',{timeZone:TZ,weekday:'short',month:'short',day:'numeric'});$$('input[type=date]').forEach(i=>i.value=manilaToday());
-  $('#expenseTeam').innerHTML=teams.map(t=>`<option>${t.name}</option>`).join('');
-  if($('#orderTeam'))$('#orderTeam').innerHTML='<option value="">— Unassigned —</option>'+teams.map(t=>`<option>${t.name}</option>`).join('');
+  buildTeamDropdowns();
   renderOverview();renderTeams();renderNotifPop();
+  // Pull newly-created technician accounts into the team list (assign, Field Teams, dropdowns)
+  syncTeamsFromDb().then(a=>{ if(a){ renderTeams($('#teamSearch')?.value||''); } });
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
-  const refreshShifts=()=>loadTeamShifts().then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#dispatchPage')?.classList.contains('active')) renderJobs(); if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
+  const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#dispatchPage')?.classList.contains('active')) renderJobs(); if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
   refreshShifts(); setInterval(refreshShifts, 20000);
 
   // Metric cards → clickable shortcuts
