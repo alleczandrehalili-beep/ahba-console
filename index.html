@@ -33,6 +33,8 @@
     .doc-sec h4{font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:10px 0 8px}
     #valModal.modal{width:min(820px,calc(100% - 30px))}
     #valModal{max-height:92vh;overflow:auto}
+    /* Tall modals scroll inside; header + action buttons stay reachable */
+    #orderModal,#jobDetailModal,#teamDetailModal,#announceModal{max-height:92vh;overflow:auto}
     .dispatch-board{display:flex!important;grid-template-columns:none!important;gap:10px;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin}
     .dispatch-board::-webkit-scrollbar{height:10px}
     .dispatch-board::-webkit-scrollbar-thumb{background:#c2ccc8;border-radius:6px}
