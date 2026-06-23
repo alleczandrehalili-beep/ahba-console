@@ -74,15 +74,25 @@ html,body{overflow-x:hidden;max-width:100%}
 .access-table .assign-btn{font-size:8px;padding:4px 6px}
 /* Dispatch timeline (Gantt) */
 .tl-grid{min-width:820px}
-.tl-headrow,.tl-row{display:grid;grid-template-columns:120px 1fr;border-top:1px solid var(--line)}
+.tl-headrow,.tl-row{display:grid;grid-template-columns:172px 1fr;border-top:1px solid var(--line)}
 .tl-headrow{background:#f8f9f7;border-top:0;position:sticky;top:0;z-index:2}
 .tl-team-h{padding:7px 10px;font-size:9px;color:#889591;text-transform:uppercase;letter-spacing:.06em;border-right:1px solid var(--line)}
-.tl-axis{display:grid;grid-template-columns:repeat(14,1fr)}
+.tl-axis{display:grid;grid-template-columns:repeat(13,1fr)}
 .tl-h{font-size:9px;color:#889591;text-align:center;padding:7px 0;border-left:1px solid #eef1ed}
-.tl-team{display:flex;align-items:center;padding:6px 10px;font:700 11px Manrope;border-right:1px solid var(--line);background:#fff}
-.tl-track{position:relative;height:42px;background:repeating-linear-gradient(90deg,transparent,transparent calc(100%/14 - 1px),#eef1ed calc(100%/14 - 1px),#eef1ed calc(100%/14))}
+.tl-team{display:flex;flex-direction:column;justify-content:center;gap:2px;padding:5px 10px;border-right:1px solid var(--line);background:#fff;overflow:hidden}
+.tl-team-name{display:flex;align-items:center;font:700 11px Manrope}
+.tl-acct{font-size:8.5px;font-weight:700;color:#127b5d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-crew{font-size:8px;color:#7d8c88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-track{position:relative;height:42px;background:repeating-linear-gradient(90deg,transparent,transparent calc(100%/13 - 1px),#eef1ed calc(100%/13 - 1px),#eef1ed calc(100%/13))}
 .tl-track.tl-over{background:#e7f4ed}
 .tl-block{position:absolute;top:5px;height:32px;border-radius:7px;padding:3px 6px;font:800 9.5px Manrope;line-height:1.1;overflow:hidden;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.18);box-sizing:border-box}
 .tl-block small{display:block;font-weight:400;font-size:8.5px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-chip{background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:11px;cursor:grab;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-.tl-chip svg{width:13px;height:13px}
+/* For Dispatch backlog — compact, oriented grid of small cards */
+#tlBacklog{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:6px!important;max-height:168px;overflow:auto;padding:10px 14px!important}
+.tl-chip{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:9.5px;font-weight:700;color:var(--ink);cursor:grab;display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 3px rgba(20,45,40,.05);transition:box-shadow .12s ease,border-color .12s ease,transform .05s ease}
+.tl-chip:hover{border-color:#9fd9c2;box-shadow:0 3px 9px rgba(20,45,40,.12)}
+.tl-chip:active{cursor:grabbing;transform:scale(.98)}
+.tl-chip svg{width:11px;height:11px;color:#16936e;flex:none}
+/* Search highlight: matches glow, the rest dim */
+.tl-hit{outline:2px solid var(--green);outline-offset:1px;box-shadow:0 0 0 4px #18a57b30!important;z-index:6}
+.tl-dim{opacity:.28;filter:grayscale(.4)}

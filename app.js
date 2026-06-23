@@ -604,8 +604,8 @@ function applyJobTableFilter(){
 }
 
 // ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
-const TL_START=6, TL_END=20;                 // 6 AM – 8 PM
-const TL_HOURS=TL_END-TL_START;              // 14 hourly columns
+const TL_START=8, TL_END=21;                 // 8 AM – 9 PM
+const TL_HOURS=TL_END-TL_START;              // 13 hourly columns
 const tlDayStr=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
 function tlStatusColor(s){
   const m={pending:['#fff','#56655f','#d4dcd5'],assigned:['#eaf1ff','#0c447c','#b5d4f4'],acknowledged:['#eaf1ff','#0c447c','#b5d4f4'],
@@ -621,11 +621,14 @@ function renderTimeline(){
   // Pull online status + newly-created technicians, then re-render so EVERY available
   // technician team (incl. brand-new accounts from Access Control) shows on the timeline.
   Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
-  // Backlog: pending loads not yet placed on the timeline
-  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at);
+  // Backlog: pending loads not yet placed on the timeline — PRIORITIZED by how many times
+  // the load has been dispatched (most-redispatched first), then High priority, then JO id.
+  const prio=p=>p==='High'?0:p==='Low'?2:1;
+  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at)
+    .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
-    bl.innerHTML=backlog.length?backlog.map(j=>`<span class="tl-chip" draggable="true" data-tljob="${j.id}"><i data-icon="route"></i>${j.id} · ${(j.subscriber||'').replace(/</g,'&lt;').slice(0,20)}</span>`).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
+    bl.innerHTML=backlog.length?backlog.map(j=>{const area=(j.area||j.city||'').replace(/</g,'&lt;').slice(0,14);const dc=Number(j.dispatch_count)||0;const dcb=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="margin-left:auto;font-size:8px;padding:1px 5px" title="Na-dispatch ${dc}x">⟳${dc}</span>`:'';return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><i data-icon="route"></i><b style="font-weight:800">${j.id}</b><span style="font-weight:600;color:#586965;overflow:hidden;text-overflow:ellipsis;min-width:0">${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</span>${dcb||(area?`<span style="margin-left:auto;font-weight:600;color:#8a9894;font-size:8.5px">${area}</span>`:'')}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
   }
   const hourHdr=Array.from({length:TL_HOURS}).map((_,i)=>{ const h=TL_START+i; const ap=h<12?'AM':'PM'; const h12=((h+11)%12)+1; return `<div class="tl-h">${h12} ${ap}</div>`; }).join('');
   let html=`<div class="tl-headrow"><div class="tl-team-h">Team</div><div class="tl-axis">${hourHdr}</div></div>`;
@@ -639,15 +642,44 @@ function renderTimeline(){
       if(left+w<=0||left>=100) return '';
       if(left<0){ w+=left; left=0; } if(left+w>100) w=100-left; if(w<3.2) w=3.2;
       const c=tlStatusColor(j.status);
-      return `<div class="tl-block" draggable="true" data-tlblock="${j.id}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${tlFmtHour(hh)}">${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+      return `<div class="tl-block" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${tlFmtHour(hh)}">${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
     }).join('');
-    html+=`<div class="tl-row"><div class="tl-team"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
+    // Assigned account + designated driver / technician for this team's current shift
+    const acct=s.account||t.account||'';
+    const drv=s.driver||'', t1=s.tech1||'', t2=s.tech2||'';
+    const esc=v=>String(v).replace(/</g,'&lt;');
+    const acctLine=acct?`<span class="tl-acct">${esc(acct)}</span>`:'';
+    const crew=[drv?`D: ${esc(drv)}`:'',[t1,t2].filter(Boolean).map(esc).join(', ')?`T: ${[t1,t2].filter(Boolean).map(esc).join(', ')}`:''].filter(Boolean).join(' · ');
+    const crewLine=crew?`<span class="tl-crew">${crew}</span>`:(acct?'':'<span class="tl-crew" style="color:#b6c0bc">— not signed in —</span>');
+    html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); wireTimelineDnD(date); }
+  // Search box: highlight matching job orders (backlog + scheduled blocks)
+  const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
+  tlApplySearch();
+}
+// Build a lowercase searchable string per job (JO #, subscriber, team, area, address, JO number)
+function tlSearchText(j){
+  return [j.id,j.subscriber,j.team,j.area,j.city,j.address,j.job_order_no,j.primary_no]
+    .filter(Boolean).join(' ').toLowerCase().replace(/"/g,'&quot;');
+}
+// Highlight matches and dim the rest; clears when the box is empty
+function tlApplySearch(){
+  const sb=$('#tlSearch'); const q=(sb?sb.value:'').trim().toLowerCase();
+  const all=$$('#tlBacklog [data-tlsearch], #tlGrid [data-tlsearch]');
+  let firstHit=null;
+  all.forEach(el=>{
+    el.classList.remove('tl-hit','tl-dim');
+    if(!q) return;
+    const hit=(el.dataset.tlsearch||'').includes(q);
+    el.classList.add(hit?'tl-hit':'tl-dim');
+    if(hit&&!firstHit) firstHit=el;
+  });
+  if(q&&firstHit){ try{ firstHit.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'}); }catch(_){} }
 }
 let tlDragId=null;
 function wireTimelineDnD(date){
-  $$('#tlBacklog [data-tljob]').forEach(c=>{ c.ondragstart=e=>{ tlDragId=c.dataset.tljob; try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} }; });
+  $$('#tlBacklog [data-tljob]').forEach(c=>{ c.ondragstart=e=>{ tlDragId=c.dataset.tljob; try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} }; c.onclick=()=>openJobDetail(c.dataset.tljob); c.title='Drag to a team to schedule · click for full details'; });
   $$('#tlGrid [data-tlblock]').forEach(b=>{
     b.ondragstart=e=>{ tlDragId=b.dataset.tlblock; e.stopPropagation(); try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} };
     b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); };
@@ -655,10 +687,37 @@ function wireTimelineDnD(date){
   $$('#tlGrid .tl-track').forEach(tr=>{
     tr.ondragover=e=>{ e.preventDefault(); tr.classList.add('tl-over'); };
     tr.ondragleave=()=>tr.classList.remove('tl-over');
-    tr.ondrop=e=>{ e.preventDefault(); tr.classList.remove('tl-over'); const team=tr.dataset.tlteam; const r=tr.getBoundingClientRect(); const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); let hour=TL_START+x*TL_HOURS; hour=Math.round(hour*2)/2; const id=tlDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); tlDragId=null; if(id) tlSchedule(id,team,date,hour); };
+    tr.ondrop=e=>{ e.preventDefault(); tr.classList.remove('tl-over'); const team=tr.dataset.tlteam; const r=tr.getBoundingClientRect(); const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); let hour=TL_START+x*TL_HOURS; hour=Math.round(hour*2)/2; const id=tlDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); tlDragId=null; if(id) tlPickTime(id,team,date,hour); };
   });
 }
-async function tlSchedule(jobId, team, date, hour){
+// Let the dispatcher choose the PREFERRED arrival time (+ duration) when dropping a load
+// onto a technician, instead of snapping to wherever the mouse landed.
+function tlPickTime(jobId, team, date, defHour){
+  const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  let m=document.getElementById('tlTimeModal');
+  if(!m){
+    m=document.createElement('dialog'); m.id='tlTimeModal'; m.className='modal small-modal';
+    m.innerHTML='<div class="modal-head"><div><h2>Set preferred schedule</h2><p id="tlTimeSub"></p></div><button class="icon-btn" data-x>✕</button></div>'
+      +'<div class="form-grid"><label class="field full"><span>Preferred time (technician arrival)</span><input type="time" id="tlTimeInput" step="900" min="08:00" max="21:00"></label>'
+      +'<label class="field full"><span>Estimated duration</span><select id="tlTimeDur"><option value="30">30 minutes</option><option value="60" selected>1 hour</option><option value="90">1.5 hours</option><option value="120">2 hours</option><option value="180">3 hours</option><option value="240">4 hours</option></select></label></div>'
+      +'<div class="modal-actions"><button class="secondary-btn" data-x>Cancel</button><button class="primary-btn" id="tlTimeOk">Schedule</button></div>';
+    document.body.appendChild(m);
+    m.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>closeModals());
+  }
+  const hh=Math.max(TL_START,Math.min(TL_END-0.5,defHour||TL_START));
+  const H=Math.floor(hh), M=Math.round((hh-H)*60/15)*15;
+  m.querySelector('#tlTimeInput').value=String(H).padStart(2,'0')+':'+String(M%60).padStart(2,'0');
+  m.querySelector('#tlTimeDur').value=String(j.est_minutes||60);
+  m.querySelector('#tlTimeSub').textContent=jobId+' · '+(j.subscriber||'').slice(0,28)+' → '+team;
+  m.querySelector('#tlTimeOk').onclick=()=>{
+    const v=m.querySelector('#tlTimeInput').value; if(!v){ showToast('Pumili ng oras'); return; }
+    const p=v.split(':').map(Number); const hour=p[0]+(p[1]||0)/60;
+    const est=parseInt(m.querySelector('#tlTimeDur').value,10)||60;
+    closeModals(); tlSchedule(jobId,team,date,hour,est);
+  };
+  openModal(m);
+}
+async function tlSchedule(jobId, team, date, hour, est){
   const j=jobs.find(x=>x.id===jobId); if(!j) return;
   const hh=Math.floor(hour), mm=Math.round((hour-hh)*60);
   const iso=new Date(`${date}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+08:00`).toISOString();
@@ -672,7 +731,7 @@ async function tlSchedule(jobId, team, date, hour){
   } else {
     j.history=appendHistory(j.history,`Rescheduled @ ${tlFmtHour(hour)}`);
   }
-  j.scheduled_at=iso; if(!j.est_minutes) j.est_minutes=60;
+  j.scheduled_at=iso; j.est_minutes=est||j.est_minutes||60;
   save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
   showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`);
 }
