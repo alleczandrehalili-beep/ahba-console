@@ -908,10 +908,25 @@ async function renderAttendance(){
   if(!rows.length){body.innerHTML=`<tr><td colspan="6" class="empty-cell">No time records for this day.</td></tr>`;return}
   body.innerHTML=rows.map(r=>{
     const status=r.time_out?'<span class="status completed">Timed out</span>':'<span class="status en-route">Timed in</span>';
-    return `<tr><td><strong>${r.username}</strong></td><td>${r.work_date}</td><td>${fmtTime(r.time_in)}</td><td>${r.time_out?fmtTime(r.time_out):'—'}</td><td>${fmtDur(r.time_in,r.time_out)}</td><td>${status}</td></tr>`;
+    const acctFree=(!r.time_out && r.work_account)
+      ? ` <span style="color:#647571">· ${r.work_account}</span> <button class="assign-btn" data-freeacct="${(r.work_account||'').replace(/"/g,'&quot;')}" style="margin-left:6px;color:#a4690f;border-color:#f0d9a8">Free account</button>`
+      : '';
+    return `<tr><td><strong>${r.username}</strong></td><td>${r.work_date}</td><td>${fmtTime(r.time_in)}</td><td>${r.time_out?fmtTime(r.time_out):'—'}</td><td>${fmtDur(r.time_in,r.time_out)}</td><td>${status}${acctFree}</td></tr>`;
   }).join('');
+  $$('#attendanceBody [data-freeacct]').forEach(b=>b.onclick=()=>freeWorkAccount(b.dataset.freeacct));
   attRows=rows;            // keep for export
   renderGateLog(date);
+}
+// Release a locked work account (clear it from all open attendance rows today) so another team can use it.
+async function freeWorkAccount(account){
+  if(!account) return;
+  if(!confirm(`Free work account "${account}"?\nMapapalaya ito para magamit ng ibang team. Hindi mato-time-out ang kasalukuyang user — mawawala lang ang account selection nila.`)) return;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?work_account=eq.${encodeURIComponent(account)}&time_out=is.null`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({work_account:null})});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
+    showToast(`Account "${account}" freed — pwede nang gamitin ng iba.`);
+    renderAttendance();
+  }catch(e){ showToast('Free failed: '+e.message); }
 }
 // ---- Security gate-out / vehicle log (on the Attendance page) ----
 let attRows=[], gateRows=[];
