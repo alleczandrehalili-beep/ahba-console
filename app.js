@@ -628,8 +628,10 @@ function renderTimeline(){
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
-    bl.innerHTML=backlog.length?backlog.map(j=>{const area=(j.area||j.city||'').replace(/</g,'&lt;').slice(0,14);const dc=Number(j.dispatch_count)||0;const dcb=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="margin-left:auto;font-size:8px;padding:1px 5px" title="Na-dispatch ${dc}x">⟳${dc}</span>`:'';return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><i data-icon="route"></i><b style="font-weight:800">${j.id}</b><span style="font-weight:600;color:#586965;overflow:hidden;text-overflow:ellipsis;min-width:0">${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</span>${dcb||(area?`<span style="margin-left:auto;font-weight:600;color:#8a9894;font-size:8.5px">${area}</span>`:'')}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
+    bl.innerHTML=backlog.length?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="Na-dispatch ${dc}x">⟳${dc}</span>`:'';const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span></div>${dcb}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
   }
+  // Status tally banner under the For Dispatch section
+  renderTimelineCounts();
   const hourHdr=Array.from({length:TL_HOURS}).map((_,i)=>{ const h=TL_START+i; const ap=h<12?'AM':'PM'; const h12=((h+11)%12)+1; return `<div class="tl-h">${h12} ${ap}</div>`; }).join('');
   let html=`<div class="tl-headrow"><div class="tl-team-h">Team</div><div class="tl-axis">${hourHdr}</div></div>`;
   teams.forEach(t=>{
@@ -657,6 +659,36 @@ function renderTimeline(){
   // Search box: highlight matching job orders (backlog + scheduled blocks)
   const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
   tlApplySearch();
+}
+// Status tally banner — counts every load into the 7 dispatch buckets, colour-coded.
+function tlBucket(s){
+  s=(s||'').toLowerCase();
+  if(s==='pending'||s==='unassigned'||s==='') return 'fordispatch';
+  if(s==='assigned'||s==='acknowledged') return 'acknowledged';
+  if(s==='en-route'||s==='travel') return 'travel';
+  if(s==='on-site'||s==='in-progress') return 'onsite';
+  if(s==='negative'||s==='incomplete') return 'incomplete';
+  if(s==='completed') return 'completed';
+  if(s==='offline'||s==='cancelled') return 'cancelled';
+  return 'fordispatch';
+}
+function renderTimelineCounts(){
+  const el=$('#tlCounts'); if(!el) return;
+  const defs=[
+    ['fordispatch','For Dispatch','#fff','#56655f','#d4dcd5'],
+    ['acknowledged','Acknowledged','#eaf1ff','#3473d8','#cfe0ff'],
+    ['travel','Travel','#f0ebff','#7959c7','#ddd2f7'],
+    ['onsite','On-site','#fff4cf','#9a7b12','#f0e2a6'],
+    ['incomplete','Incomplete','#fdecea','#c2503a','#f6cfc8'],
+    ['completed','Completed','#e7f7ef','#11825f','#c4ecd9'],
+    ['cancelled','Cancelled','#f2f2f2','#87928f','#dcdfdd']
+  ];
+  const cnt={}; defs.forEach(d=>cnt[d[0]]=0);
+  jobs.forEach(j=>{ cnt[tlBucket(j.status)]++; });
+  const total=jobs.length;
+  el.innerHTML=defs.map(([k,label,bg,fg,bd])=>
+    `<span class="tl-count" style="background:${bg};color:${fg};border:1px solid ${bd}"><b>${cnt[k]}</b>${label}</span>`
+  ).join('')+`<span class="tl-count tl-count-total"><b>${total}</b>Total</span>`;
 }
 // Build a lowercase searchable string per job (JO #, subscriber, team, area, address, JO number)
 function tlSearchText(j){
