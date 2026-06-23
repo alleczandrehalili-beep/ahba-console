@@ -567,7 +567,7 @@ function toggleNotif(){
 function buildNotifs(){
   const out=[], now=Date.now();
   try{ jobs.forEach(j=>{ if(j.status==='en-route'&&j.updatedAt){ const mins=(now-new Date(j.updatedAt).getTime())/60000; if(mins>=45) out.push({icon:'truck',tone:'coral',title:'⏱️ Travel over 45 min',text:`${j.team?'<b>'+j.team+'</b> · ':''}${j.subscriber||j.id} (${Math.floor(mins)}m)`,ts:j.updatedAt,pri:0}); } }); }catch(e){}
-  try{ Object.entries(shiftByTeam).forEach(([code,s])=>{ if(!s.online||teamHasActiveLoad(code))return; let last=s.time_in?new Date(s.time_in).getTime():0; jobs.forEach(j=>{ if(j.team===code&&j.updatedAt){const t=new Date(j.updatedAt).getTime(); if(t>last)last=t;} }); if(last){ const mins=(now-last)/60000; if(mins>=30) out.push({icon:'info',tone:'coral',title:'🚨 Team idle — no load',text:`<b>${code}</b> (${Math.floor(mins)}m idle)`,ts:new Date(last).toISOString(),pri:0}); } }); }catch(e){}
+  try{ Object.entries(shiftByTeam).forEach(([code,s])=>{ if(!/^AHBA_SLI/i.test(code))return; if(!s.online||teamHasActiveLoad(code))return; let last=s.time_in?new Date(s.time_in).getTime():0; jobs.forEach(j=>{ if(j.team===code&&j.updatedAt){const t=new Date(j.updatedAt).getTime(); if(t>last)last=t;} }); if(last){ const mins=(now-last)/60000; if(mins>=30) out.push({icon:'info',tone:'coral',title:'🚨 Team idle — no load',text:`<b>${code}</b> (${Math.floor(mins)}m idle)`,ts:new Date(last).toISOString(),pri:0}); } }); }catch(e){}
   const map={completed:['check','','Job completed'],'en-route':['truck','blue','Team en route'],'on-site':['pin','','Arrived on site'],'in-progress':['wrench','blue','Work in progress'],negative:['info','coral','Marked incomplete'],assigned:['truck','blue','Dispatched'],cancelled:['info','coral','Job cancelled'],for_validation:['clipboard','','New order for validation'],pending:['info','','For dispatch'],rejected:['info','coral','Order rejected']};
   jobs.filter(j=>j.updatedAt).slice().sort((a,b)=>new Date(b.updatedAt)-new Date(a.updatedAt)).slice(0,12).forEach(j=>{ const m=map[j.status]||['info','','Updated']; out.push({icon:m[0],tone:m[1],title:m[2],text:`${j.team?'<b>'+j.team+'</b> · ':''}${j.subscriber||j.id}`,ts:j.updatedAt,pri:1}); });
   out.sort((a,b)=>(a.pri-b.pri)||(new Date(b.ts)-new Date(a.ts)));
@@ -1354,6 +1354,7 @@ async function monitorTeams(){
     });
     // 2) An online team idle 30+ min with no current load
     Object.entries(shiftByTeam).forEach(([code,s])=>{
+      if(!/^AHBA_SLI/i.test(code)){ delete alertIdle[code]; return; }   // field technician teams only (skip Sales/Security)
       if(!s.online || teamHasActiveLoad(code)){ delete alertIdle[code]; return; }
       let lastAct = s.time_in ? new Date(s.time_in).getTime() : 0;
       jobs.forEach(j=>{ if(j.team===code && j.updatedAt){ const t=new Date(j.updatedAt).getTime(); if(t>lastAct) lastAct=t; } });
