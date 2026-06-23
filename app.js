@@ -342,7 +342,7 @@ function jobCard(j){
   const drag=canBounce?` draggable="true" data-jobid="${j.id}"`:'';
   const prio=j.priority?`<span class="priority" style="${j.priority!=='1st Load'?'color:#687974;background:#f1f3f1':''}">${j.priority}</span>`:'';
   const dc=j.dispatch_count||0;
-  const dcBadge=dc>0?`<span class="redispatch${dc>1?' hi':''}" title="Na-dispatch nang ${dc}x">⟳ ×${dc}</span>`:'';
+  const dcBadge=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" title="Na-dispatch nang ${dc}x">⟳ ×${dc}</span>`:'';
   const enc=j.created_at?fmtWhen(j.created_at):(j.load_date?String(j.load_date).slice(0,10):'—');
   const action=j.status==='pending'
     ? `<button class="assign-btn" data-assign="${j.id}" style="margin-top:8px;width:100%">Assign team</button>`
@@ -556,7 +556,17 @@ async function openAssign(jobId){
   $('#assignmentList').innerHTML=html;
   $$('#assignmentList [data-team]').forEach(b=>b.onclick=()=>assignTeam(jobId,b.dataset.team));
 }
-function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId);const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
+// Job Order numbers must be unique — checks the WHOLE jobs table (incl. completed/history)
+async function joTaken(jo,exceptId){
+  jo=(jo||'').trim(); if(!jo) return false;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&job_order_no=eq.${encodeURIComponent(jo)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) return false;
+    const rows=await r.json();
+    return rows.some(x=>String(x.id)!==String(exceptId));
+  }catch(e){ return false; }
+}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId);const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
@@ -678,6 +688,7 @@ async function decideValidation(jobId,approve){
     const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
     if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
+    if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
     body={status:'pending', validated:true, validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
     if(j.play_type==='2-PLAY'){
       const vs=$$('.valVas').map(i=>i.value.trim());

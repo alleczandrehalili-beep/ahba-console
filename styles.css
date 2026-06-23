@@ -47,8 +47,12 @@ html,body{overflow-x:hidden;max-width:100%}
 }
 
 /* Redispatch counter — prominent on each job card */
-.redispatch{font:800 13px Manrope;color:#fff;background:#e9a93d;border-radius:8px;padding:3px 10px;letter-spacing:.02em;line-height:1;box-shadow:0 2px 6px rgba(233,169,61,.35)}
-.redispatch.hi{background:#d6492f;box-shadow:0 2px 7px rgba(214,73,47,.4)}
+.redispatch{font:800 10px Manrope;color:#fff;background:#18a57b;border-radius:6px;padding:2px 7px;letter-spacing:.02em;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.redispatch.dc1{background:#18a57b}                 /* 1x — green */
+.redispatch.dc2{background:#f5c518;color:#3a2c08}   /* 2x — yellow */
+.redispatch.dc3{background:#d6492f}                 /* 3x — red */
+.redispatch.dc4{background:#5a3210}                 /* 4x — dark brown */
+.redispatch.dc5{background:#111}                    /* 5x+ — black */
 
 /* Access control: clear sideways scroll with a visible scrollbar; sticky header + user column */
 .row-actions{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;min-width:96px}
