@@ -46,6 +46,10 @@ html,body{overflow-x:hidden;max-width:100%}
   .overview-layout,.bottom-layout{grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr)}
 }
 
+/* Redispatch counter — prominent on each job card */
+.redispatch{font:800 13px Manrope;color:#fff;background:#e9a93d;border-radius:8px;padding:3px 10px;letter-spacing:.02em;line-height:1;box-shadow:0 2px 6px rgba(233,169,61,.35)}
+.redispatch.hi{background:#d6492f;box-shadow:0 2px 7px rgba(214,73,47,.4)}
+
 /* Access control: clear sideways scroll with a visible scrollbar; sticky header + user column */
 .row-actions{display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;min-width:96px}
 .access-table{overflow:auto;max-width:100%;max-height:74vh;-webkit-overflow-scrolling:touch;

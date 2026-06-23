@@ -341,6 +341,8 @@ function jobCard(j){
   const canBounce=['assigned','en-route','negative'].includes(j.status);
   const drag=canBounce?` draggable="true" data-jobid="${j.id}"`:'';
   const prio=j.priority?`<span class="priority" style="${j.priority!=='1st Load'?'color:#687974;background:#f1f3f1':''}">${j.priority}</span>`:'';
+  const dc=j.dispatch_count||0;
+  const dcBadge=dc>0?`<span class="redispatch${dc>1?' hi':''}" title="Na-dispatch nang ${dc}x">⟳ ×${dc}</span>`:'';
   const enc=j.created_at?fmtWhen(j.created_at):(j.load_date?String(j.load_date).slice(0,10):'—');
   const action=j.status==='pending'
     ? `<button class="assign-btn" data-assign="${j.id}" style="margin-top:8px;width:100%">Assign team</button>`
@@ -353,7 +355,7 @@ function jobCard(j){
   const acctLine=acct?`<span>🚐 ${acct}</span>`:'';
   const crewLine=crew?`<span>👤 ${crew}</span>`:'';
   return `<article class="job-card compact" data-detail="${j.id}" data-name="${(j.subscriber||'').toLowerCase().replace(/"/g,'')}"${drag}>
-    <div class="job-top"><span class="job-id">${j.id}</span>${prio}</div>
+    <div class="job-top"><span class="job-id">${j.id}</span><span style="display:flex;gap:5px;align-items:center">${dcBadge}${prio}</span></div>
     <h3>${j.subscriber||'—'}</h3>
     <div class="jc-meta">
       <span><span class="status ${j.status}">${statusLabel(j.status)}</span></span>
