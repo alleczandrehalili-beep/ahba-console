@@ -200,7 +200,10 @@ async function renderTeamLocations(){
 function renderJobs(){
   maybePromptRollover();
   const pending=jobs.filter(j=>j.status==='pending');
-  $('#pendingBadge').textContent=pending.length;
+  // Badge mirrors the "For Dispatch" column: today's working set only (load_date today/none),
+  // NOT leftover loads from previous days still awaiting rollover.
+  const _td=manilaToday();
+  $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
   $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong></td><td>${j.type}</td><td>${j.area}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
   $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${j.type.toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase()}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong><span>${j.plan}</span></td><td>${j.type}</td><td>${j.area}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
   const today=manilaToday();
