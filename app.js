@@ -605,7 +605,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',accounts:'Technician accounts',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access control'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='accounts')renderAccounts();if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={};
@@ -752,7 +752,7 @@ async function resetNow(){
   try{
     await callAdminFn({action:'reset',target:'tech',username,new_password:np});
     closeModals(); showToast(`${username} reset (by you). They must set a new password on next login.`);
-    if($('#accountsPage')?.classList.contains('active')) renderAccounts();
+    if($('#accessPage')?.classList.contains('active')) renderAccounts();
   }catch(e){
     const m=/Failed to fetch|NetworkError/i.test(e.message)?'Reset service not reachable — is the admin-reset function deployed?':e.message;
     showToast('Reset failed: '+m);
@@ -1170,7 +1170,7 @@ async function submitOrder(e){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['dispatch','Dispatch'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['accounts','Accounts'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['dispatch','Dispatch'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -1258,6 +1258,7 @@ async function renderAccess(){
   $$('#accessWrap [data-resetdash]').forEach(b=>b.onclick=()=>resetDashUser(b.dataset.resetdash));
   $$('#accessWrap [data-renamedash]').forEach(b=>b.onclick=()=>renameDashUser(b.dataset.renamedash));
   $$('#accessWrap [data-deldash]').forEach(b=>b.onclick=()=>deleteDashUser(b.dataset.deldash));
+  renderAccounts();   // field/mobile accounts list now lives inside Access Control
 }
 async function saveAccess(username){
   const pages=$$(`#accessWrap input[data-u="${username}"]`).filter(c=>c.checked).map(c=>c.dataset.pg);

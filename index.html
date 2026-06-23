@@ -148,7 +148,6 @@
         <button class="nav-item" data-page="teams"><i data-icon="users"></i><span>Field Teams</span></button>
         <button class="nav-item" data-page="workorders"><i data-icon="clipboard"></i><span>Work Orders</span></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
-        <button class="nav-item" data-page="accounts"><i data-icon="users"></i><span>Accounts</span></button>
         <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
         <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>QA Validation</span></button>
         <button class="nav-item" data-page="remittance"><i data-icon="wallet"></i><span>Remittance</span></button>
@@ -273,20 +272,6 @@
         <div class="expense-summary" id="expenseSummary"></div>
         <div class="expense-page-grid"><article class="panel"><div class="panel-head"><div><h2>Daily spending</h2><p>Last 7 days</p></div><span class="budget-pill">Budget ₱25k/day</span></div><div class="bar-chart" id="weeklyChart"></div></article><article class="panel"><div class="panel-head"><div><h2>Cost by category</h2><p>Today’s expense mix</p></div></div><div class="category-list" id="categoryList"></div></article></div>
         <article class="panel expense-log"><div class="panel-head"><div><h2>Expense log</h2><p>Receipts and team submissions</p></div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Team</th><th>Category</th><th>Description</th><th>Work order</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenseBody"></tbody></table></div></article>
-      </section>
-
-      <section id="accountsPage" class="page">
-        <div class="page-toolbar"><div><h2>Technician accounts</h2><p>Login accounts for the 20 field teams (AHBA_SLI001–AHBA_SLI020).</p></div></div>
-        <div class="dispatch-stats">
-          <div class="small-stat"><span>Total accounts</span><strong id="accountTotal">20</strong></div>
-          <div class="small-stat"><span>Active</span><strong id="accountActive">0</strong></div>
-          <div class="small-stat"><span>Needs password setup</span><strong id="accountPending">20</strong></div>
-          <div class="small-stat"><span>Has signed in</span><strong id="accountSignedIn">0</strong></div>
-        </div>
-        <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Passwords are encrypted and never shown. Use Reset to issue a new one via Supabase.</p></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Login email</th><th>Area</th><th>Status</th><th>Last sign-in</th><th>Password changed</th></tr></thead><tbody id="accountsBody"></tbody></table></div>
-        </article>
       </section>
 
       <section id="attendancePage" class="page">
@@ -417,6 +402,16 @@
         <article class="panel full-table">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Dashboard users</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-tick ang access, tapos i-click ang Save sa bawat user. Default password: Ahba@2026 (papalitan sa unang login).</p></div></div>
           <div class="table-wrap access-table" id="accessWrap"></div>
+        </article>
+        <article class="panel full-table" style="margin-top:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Field / mobile accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Login accounts ng field teams (Technician / Sales / Security). Passwords are encrypted at hindi ipinapakita. Use Reset to issue a new one.</p></div></div>
+          <div class="dispatch-stats" style="margin:12px 0">
+            <div class="small-stat"><span>Total accounts</span><strong id="accountTotal">0</strong></div>
+            <div class="small-stat"><span>Active</span><strong id="accountActive">0</strong></div>
+            <div class="small-stat"><span>Needs password setup</span><strong id="accountPending">0</strong></div>
+            <div class="small-stat"><span>Has signed in</span><strong id="accountSignedIn">0</strong></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Login email</th><th>Area</th><th>Status</th><th>Last sign-in</th><th>Password changed</th></tr></thead><tbody id="accountsBody"></tbody></table></div>
         </article>
       </section>
     </main>
