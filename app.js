@@ -1519,7 +1519,13 @@ function startDashChat(){
 }
 
 // ---------- Announcements (broadcast to mobile) ----------
-function openAnnounce(){ loadAnnRecent(); openModal($('#announceModal')); }
+function openAnnounce(){
+  loadAnnRecent();
+  const sup=!!(window.dashUser&&window.dashUser.is_super);
+  const pw=$('#annPhotoWrap'); if(pw) pw.style.display=sup?'':'none';   // recognition photo: superadmin only
+  if($('#annPhoto')) $('#annPhoto').value='';
+  openModal($('#announceModal'));
+}
 async function loadAnnRecent(){
   const el=$('#annRecent'); if(!el)return; el.innerHTML='Loading…';
   try{
@@ -1535,9 +1541,15 @@ async function postAnnounce(){
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Dispatcher';
   const btn=$('#annPost'); btn.disabled=true; btn.textContent='Posting…';
   try{
-    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who})});
+    let photo_path=null;
+    const pf=$('#annPhoto'); const file=pf&&pf.files&&pf.files[0];
+    if(file && window.dashUser&&window.dashUser.is_super){
+      try{ const blob=await compressImage(file,1200,140); const client=sbc(); const path=`announce/${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
+        const {error:e2}=await client.storage.from('job-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(!e2) photo_path=path; }catch(e){}
+    }
+    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path})});
     pushNotify({audience,title:'📢 '+(title||'Announcement'),body});
-    $('#annTitle').value=''; $('#annBody').value=''; showToast('Announcement posted'); loadAnnRecent();
+    $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; showToast('Announcement posted'); loadAnnRecent();
   }catch(e){ showToast('Post failed'); }
   btn.disabled=false; btn.textContent='Post announcement';
 }
