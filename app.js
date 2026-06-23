@@ -1204,6 +1204,7 @@ function applyAccess(u){
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = (u.is_super || allowed.includes('dispatch')) ? 'inline-flex' : 'none';
   const first=(allowed[0]||'overview');
   switchPage(first);
+  renderAnnounceBar();
 }
 // Superadmin: wipe ALL loads/job orders from the dispatch board (and their photos/docs).
 async function deleteAllLoads(){
@@ -1531,7 +1532,7 @@ async function loadAnnRecent(){
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/announcements?select=*&order=created_at.desc&limit=20`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const rows=r.ok?await r.json():[];
-    el.innerHTML=rows.length?rows.map(a=>`<div style="border-bottom:1px dashed #eef1ed;padding:6px 0"><b>${(a.title||'Announcement')}</b> <span class="status ${a.audience==='sales'?'assigned':a.audience==='technician'?'en-route':'completed'}" style="font-size:7px">${a.audience||'all'}</span><div style="color:#586965;margin:2px 0;white-space:pre-wrap">${(a.body||'').replace(/</g,'&lt;')}</div><div style="color:#9aa6a2;font-size:9px">${fmtWhen(a.created_at)} <button class="assign-btn" data-delann="${a.id}" style="margin-left:6px">Delete</button></div></div>`).join(''):'<span style="color:#9aa6a2">No announcements yet.</span>';
+    el.innerHTML=rows.length?rows.map(a=>`<div style="border-bottom:1px dashed #eef1ed;padding:6px 0"><b>${(a.title||'Announcement')}</b> <span class="status ${a.audience==='sales'?'assigned':a.audience==='technician'?'en-route':'completed'}" style="font-size:7px">${a.audience||'all'}</span><div style="color:#586965;margin:2px 0;white-space:pre-wrap">${(a.body||'').replace(/</g,'&lt;')}</div><div style="color:#9aa6a2;font-size:9px">${fmtWhen(a.created_at)}${a.created_super?' · 🛡️ Superadmin':''} ${canRemoveAnn(a)?`<button class="assign-btn" data-delann="${a.id}" style="margin-left:6px">Delete</button>`:''}</div></div>`).join(''):'<span style="color:#9aa6a2">No announcements yet.</span>';
     $$('#annRecent [data-delann]').forEach(b=>b.onclick=()=>delAnnounce(b.dataset.delann));
   }catch(e){ el.innerHTML='<span style="color:#c2503a">Could not load.</span>'; }
 }
@@ -1547,15 +1548,44 @@ async function postAnnounce(){
       try{ const blob=await compressImage(file,1200,140); const client=sbc(); const path=`announce/${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
         const {error:e2}=await client.storage.from('job-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(!e2) photo_path=path; }catch(e){}
     }
-    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path})});
+    const created_super=!!(window.dashUser&&window.dashUser.is_super);
+    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path,created_super})});
     pushNotify({audience,title:'📢 '+(title||'Announcement'),body});
-    $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; showToast('Announcement posted'); loadAnnRecent();
+    $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; showToast('Announcement posted'); loadAnnRecent(); renderAnnounceBar();
   }catch(e){ showToast('Post failed'); }
   btn.disabled=false; btn.textContent='Post announcement';
 }
 async function delAnnounce(id){
   if(!confirm('Delete this announcement?'))return;
-  try{ await fetch(`${SUPA_URL}/rest/v1/announcements?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:DH()}); loadAnnRecent(); }catch(e){ showToast('Delete failed'); }
+  try{ await fetch(`${SUPA_URL}/rest/v1/announcements?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:DH()}); loadAnnRecent(); renderAnnounceBar(); }catch(e){ showToast('Delete failed'); }
+}
+// Who may remove an announcement: superadmin (any) · Admin (only non-superadmin posts)
+function canRemoveAnn(a){
+  const u=window.dashUser; if(!u) return false;
+  if(u.is_super) return true;
+  const role=String(u.role_label||'').toLowerCase();
+  return role.includes('admin') && !a.created_super;
+}
+// Fixed announcement bar on the console (mirrors the mobile bar). Stays until removed.
+async function renderAnnounceBar(){
+  const bar=$('#annBar'); if(!bar) return;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/announcements?select=*&order=created_at.desc&limit=1`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const a=(r.ok?await r.json():[])[0];
+    if(!a){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+    const esc=s=>(s||'').replace(/</g,'&lt;'); const rec=!!a.photo_path;
+    const img=rec?`<img src="${photoBase(a.photo_path)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
+    const rm=canRemoveAnn(a)?`<button id="annBarRm" data-id="${a.id}" style="flex:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 11px;font-weight:700;font-size:11px;cursor:pointer">✕ Remove</button>`:'';
+    bar.style.cssText='display:flex;gap:13px;align-items:center;padding:10px 30px;'+(rec?'background:linear-gradient(135deg,#f6c453,#e9952f);color:#3a2600':'background:#0e3531;color:#eaf5f1');
+    bar.innerHTML=`${img}<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:9px;letter-spacing:.06em;opacity:.85">${rec?'🏆 RECOGNITION':'📢 ANNOUNCEMENT'} · ${esc(a.audience||'all').toUpperCase()}</div><div style="font-weight:800;font-size:13px">${esc(a.title||'Announcement')}</div><div style="font-size:11px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.body||'')}</div></div>${rm}`;
+    bar.classList.remove('hidden');
+    const b=$('#annBarRm'); if(b) b.onclick=()=>removeAnnounce(b.dataset.id);
+  }catch(e){ bar.classList.add('hidden'); }
+}
+async function removeAnnounce(id){
+  if(!confirm('Remove this announcement? It will disappear from everyone’s bar. This is permanent.')) return;
+  try{ await fetch(`${SUPA_URL}/rest/v1/announcements?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:DH()}); showToast('Announcement removed'); renderAnnounceBar(); }
+  catch(e){ showToast('Remove failed'); }
 }
 
 // ---------- Import work orders from Excel → For Dispatch ----------
@@ -1721,6 +1751,7 @@ function init(){
   setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
   // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
   setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
+  setInterval(renderAnnounceBar, 60000);
   $('#clearLoadsBtn')?.addEventListener('click',deleteAllLoads);
 
   // Forms
