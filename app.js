@@ -1674,6 +1674,7 @@ function init(){
   $('#annPost')?.addEventListener('click',postAnnounce);
   $('#dashChatFab')?.addEventListener('click',()=>{ const f=$('#dashChatFab'); if(f&&f._dragged) return; chatWidgetOpen()?closeChatWidget():openChatWidget(); });
   enableFabDrag();
+  document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{ const inp=$('#'+b.dataset.eye); if(!inp)return; const reveal=inp.type==='password'; inp.type=reveal?'text':'password'; b.textContent=reveal?'Hide':'Show'; });
   $('#dcClose')?.addEventListener('click',e=>{e.stopPropagation();closeChatWidget();});
   $('#dcMin')?.addEventListener('click',e=>{e.stopPropagation();minimizeChat();});
   $('#dcBack')?.addEventListener('click',e=>{e.stopPropagation();showCwTeams();});

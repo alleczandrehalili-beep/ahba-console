@@ -112,7 +112,7 @@
       <div class="dg-err" id="dlErr"></div>
       <form id="dashLoginForm">
         <label>Username<input id="dlUser" autocapitalize="characters" autocomplete="username"></label>
-        <label>Password<input id="dlPass" type="password" autocomplete="current-password"></label>
+        <label>Password<span style="position:relative;display:block"><input id="dlPass" type="password" autocomplete="current-password" style="padding-right:54px"><button type="button" class="pw-eye" data-eye="dlPass" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#0e7a55;font-size:11px;font-weight:800;cursor:pointer;padding:4px">Show</button></span></label>
         <button class="primary-btn" id="dlBtn" type="submit">Sign in</button>
       </form>
       <p style="font-size:11px;color:#8a9894;margin-top:14px;text-align:center">Forgot your password? Please coordinate with the Superadmin.</p>
@@ -124,8 +124,8 @@
       <p>First sign-in — please replace the default password.</p>
       <div class="dg-err" id="dpwErr"></div>
       <form id="dashPwForm">
-        <label>New password<input id="dpw1" type="password" autocomplete="new-password"></label>
-        <label>Confirm new password<input id="dpw2" type="password" autocomplete="new-password"></label>
+        <label>New password<span style="position:relative;display:block"><input id="dpw1" type="password" autocomplete="new-password" style="padding-right:54px"><button type="button" class="pw-eye" data-eye="dpw1" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#0e7a55;font-size:11px;font-weight:800;cursor:pointer;padding:4px">Show</button></span></label>
+        <label>Confirm new password<span style="position:relative;display:block"><input id="dpw2" type="password" autocomplete="new-password" style="padding-right:54px"><button type="button" class="pw-eye" data-eye="dpw2" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#0e7a55;font-size:11px;font-weight:800;cursor:pointer;padding:4px">Show</button></span></label>
         <button class="primary-btn" id="dpwBtn" type="submit">Save password</button>
       </form>
     </div>
