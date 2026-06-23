@@ -1524,7 +1524,8 @@ function openAnnounce(){
   loadAnnRecent();
   const sup=!!(window.dashUser&&window.dashUser.is_super);
   const pw=$('#annPhotoWrap'); if(pw) pw.style.display=sup?'':'none';   // recognition photo: superadmin only
-  if($('#annPhoto')) $('#annPhoto').value='';
+  const cw=$('#annCaptionWrap'); if(cw) cw.style.display=sup?'':'none';
+  if($('#annPhoto')) $('#annPhoto').value=''; if($('#annCaption')) $('#annCaption').value='';
   openModal($('#announceModal'));
 }
 async function loadAnnRecent(){
@@ -1549,9 +1550,10 @@ async function postAnnounce(){
         const {error:e2}=await client.storage.from('job-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(!e2) photo_path=path; }catch(e){}
     }
     const created_super=!!(window.dashUser&&window.dashUser.is_super);
-    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path,created_super})});
+    const photo_caption=photo_path?(($('#annCaption')&&$('#annCaption').value||'').trim()||null):null;
+    await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path,photo_caption,created_super})});
     pushNotify({audience,title:'📢 '+(title||'Announcement'),body});
-    $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; showToast('Announcement posted'); loadAnnRecent(); renderAnnounceBar();
+    $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; if($('#annCaption'))$('#annCaption').value=''; showToast('Announcement posted'); loadAnnRecent(); renderAnnounceBar();
   }catch(e){ showToast('Post failed'); }
   btn.disabled=false; btn.textContent='Post announcement';
 }
