@@ -603,6 +603,77 @@ function applyJobTableFilter(){
   const empty=$('#workOrderEmpty'); if(empty) empty.hidden=shown!==0;
 }
 
+// ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
+const TL_START=6, TL_END=20;                 // 6 AM – 8 PM
+const TL_HOURS=TL_END-TL_START;              // 14 hourly columns
+const tlDayStr=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
+function tlStatusColor(s){
+  const m={pending:['#fff','#56655f','#d4dcd5'],assigned:['#eaf1ff','#0c447c','#b5d4f4'],acknowledged:['#eaf1ff','#0c447c','#b5d4f4'],
+    'en-route':['#f0ebff','#5b3aa6','#cecbf6'],travel:['#f0ebff','#5b3aa6','#cecbf6'],'on-site':['#fff4cf','#7a5e0c','#fac775'],
+    'in-progress':['#fff4cf','#7a5e0c','#fac775'],completed:['#e7f7ef','#0b5e44','#9fe1cb'],negative:['#fdecea','#a32d2d','#f7c1c1'],
+    incomplete:['#fdecea','#a32d2d','#f7c1c1'],cancelled:['#f2f2f2','#6b6f6d','#d3d1c7']}[s]||['#eef1ed','#444','#ddd'];
+  return {bg:m[0],fg:m[1],bd:m[2]};
+}
+function tlFmtHour(h){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); const ap=hh<12?'AM':'PM'; const h12=((hh+11)%12)+1; return `${h12}:${String(mm).padStart(2,'0')} ${ap}`; }
+function renderTimeline(){
+  const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
+  const date=dEl?dEl.value:manilaToday();
+  syncTeamsFromDb().catch(()=>{});
+  // Backlog: pending loads not yet placed on the timeline
+  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at);
+  const bl=$('#tlBacklog');
+  if(bl){
+    bl.innerHTML=backlog.length?backlog.map(j=>`<span class="tl-chip" draggable="true" data-tljob="${j.id}"><i data-icon="route"></i>${j.id} · ${(j.subscriber||'').replace(/</g,'&lt;').slice(0,20)}</span>`).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
+  }
+  const hourHdr=Array.from({length:TL_HOURS}).map((_,i)=>{ const h=TL_START+i; const ap=h<12?'AM':'PM'; const h12=((h+11)%12)+1; return `<div class="tl-h">${h12} ${ap}</div>`; }).join('');
+  let html=`<div class="tl-headrow"><div class="tl-team-h">Team</div><div class="tl-axis">${hourHdr}</div></div>`;
+  teams.forEach(t=>{
+    const s=shiftByTeam[t.code]||{};
+    const dot=s.online?'#18a57b':'#b0bab7';
+    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date);
+    const blocks=dayJobs.map(j=>{
+      const dt=new Date(j.scheduled_at); const hh=dt.getHours()+dt.getMinutes()/60;
+      let left=((hh-TL_START)/TL_HOURS)*100; let w=((Number(j.est_minutes)||60)/60/TL_HOURS)*100;
+      if(left+w<=0||left>=100) return '';
+      if(left<0){ w+=left; left=0; } if(left+w>100) w=100-left; if(w<3.2) w=3.2;
+      const c=tlStatusColor(j.status);
+      return `<div class="tl-block" draggable="true" data-tlblock="${j.id}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${tlFmtHour(hh)}">${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+    }).join('');
+    html+=`<div class="tl-row"><div class="tl-team"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
+  });
+  const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); wireTimelineDnD(date); }
+}
+let tlDragId=null;
+function wireTimelineDnD(date){
+  $$('#tlBacklog [data-tljob]').forEach(c=>{ c.ondragstart=e=>{ tlDragId=c.dataset.tljob; try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} }; });
+  $$('#tlGrid [data-tlblock]').forEach(b=>{
+    b.ondragstart=e=>{ tlDragId=b.dataset.tlblock; e.stopPropagation(); try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} };
+    b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); };
+  });
+  $$('#tlGrid .tl-track').forEach(tr=>{
+    tr.ondragover=e=>{ e.preventDefault(); tr.classList.add('tl-over'); };
+    tr.ondragleave=()=>tr.classList.remove('tl-over');
+    tr.ondrop=e=>{ e.preventDefault(); tr.classList.remove('tl-over'); const team=tr.dataset.tlteam; const r=tr.getBoundingClientRect(); const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); let hour=TL_START+x*TL_HOURS; hour=Math.round(hour*2)/2; const id=tlDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); tlDragId=null; if(id) tlSchedule(id,team,date,hour); };
+  });
+}
+async function tlSchedule(jobId, team, date, hour){
+  const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  const hh=Math.floor(hour), mm=Math.round((hour-hh)*60);
+  const iso=new Date(`${date}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+08:00`).toISOString();
+  if(j.team!==team){
+    // Assigning to a (new) team needs a unique J.O. Number, same rule as the dispatch board.
+    let jo=j.job_order_no;
+    if(!jo){ jo=(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||'').trim(); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }
+    j.team=team; if(j.status==='pending') j.status='assigned'; j.load_date=manilaToday(); j.dispatch_count=(j.dispatch_count||0)+1;
+    j.history=appendHistory(j.history,`Scheduled to ${team} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
+    pushNotify&&pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)});
+  } else {
+    j.history=appendHistory(j.history,`Rescheduled @ ${tlFmtHour(hour)}`);
+  }
+  j.scheduled_at=iso; if(!j.est_minutes) j.est_minutes=60;
+  save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
+  showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`);
+}
 // Merge technician accounts from the DB into the team list so NEWLY-created technicians
 // (made in Access Control) appear everywhere: dispatch assign, Field Teams, dropdowns, monitoring.
 async function syncTeamsFromDb(){
@@ -695,7 +766,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dispatch timeline'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline')renderTimeline();if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={};
@@ -1324,7 +1395,7 @@ async function submitOrder(e){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['dispatch','Dispatch'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['dispatch','Dispatch'],['timeline','Timeline'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});

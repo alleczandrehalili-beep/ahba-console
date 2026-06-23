@@ -145,6 +145,7 @@
         <button class="nav-item active" data-page="overview" aria-current="page"><i data-icon="grid"></i><span>Overview</span></button>
         <button class="nav-item" data-page="validation"><i data-icon="clipboard"></i><span>Validator</span><b id="valBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="dispatch"><i data-icon="route"></i><span>Dispatch Board</span><b id="pendingBadge">6</b></button>
+        <button class="nav-item" data-page="timeline"><i data-icon="clock"></i><span>Timeline</span></button>
         <button class="nav-item" data-page="teams"><i data-icon="users"></i><span>Field Teams</span></button>
         <button class="nav-item" data-page="workorders"><i data-icon="clipboard"></i><span>Work Orders</span></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
@@ -255,6 +256,15 @@
         <div class="page-toolbar"><div><h2>Dispatch board</h2><p>Assign jobs and balance the workload across 20 teams.</p></div><div class="toolbar-actions"><div class="search-box" style="min-width:190px"><i data-icon="search"></i><input id="dispatchSearch" placeholder="Search subscriber name"></div><button class="secondary-btn" id="importTemplateBtn"><i data-icon="arrow"></i>Template</button><button class="secondary-btn" id="importXlsxBtn"><i data-icon="clipboard"></i>Import Excel</button><input type="file" id="importXlsxInput" accept=".xlsx,.xls,.csv" hidden><button class="secondary-btn" id="autoAssignBtn"><i data-icon="spark"></i>Suggest best team</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>Add job</button><button class="secondary-btn" id="clearLoadsBtn" style="display:none;border-color:#f0c3ba;color:#c2503a"><i data-icon="info"></i>Clear all loads</button></div></div>
         <div class="dispatch-stats" id="dispatchStats"></div>
         <div class="dispatch-board" id="dispatchBoard"></div>
+      </section>
+
+      <section id="timelinePage" class="page">
+        <div class="page-toolbar"><div><h2>Dispatch timeline</h2><p>Schedule jobs onto teams and monitor live status across the day.</p></div><div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="tlDate" type="date"></div></div>
+        <article class="panel full-table" style="margin-bottom:12px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For Dispatch · drag onto a team</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-drag ang JO papunta sa team row at oras para i-schedule. I-drag ang block para i-reschedule; i-click para sa info/status.</p></div></div>
+          <div id="tlBacklog" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px"></div>
+        </article>
+        <article class="panel" style="overflow:auto;padding-bottom:6px"><div id="tlGrid" class="tl-grid"></div></article>
       </section>
 
       <section id="teamsPage" class="page">
