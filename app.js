@@ -1062,6 +1062,16 @@ function exportRemittance(){
 
 // ---------- Add Job Order (console intake → Validator, mirrors sales agent) ----------
 let ordDocs={id:[],billing:[],premise:[]};
+// Plan dropdowns for the console New work order form (match the mobile sales app)
+const ORD_PLANS_SDU=['PLAN 999 - 100MBPS','PLAN 1500 - 300MBPS','PLAN 1699 - 600MBPS / 400MBPS (VICE VERSA)','PLAN 2000 - 500MBPS','PLAN 2500 - 2500MBPS','PLAN 3000 - 700MBPS / 1GBPS (VICE VERSA)','PLAN 3500 - 1GBPS'];
+const ORD_PLANS_MDU=['PLAN 999 - 100MBPS','PLAN 1399 - 200MBPS','PLAN 1500 - 300MBPS','PLAN 2000 - 500MBPS'];
+const ORD_ADDONS=['SKY TV 99','SKY TV 299','SKY TV 499'];
+function ordPopulatePlans(){
+  const dw=($('#ord_dwelling')&&$('#ord_dwelling').value)||'SDU';
+  const list=dw==='MDU'?ORD_PLANS_MDU:ORD_PLANS_SDU;
+  const sel=$('#ord_plan'); if(sel){ const cur=sel.value; sel.innerHTML='<option value="">— Select plan —</option>'+list.map(p=>`<option>${p}</option>`).join(''); sel.value=list.includes(cur)?cur:''; }
+  const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
+}
 let _sbc=null;
 function sbc(){ if(typeof dashAuth!=='undefined' && dashAuth) return dashAuth; /* authenticated client */ if(!_sbc && window.supabase?.createClient) _sbc=window.supabase.createClient(SUPA_URL,SUPA_KEY); return _sbc; }
 function compressImage(file,maxDim=1000,targetKB=90){
@@ -1099,10 +1109,11 @@ async function submitOrder(e){
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
-  const job={id:jobId,subscriber:full,service_type:'Installation',plan:t(f.plan),area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',
+  const job={id:jobId,subscriber:full,service_type:'Installation',plan:t(f.plan),ref_no:t(f.ref_no),area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),brgy:brgy,city:city,
     play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
+    dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),add_on:t(f.add_on),
     special_note:t(f.special_note),updated_at:new Date().toISOString()};
   try{
     const {error}=await client.from('jobs').insert(job); if(error) throw error;
@@ -1641,7 +1652,8 @@ function init(){
 
   $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>openModal($('#orderModal')));
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); });
+  $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);
   $('#modalBackdrop').onclick=closeModals;
