@@ -517,6 +517,10 @@
     <div class="modal-head"><div><span class="eyebrow">VALIDATOR · REVIEW</span><h2 id="valTitle">Job order review</h2><p id="valSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div style="padding:18px 25px 4px"><div class="info-grid" id="valInfo"></div></div>
     <div id="valDocs"></div>
+    <div style="padding:6px 25px 4px"><div class="form-grid" style="padding:0;grid-template-columns:1fr 1fr;gap:12px">
+      <label class="field"><span>JO Number * (required to validate)</span><input id="valJONum" autocapitalize="characters"></label>
+      <label class="field"><span>IBAS Number * (required to validate)</span><input id="valIbas" autocapitalize="characters"></label>
+    </div></div>
     <div style="padding:6px 25px 14px"><label class="field"><span>Rejection reason (if rejecting)</span><input id="valReason"></label></div>
     <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="valReject" style="color:#c2503a;border-color:#f0c4b9">Reject</button><button type="button" class="primary-btn" id="valApprove">Approve → Dispatch</button></div>
   </dialog>

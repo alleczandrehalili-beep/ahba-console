@@ -616,7 +616,7 @@ async function renderValidation(){
   if(!valJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No job orders awaiting validation.</td></tr>`;refreshValBadge();return}
   body.innerHTML=valJobs.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong></td><td>${agentLabel(j.created_by)}</td><td><strong>${j.subscriber||'—'}</strong></td><td>${j.primary_no||'—'}</td><td>${j.area||j.city||'—'}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${j.ref_no}</span>`:''}</td><td>${agentLabel(j.created_by)}</td><td><strong>${j.subscriber||'—'}</strong></td><td>${j.primary_no||'—'}</td><td>${j.area||j.city||'—'}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
   }).join('');
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
   refreshValBadge();
@@ -636,10 +636,12 @@ function openValidate(jobId){
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
-    F('Plan / Ref',j.plan),F('1P/2P',j.play_type),F('Source of sales',j.source_of_sales),
-    F('Referral',j.referral_name),F('Address',j.address),F('Barangay',j.brgy),F('City',j.city||j.area),
-    F('Special note',j.special_note)
+    F('Plan',j.plan),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),
+    F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
+    F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
+    F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
   ].join('');
+  $('#valJONum').value=j.job_order_no||''; $('#valIbas').value=j.ibass_acct_no||'';
   const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
   $('#valDocs').innerHTML=cats.map(([c,label])=>{
     const list=docs.filter(d=>d.category===c);
@@ -653,9 +655,15 @@ function openValidate(jobId){
   openModal($('#valModal'));
 }
 async function decideValidation(jobId,approve){
-  const body=approve
-    ? {status:'pending', validated:true, validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday()}
-    : {status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
+  let body;
+  if(approve){
+    const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
+    if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
+    if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
+    body={status:'pending', validated:true, validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+  } else {
+    body={status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
+  }
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
