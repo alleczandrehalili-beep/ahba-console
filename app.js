@@ -214,9 +214,11 @@ function renderJobs(){
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
     return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
-  // All four counts come from ONE set: unique loads with today's load_date.
-  // → Incomplete + Cancelled + Completed (+ still-active) always reconcile to Total Turn-Ins.
-  const todayLoads=[...new Map(jobs.filter(j=>j.load_date&&String(j.load_date).slice(0,10)===today).map(j=>[j.id,j])).values()];
+  // Turn-Ins = unique loads ENCODED today (by created_at). Loads encoded on other days
+  // (carried-over / re-dispatched) are NOT counted as today's turn-ins.
+  // The breakdown (Incomplete + Cancelled + Completed + active) reconciles to Total Turn-Ins.
+  const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
+  const todayLoads=[...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
   const cntBy=s=>todayLoads.filter(j=>j.status===s).length;
   const stats=[
     ['Total Turn-Ins', todayLoads.length, '#4285f4'],   // unique loads na pumasok para sa araw
@@ -250,13 +252,14 @@ function negReleased(negAt){
   const release=new Date(`${md}T05:00:00+08:00`); release.setDate(release.getDate()+1);
   return Date.now()>=release.getTime();
 }
-// Only these dispatchers are asked whether to return yesterday's leftover Incomplete loads.
-const ROLLOVER_DISPATCHERS=['AHBA_DISPATCHSLI','AHBA_DISPATCHSLI3'];
+// Any dispatcher (dispatch-board access OR superadmin) is asked whether to return
+// yesterday's leftover Incomplete loads to "For Dispatch".
+function hasDispatchAccess(u){ return !!(u && (u.is_super || (Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('dispatch')))); }
 let rolloverChecking=false;
-// Replaces the old automatic rollover: prompt the dispatcher instead of moving loads automatically.
+// End-of-day rollover: auto-detect leftover loads, then PROMPT the dispatcher for confirmation.
 function maybePromptRollover(){
   const u=window.dashUser; if(!u || rolloverChecking) return;
-  if(!ROLLOVER_DISPATCHERS.includes(String(u.username||'').toUpperCase())) return;
+  if(!hasDispatchAccess(u)) return;
   const today=manilaToday();
   const key='ahba_rollover_'+u.username;
   if(localStorage.getItem(key)===today) return;            // already decided today
@@ -1247,16 +1250,15 @@ function applyAccess(u){
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
-  const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = (u.is_super || allowed.includes('dispatch')) ? 'inline-flex' : 'none';
+  const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
   const first=(allowed[0]||'overview');
   switchPage(first);
   renderAnnounceBar();
 }
-// Superadmin: wipe ALL loads/job orders from the dispatch board (and their photos/docs).
+// Any dispatcher (dispatch access OR superadmin): wipe ALL loads/job orders from the board.
 async function deleteAllLoads(){
   const u=window.dashUser;
-  const canClear = u && (u.is_super || (Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('dispatch')));
-  if(!canClear){ showToast('No access to clear loads'); return; }
+  if(!hasDispatchAccess(u)){ showToast('No access to clear loads'); return; }
   if(!confirm('⚠️ Buburahin ang LAHAT ng loads/job orders sa dispatch board (pati litrato at docs nila). Hindi na ito mababawi. Magpatuloy?')) return;
   const t=(prompt('Para kumpirmahin, i-type ang: DELETE ALL')||'').trim();
   if(t!=='DELETE ALL'){ showToast('Cancelled — hindi tumugma ang confirmation.'); return; }
