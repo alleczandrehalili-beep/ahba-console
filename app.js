@@ -198,7 +198,7 @@ async function renderTeamLocations(){
   const at=$('#availableTeamText'); if(at) at.textContent=`${onlineN} online · ${withGps} sharing GPS`;
 }
 function renderJobs(){
-  processNegativeReturns();
+  maybePromptRollover();
   const pending=jobs.filter(j=>j.status==='pending');
   $('#pendingBadge').textContent=pending.length;
   $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong></td><td>${j.type}</td><td>${j.area}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
@@ -250,22 +250,32 @@ function negReleased(negAt){
   const release=new Date(`${md}T05:00:00+08:00`); release.setDate(release.getDate()+1);
   return Date.now()>=release.getTime();
 }
-function processNegativeReturns(){
+// Only these dispatchers are asked whether to return yesterday's leftover Incomplete loads.
+const ROLLOVER_DISPATCHERS=['AHBA_DISPATCHSLI','AHBA_DISPATCHSLI3'];
+let rolloverChecking=false;
+// Replaces the old automatic rollover: prompt the dispatcher instead of moving loads automatically.
+function maybePromptRollover(){
+  const u=window.dashUser; if(!u || rolloverChecking) return;
+  if(!ROLLOVER_DISPATCHERS.includes(String(u.username||'').toUpperCase())) return;
   const today=manilaToday();
-  jobs.forEach(j=>{
-    // Incomplete (negative) → back to For Dispatch at 5:00 AM next day, as 1st Load
-    if(j.status==='negative' && negReleased(j.negative_at)){
-      j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today;
-      j.history=appendHistory(j.history,'End of day: Incomplete → For Dispatch (1st Load)');
-      if(window.AHBASync) window.AHBASync(j);
-    }
-    // Leftover For Dispatch from a previous day → carry forward to today as priority (1st Load)
-    else if(j.status==='pending' && j.load_date && String(j.load_date).slice(0,10)<today){
-      j.priority='1st Load'; j.load_date=today;
-      j.history=appendHistory(j.history,'Carried to next day (For Dispatch, 1st Load)');
-      if(window.AHBASync) window.AHBASync(j);
-    }
+  const key='ahba_rollover_'+u.username;
+  if(localStorage.getItem(key)===today) return;            // already decided today
+  const cands=jobs.filter(j=> (j.status==='negative' && negReleased(j.negative_at)) ||
+                              (j.status==='pending' && j.load_date && String(j.load_date).slice(0,10)<today));
+  if(!cands.length) return;                                 // nothing to ask yet
+  rolloverChecking=true;
+  const incs=cands.filter(j=>j.status==='negative').length;
+  const ok=confirm(`May ${cands.length} natirang load mula sa nakaraang araw (${incs} Incomplete).\n\nIbalik ba ang mga ito sa "For Dispatch" (1st Load priority)?\n\nOK = Ibalik   ·   Cancel = Iwan muna`);
+  localStorage.setItem(key,today);                          // asked once today
+  rolloverChecking=false;
+  if(!ok){ showToast('Iniwan muna ang mga incomplete load.'); return; }
+  cands.forEach(j=>{
+    if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    else { j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    if(window.AHBASync) window.AHBASync(j);
   });
+  showToast(`${cands.length} load(s) ibinalik sa For Dispatch.`);
+  if(typeof renderOverview==='function') renderOverview();
 }
 function unassignJob(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j||!['assigned','en-route','negative'].includes(j.status))return;
@@ -636,12 +646,17 @@ function openValidate(jobId){
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
-    F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),
+    F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),F('Add-ons (2P)',j.addon_count),F('VAS no.',j.vas_no),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
     F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
     F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
   ].join('');
   $('#valJONum').value=j.job_order_no||''; $('#valIbas').value=j.ibass_acct_no||'';
+  // 2-PLAY: show one VAS Number field per add-on (required to validate)
+  const is2P=(j.play_type==='2-PLAY'); const vcnt=is2P?(Number(j.addon_count)||1):0;
+  const vw=$('#valVasWrap'); if(vw) vw.style.display=is2P?'':'none';
+  const ex=String(j.vas_no||'').split(',').map(s=>s.trim());
+  if($('#valVasInputs')) $('#valVasInputs').innerHTML=is2P?Array.from({length:vcnt}).map((_,i)=>`<label class="field"><span>VAS Number ${i+1} *</span><input class="valVas" value="${(ex[i]||'').replace(/"/g,'&quot;')}"></label>`).join(''):'';
   const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
   $('#valDocs').innerHTML=cats.map(([c,label])=>{
     const list=docs.filter(d=>d.category===c);
@@ -655,12 +670,18 @@ function openValidate(jobId){
   openModal($('#valModal'));
 }
 async function decideValidation(jobId,approve){
+  const j=valJobs.find(x=>x.id===jobId)||{};
   let body;
   if(approve){
     const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
     if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
     body={status:'pending', validated:true, validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+    if(j.play_type==='2-PLAY'){
+      const vs=$$('.valVas').map(i=>i.value.trim());
+      if(!vs.length||vs.some(x=>!x)){ showToast('Enter all VAS Number(s) — required for 2-PLAY'); return; }
+      body.vas_no=vs.join(', ');
+    }
   } else {
     body={status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
   }
@@ -1072,6 +1093,7 @@ function ordPopulatePlans(){
   const sel=$('#ord_plan'); if(sel){ const cur=sel.value; sel.innerHTML='<option value="">— Select plan —</option>'+list.map(p=>`<option>${p}</option>`).join(''); sel.value=list.includes(cur)?cur:''; }
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
+function ordToggleAddonCount(){ const on=($('#ord_play')&&$('#ord_play').value)==='2-PLAY'; const w=$('#ord_addon_count_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_addon_count')) $('#ord_addon_count').value=''; }
 let _sbc=null;
 function sbc(){ if(typeof dashAuth!=='undefined' && dashAuth) return dashAuth; /* authenticated client */ if(!_sbc && window.supabase?.createClient) _sbc=window.supabase.createClient(SUPA_URL,SUPA_KEY); return _sbc; }
 function compressImage(file,maxDim=1000,targetKB=90){
@@ -1103,6 +1125,7 @@ async function submitOrder(e){
   if(!fn||!ln||!pno||!brgy||!city){ err('Please fill: first & last name, primary no., barangay, and city.'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
+  if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
   if(!ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
@@ -1113,7 +1136,7 @@ async function submitOrder(e){
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),brgy:brgy,city:city,
     play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
-    dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),add_on:t(f.add_on),
+    dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
     special_note:t(f.special_note),updated_at:new Date().toISOString()};
   try{
     const {error}=await client.from('jobs').insert(job); if(error) throw error;
@@ -1652,8 +1675,9 @@ function init(){
 
   $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); ordToggleAddonCount(); });
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
+  $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);
   $('#modalBackdrop').onclick=closeModals;
