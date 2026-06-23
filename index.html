@@ -390,7 +390,7 @@
       <section id="accessPage" class="page">
         <div class="page-toolbar"><div><h2>Access control</h2><p>Gumawa ng user, mag-assign ng role/access, at mag-reset ng password. Superadmin lang ang makaka-access dito.</p></div></div>
         <article class="panel full-table" style="margin-bottom:14px">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create new user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Gagawa ng login account. I-set ang access sa table sa baba pagkatapos. Kailangan ng admin secret.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create dashboard (console) user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Gagawa ng console login account. I-set ang access sa table sa baba pagkatapos. Hihingin ang sarili mong password bilang kumpirmasyon.</p></div></div>
           <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
             <label class="field"><span>Username *</span><input id="cuUser" autocapitalize="characters"></label>
             <label class="field"><span>Display name</span><input id="cuName"></label>
@@ -398,6 +398,16 @@
             <label class="field"><span>Temp password * (min 8)</span><input id="cuPass"></label>
             <label class="field" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="cuSuper" style="width:16px;height:16px"><span style="margin:0">Make superadmin (full access)</span></label>
             <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="cuCreate" type="button">Create user</button></div>
+          </div>
+        </article>
+        <article class="panel full-table" style="margin-bottom:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create mobile / field account</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Para sa mobile app: Technician, Sales agent, o Security. Login: <i>username</i>@ahbafield.app. Superadmin lang.</p></div></div>
+          <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
+            <label class="field"><span>Username * (e.g. AHBA_SLI021)</span><input id="cfUser" autocapitalize="characters"></label>
+            <label class="field"><span>Role *</span><select id="cfRole"><option value="technician">Technician</option><option value="sales_agent">Sales agent</option><option value="security">Security</option></select></label>
+            <label class="field"><span>Area / Note</span><input id="cfArea"></label>
+            <label class="field"><span>Temp password * (min 8)</span><input id="cfPass"></label>
+            <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="cfCreate" type="button">Create field account</button></div>
           </div>
         </article>
         <article class="panel full-table">
@@ -469,8 +479,7 @@
     <div class="modal-head"><div><span class="eyebrow">ADMIN · PASSWORD RESET</span><h2>Reset password</h2><p>For <strong id="resetUser">AHBA_SLI001</strong> (<span id="resetEmail"></span>)</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div class="form-grid" style="grid-template-columns:1fr">
       <label class="field"><span>Temporary password (min 8 chars)</span><input id="resetNewPw"></label>
-      <label class="field"><span>Admin secret</span><input id="resetSecret" type="password"></label>
-      <p style="font-size:11px;color:#7c8a87;margin:0">The user will be asked to choose their own new password on next login. Tell them this temporary password.</p>
+      <p style="font-size:11px;color:#7c8a87;margin:0">You'll be asked for YOUR password to confirm. The user will choose their own new password on next login — tell them this temporary one.</p>
     </div>
     <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><a class="text-btn" href="https://supabase.com/dashboard/project/avjzkfxgzeyxtihkofed/auth/users" target="_blank" rel="noopener" style="align-self:center">Or reset in Supabase</a><button type="button" class="primary-btn" id="resetNow">Reset now</button></div>
   </dialog>

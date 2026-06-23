@@ -707,21 +707,17 @@ function openReset(username,email){
   $('#resetUser').textContent=username;
   $('#resetEmail').textContent=email||`${username.toLowerCase()}@ahbafield.app`;
   if($('#resetNewPw'))$('#resetNewPw').value='';
-  if($('#resetSecret'))$('#resetSecret').value=localStorage.getItem('ahba_admin_secret')||'';
   openModal($('#resetModal'));
 }
 async function resetNow(){
   const username=$('#resetUser').textContent.trim();
-  const np=($('#resetNewPw').value||'').trim(), sec=($('#resetSecret').value||'').trim();
+  const np=($('#resetNewPw').value||'').trim();
   if(np.length<8){showToast('Temporary password must be at least 8 characters');return}
-  if(!sec){showToast('Enter the admin secret');return}
+  if(!await confirmActorPassword()) return;
   const btn=$('#resetNow'); btn.disabled=true; btn.textContent='Resetting…';
   try{
-    const r=await fetch(`${SUPA_URL}/functions/v1/admin-reset`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()},body:JSON.stringify({username,new_password:np,admin_secret:sec})});
-    let out={}; try{out=await r.json()}catch(e){}
-    if(!r.ok||out.error) throw new Error(out.error||('HTTP '+r.status));
-    localStorage.setItem('ahba_admin_secret',sec);
-    closeModals(); showToast(`${username} reset. They must set a new password on next login.`);
+    await callAdminFn({action:'reset',target:'tech',username,new_password:np});
+    closeModals(); showToast(`${username} reset (by you). They must set a new password on next login.`);
     if($('#accountsPage')?.classList.contains('active')) renderAccounts();
   }catch(e){
     const m=/Failed to fetch|NetworkError/i.test(e.message)?'Reset service not reachable — is the admin-reset function deployed?':e.message;
@@ -1169,16 +1165,19 @@ function applyAccess(u){
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
-  const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = u.is_super ? 'inline-flex' : 'none';
+  const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = (u.is_super || allowed.includes('dispatch')) ? 'inline-flex' : 'none';
   const first=(allowed[0]||'overview');
   switchPage(first);
 }
 // Superadmin: wipe ALL loads/job orders from the dispatch board (and their photos/docs).
 async function deleteAllLoads(){
-  if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
+  const u=window.dashUser;
+  const canClear = u && (u.is_super || (Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('dispatch')));
+  if(!canClear){ showToast('No access to clear loads'); return; }
   if(!confirm('⚠️ Buburahin ang LAHAT ng loads/job orders sa dispatch board (pati litrato at docs nila). Hindi na ito mababawi. Magpatuloy?')) return;
   const t=(prompt('Para kumpirmahin, i-type ang: DELETE ALL')||'').trim();
   if(t!=='DELETE ALL'){ showToast('Cancelled — hindi tumugma ang confirmation.'); return; }
+  if(!await confirmActorPassword()) return;   // extra safety vs. accidental clears
   showToast('Deleting all loads…');
   try{
     const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'};
@@ -1220,10 +1219,13 @@ async function saveAccess(username){
   }catch(e){ showToast('Could not save access'); }
 }
 // ---- Secure admin actions via the admin-reset Edge Function ----
-function getAdminSecret(){
-  let s=localStorage.getItem('ahba_admin_secret')||'';
-  if(!s){ s=(prompt('Enter the Superadmin admin secret:')||'').trim(); if(s) localStorage.setItem('ahba_admin_secret',s); }
-  return s;
+// Re-confirm the acting user's OWN password before a sensitive action (replaces the shared admin secret).
+async function confirmActorPassword(){
+  const u=window.dashUser; if(!u||typeof dashAuth==='undefined'||!dashAuth){ showToast('Not signed in'); return false; }
+  const p=prompt('Enter YOUR password to confirm this action:'); if(p===null) return false;
+  if(!p){ showToast('Password required'); return false; }
+  try{ const {error}=await dashAuth.auth.signInWithPassword({email:dashEmailFor(u.username),password:p}); if(error){ showToast('Wrong password — cancelled'); return false; } return true; }
+  catch(e){ showToast('Could not verify password'); return false; }
 }
 async function callAdminFn(payload){
   const r=await fetch(`${SUPA_URL}/functions/v1/admin-reset`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()},body:JSON.stringify(payload)});
@@ -1235,32 +1237,46 @@ async function createDashUser(){
   const u=($('#cuUser').value||'').trim().toUpperCase(), nm=($('#cuName').value||'').trim(), rl=($('#cuRole').value||'').trim(), pw=($('#cuPass').value||'').trim(), sup=$('#cuSuper').checked;
   if(!u){ showToast('Enter a username'); return; }
   if(pw.length<8){ showToast('Temp password must be at least 8 characters'); return; }
-  const sec=getAdminSecret(); if(!sec){ showToast('Admin secret required'); return; }
+  if(!await confirmActorPassword()) return;
   const btn=$('#cuCreate'); btn.disabled=true; btn.textContent='Creating…';
   try{
-    await callAdminFn({admin_secret:sec,action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:rl||'Dashboard user',is_super:sup,allowed_pages:sup?PAGE_KEYS.map(p=>p[0]):['overview']});
+    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:rl||'Dashboard user',is_super:sup,allowed_pages:sup?PAGE_KEYS.map(p=>p[0]):['overview']});
     showToast(`${u} created. They must change the temp password on first login.`);
     ['#cuUser','#cuName','#cuRole','#cuPass'].forEach(id=>{const e=$(id);if(e)e.value='';}); $('#cuSuper').checked=false;
     renderAccess();
   }catch(e){ showToast('Create failed: '+e.message); }
   btn.disabled=false; btn.textContent='Create user';
 }
+// Superadmin: create a MOBILE/field account (technician / sales agent / security)
+async function createFieldUser(){
+  const u=($('#cfUser').value||'').trim().toUpperCase(), role=($('#cfRole').value||'technician'), area=($('#cfArea').value||'').trim(), pw=($('#cfPass').value||'').trim();
+  if(!u){ showToast('Enter a username'); return; }
+  if(pw.length<8){ showToast('Temp password must be at least 8 characters'); return; }
+  if(!await confirmActorPassword()) return;
+  const btn=$('#cfCreate'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    await callAdminFn({action:'create',target:'tech',username:u,new_password:pw,role,area});
+    showToast(`${u} (${role}) created. Login: ${u.toLowerCase()}@ahbafield.app — must change temp password on first login.`);
+    ['#cfUser','#cfArea','#cfPass'].forEach(id=>{const e=$(id);if(e)e.value='';});
+  }catch(e){ showToast('Create failed: '+e.message); }
+  btn.disabled=false; btn.textContent='Create field account';
+}
 async function resetDashUser(username){
   const pw=(prompt(`New temporary password for ${username} (min 8 chars):`,'Ahba@2026')||'').trim();
   if(pw.length<8){ showToast('Password must be at least 8 characters'); return; }
-  const sec=getAdminSecret(); if(!sec){ showToast('Admin secret required'); return; }
+  if(!await confirmActorPassword()) return;
   try{
-    await callAdminFn({admin_secret:sec,action:'reset',target:'dash',username,new_password:pw});
-    showToast(`${username} password reset. They must change it on next login.`);
+    await callAdminFn({action:'reset',target:'dash',username,new_password:pw});
+    showToast(`${username} password reset (by you). They must change it on next login.`);
   }catch(e){ showToast('Reset failed: '+e.message); }
 }
 async function renameDashUser(username){
   let nu=(prompt(`New username for ${username} (letters/numbers, no spaces):`,username)||'').trim().toUpperCase();
   if(!nu||nu===username) return;
   if(!/^[A-Z0-9._-]{3,}$/.test(nu)){ showToast('Username: 3+ chars, letters/numbers/._- only (no spaces).'); return; }
-  const sec=getAdminSecret(); if(!sec){ showToast('Admin secret required'); return; }
+  if(!await confirmActorPassword()) return;
   try{
-    await callAdminFn({admin_secret:sec,action:'rename',target:'dash',username,new_username:nu});
+    await callAdminFn({action:'rename',target:'dash',username,new_username:nu});
     showToast(`${username} → ${nu}. New login email: ${nu.toLowerCase()}@ahbadash.app`);
     renderAccess();
   }catch(e){ showToast('Rename failed: '+e.message); }
@@ -1295,9 +1311,9 @@ async function changeMyUsername(){
 async function deleteDashUser(username){
   if(username===(window.dashUser&&window.dashUser.username)){ showToast('You cannot delete your own account.'); return; }
   if(!confirm(`Permanently DELETE user "${username}"?\nThis removes their login and dashboard access. This cannot be undone.`)) return;
-  const sec=getAdminSecret(); if(!sec){ showToast('Admin secret required'); return; }
+  if(!await confirmActorPassword()) return;
   try{
-    await callAdminFn({admin_secret:sec,action:'delete',target:'dash',username});
+    await callAdminFn({action:'delete',target:'dash',username});
     showToast(`${username} deleted.`);
     renderAccess();
   }catch(e){ showToast('Delete failed: '+e.message); }
@@ -1726,6 +1742,7 @@ function init(){
   $('#dashChangeName')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); changeMyDisplayName(); });
   $('#dashChangeUser')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); changeMyUsername(); });
   $('#cuCreate')?.addEventListener('click',createDashUser);
+  $('#cfCreate')?.addEventListener('click',createFieldUser);
   startDashAuth();
 }
 document.addEventListener('DOMContentLoaded',init);
