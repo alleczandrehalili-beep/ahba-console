@@ -302,6 +302,15 @@ function openJobDetail(jobId){
     F('Schedule',j.schedule),F('Negative remark',j.negative_remark)
   ].join('');
   $('#jdHistory').textContent=j.history||'No history yet.';
+  // Technician uploaded photos — para ma-validate kung tama ang status na in-update
+  const pg=$('#jdPhotos');
+  if(pg){
+    pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
+    fetchPhotosFor([jobId]).then(m=>{
+      const list=m[jobId]||[];
+      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ Wala pang litratong na-upload ang technician.</div>';
+    }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
+  }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
   $('#jdStatus').value='';
   $('#jdApply').onclick=()=>{const c=$('#jdStatus').value; if(!c){showToast('Select a status to apply');return;} applyStatusUpdate(jobId,c);};
