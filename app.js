@@ -618,7 +618,9 @@ function tlFmtHour(h){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); const ap
 function renderTimeline(){
   const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
   const date=dEl?dEl.value:manilaToday();
-  syncTeamsFromDb().catch(()=>{});
+  // Pull online status + newly-created technicians, then re-render so EVERY available
+  // technician team (incl. brand-new accounts from Access Control) shows on the timeline.
+  Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
   // Backlog: pending loads not yet placed on the timeline
   const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at);
   const bl=$('#tlBacklog');
