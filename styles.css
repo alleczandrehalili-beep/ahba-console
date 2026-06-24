@@ -48,6 +48,7 @@ html,body{overflow-x:hidden;max-width:100%}
 
 /* Redispatch counter — prominent on each job card */
 .redispatch{font:800 10px Manrope;color:#fff;background:#18a57b;border-radius:6px;padding:2px 7px;letter-spacing:.02em;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.redispatch.dc0{background:#e3e8e2;color:#56655f}   /* 0x — not yet dispatched */
 .redispatch.dc1{background:#18a57b}                 /* 1x — green */
 .redispatch.dc2{background:#f5c518;color:#3a2c08}   /* 2x — yellow */
 .redispatch.dc3{background:#d6492f}                 /* 3x — red */

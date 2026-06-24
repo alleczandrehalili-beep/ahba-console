@@ -634,7 +634,7 @@ function renderTimeline(){
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
-    bl.innerHTML=backlog.length?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="Na-dispatch ${dc}x">⟳${dc}</span>`:'';const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span></div>${dcb}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
+    bl.innerHTML=backlog.length?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span></div>${dcb}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
   }
   // Status tally banner under the For Dispatch section
   renderTimelineCounts();
