@@ -448,6 +448,8 @@
   <dialog id="orderModal" class="modal">
     <form method="dialog" id="orderForm">
       <div class="modal-head"><div><span class="eyebrow">SALES INTAKE</span><h2>Add job order</h2><p>Same requirements as the sales-agent app. Goes to the Validator for review.</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+      <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button></div></div>
+
       <div class="form-grid">
         <div class="field full form-sec">Subscriber</div>
         <label class="field"><span>First name *</span><input name="first_name" required></label>
@@ -455,7 +457,9 @@
         <label class="field"><span>Last name *</span><input name="last_name" required></label>
         <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
         <label class="field"><span>Other contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+      </div>
 
+      <div class="form-grid">
         <div class="field full form-sec">Address</div>
         <label class="field"><span>House no.</span><input name="house_no"></label>
         <label class="field"><span>Street name</span><input name="street_name"></label>
@@ -463,7 +467,9 @@
         <label class="field"><span>District *</span><select name="district" id="ord_district" required><option value="">— Select district —</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
         <label class="field"><span>Barangay *</span><select name="brgy" id="ord_brgy" required><option value="">— Select district first —</option></select></label>
         <label class="field"><span>City *</span><input name="city" id="ord_city" value="QUEZON CITY" readonly required></label>
+      </div>
 
+      <div class="form-grid" id="ordSecService">
         <div class="field full form-sec">Service</div>
         <label class="field"><span>Unit type</span><select name="dwelling_type" id="ord_dwelling"><option>SDU</option><option>MDU</option><option>MDU DOCSIS</option></select></label>
         <label class="field"><span>Plan</span><select name="plan" id="ord_plan"></select></label>
@@ -476,7 +482,24 @@
         <label class="field"><span>Source of sales</span><select name="source_of_sales"><option>Referral</option><option>Organic</option><option>Technician</option></select></label>
         <label class="field"><span>Referral name</span><input name="referral_name"></label>
         <label class="field full"><span>Special note</span><textarea name="special_note" rows="2"></textarea></label>
+      </div>
 
+      <div class="form-grid" id="ordSecMigration" style="display:none">
+        <div class="field full form-sec">Service · Migration</div>
+        <label class="field"><span>Current Plan</span><input name="current_plan"></label>
+        <label class="field"><span>New Plan</span><input name="mig_plan"></label>
+        <label class="field"><span>Amount to Collect (₱)</span><input name="mig_amount" type="number" inputmode="numeric"></label>
+        <label class="field"><span>Reference No.</span><input name="mig_ref"></label>
+        <label class="field full"><span>Special note</span><textarea name="mig_note" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-grid" id="ordSecSlr" style="display:none">
+        <div class="field full form-sec">SLR</div>
+        <label class="field full"><span>Ticket No. *</span><input name="ticket_no"></label>
+        <label class="field full"><span>Special note</span><textarea name="slr_note" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-grid" id="ordSecDocs">
         <div class="field full form-sec">Documents</div>
         <label class="field full"><span>Valid ID <em style="font-style:normal;color:#c2503a">*required</em> · <b data-cnt="id">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="id"></label>
         <label class="field full"><span>Proof of Billing <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="billing">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="billing"></label>
