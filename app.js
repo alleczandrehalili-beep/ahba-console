@@ -107,7 +107,7 @@ function renderOverview(){
 // ---------- Live GPS map (Leaflet) ----------
 const AREA_COORDS={'Quezon City':[14.676,121.043],'Manila':[14.599,120.984],'Makati':[14.554,121.024],'Pasig':[14.576,121.085],'Taguig':[14.520,121.053],'Caloocan':[14.651,120.972],'Parañaque':[14.479,121.019],'Mandaluyong':[14.577,121.037],'San Juan':[14.601,121.030],'Marikina':[14.650,121.102]};
 function areaCoord(a){if(!a)return null;if(AREA_COORDS[a])return AREA_COORDS[a];const k=Object.keys(AREA_COORDS).find(x=>x.toLowerCase()===String(a).toLowerCase());return k?AREA_COORDS[k]:null;}
-const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','district','brgy','city','in_charge','source_of_sales','referral_name','deleted_at','deleted_by'];
+const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','district','brgy','city','in_charge','source_of_sales','referral_name','deleted_at','deleted_by','load_type','current_plan','ticket_no'];
 const safeName=s=>(s||'subscriber').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()||'subscriber';
 let leafMap=null, teamMarkers={}, techIndex={}, trackLayer=null;
 function haversineKm(a,b,c,d){const R=6371,toR=x=>x*Math.PI/180;const dLat=toR(c-a),dLng=toR(d-b);const s=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(s))}
@@ -353,8 +353,10 @@ function openJobDetail(jobId){
   $('#jdSub').textContent=`${statusLabel(j.status||'—')}${j.team?' · '+j.team:''}${j.dispatch_count?' · ⟳ ×'+j.dispatch_count:''}`;
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
+    F('Load type',j.load_type||'SLI'),
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
+    F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
     F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
     F('Team',j.team),F('Status',statusLabel(j.status||'')),F('Priority',j.priority),
     F('Source / Referral',[j.source_of_sales,j.referral_name].filter(Boolean).join(' · ')),
@@ -1671,6 +1673,18 @@ function ordPopulatePlans(){
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
 function ordToggleAddonCount(){ const on=($('#ord_play')&&$('#ord_play').value)==='2-PLAY'; const w=$('#ord_addon_count_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_addon_count')) $('#ord_addon_count').value=''; }
+// New Job Order has 3 types: SLI (full + docs), Migration (current/new plan, amount, ref · no docs),
+// SLR (ticket no. only · no service, no docs). Subscriber + Address are shared by all.
+function setOrderType(t){
+  t=t||'SLI';
+  const form=$('#orderForm'); if(form) form.dataset.ordtype=t;
+  $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.classList.toggle('active',b.dataset.ordtype===t));
+  const show=(id,on)=>{const el=$('#'+id); if(el) el.style.display=on?'':'none';};
+  show('ordSecService', t==='SLI');
+  show('ordSecMigration', t==='Migration');
+  show('ordSecSlr', t==='SLR');
+  show('ordSecDocs', t==='SLI');
+}
 let _sbc=null;
 function sbc(){ if(typeof dashAuth!=='undefined' && dashAuth) return dashAuth; /* authenticated client */ if(!_sbc && window.supabase?.createClient) _sbc=window.supabase.createClient(SUPA_URL,SUPA_KEY); return _sbc; }
 function compressImage(file,maxDim=1000,targetKB=90){
@@ -1698,26 +1712,41 @@ async function submitOrder(e){
   const err=m=>{const el=$('#orderErr'); if(el)el.textContent=m||'';};
   err('');
   const t=v=>(v||'').trim();
+  const ordType=($('#orderForm').dataset.ordtype)||'SLI';   // SLI · Migration · SLR
   const fn=t(f.first_name), ln=t(f.last_name), dist=t(f.district), brgy=t(f.brgy), city=t(f.city)||'QUEZON CITY', pno=t(f.primary_no), ono=t(f.other_contact_no);
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
-  if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
-  if(!ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
+  if(ordType==='SLI'){
+    if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
+    if(!ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
+  }
+  if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
-  const job={id:jobId,subscriber:full,service_type:'Installation',plan:t(f.plan),ref_no:t(f.ref_no),area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',
+  const svcType={SLI:'Installation',Migration:'Migration',SLR:'SLR'}[ordType];
+  const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
-    play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
-    dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
-    special_note:t(f.special_note),updated_at:new Date().toISOString()};
+    updated_at:new Date().toISOString()};
+  if(ordType==='SLI'){
+    Object.assign(job,{plan:t(f.plan),ref_no:t(f.ref_no),play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
+      dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,
+      amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),
+      add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
+      special_note:t(f.special_note)});
+  } else if(ordType==='Migration'){
+    Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
+      amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),special_note:t(f.mig_note)});
+  } else { // SLR
+    Object.assign(job,{ticket_no:t(f.ticket_no),special_note:t(f.slr_note)});
+  }
   try{
     const {error}=await client.from('jobs').insert(job); if(error) throw error;
-    for(const cat of ['id','billing','premise']){
+    if(ordType==='SLI') for(const cat of ['id','billing','premise']){
       for(let i=0;i<ordDocs[cat].length;i++){
         const blob=await compressImage(ordDocs[cat][i]);
         const path=`${jobId}/docs/${cat}_${Date.now()}_${i}.jpg`;
@@ -1726,7 +1755,7 @@ async function submitOrder(e){
       }
     }
     ordDocs={id:[],billing:[],premise:[]};
-    $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY';
+    $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
     closeModals(); showToast('Job order submitted to the Validator');
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
   }catch(e2){ err('Submit failed: '+(e2.message||e2)); }
@@ -2323,7 +2352,8 @@ function init(){
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
