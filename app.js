@@ -1626,6 +1626,10 @@ async function renderRemittance(){
   const all=await fetchCompleted(date);
   // only loads with a declared collection (amount or payment mode)
   remJobs=all.filter(j=>(j.payment_amount!=null&&Number(j.payment_amount)>0)||j.payment_mode);
+  const sb=$('#remSearch'); if(sb&&!sb._wired){ sb._wired=true; sb.oninput=remDraw; }
+  remRefresh();
+}
+function remRefresh(){
   const sum=k=>remJobs.reduce((a,b)=>a+(k(b)||0),0);
   const totalCol=sum(j=>Number(j.payment_amount)||0);
   const recAmt=sum(j=>j.remittance_received?(Number(j.payment_amount)||0):0);
@@ -1634,15 +1638,33 @@ async function renderRemittance(){
   const set=(id,v)=>{const el=$(id);if(el)el.textContent=v};
   set('#remTotal',money(totalCol)); set('#remReceived',money(recAmt)); set('#remPending',money(totalCol-recAmt)); set('#remCount',remJobs.length+'');
   set('#remGcash',money(gcash)); set('#remCash',money(cash));
-  if(!remJobs.length){body.innerHTML=`<tr><td colspan="9" class="empty-cell">No collections declared for this day.</td></tr>`;return}
-  body.innerHTML=remJobs.map(j=>{
+  remDraw();
+}
+function remDraw(){
+  const body=$('#remittanceBody'); if(!body)return;
+  const q=($('#remSearch')?.value||'').toLowerCase().trim();
+  const list=remJobs.filter(j=>!q || (j.subscriber||'').toLowerCase().includes(q) || String(j.job_order_no||'').toLowerCase().includes(q) || String(j.id||'').toLowerCase().includes(q));
+  if(!list.length){body.innerHTML=`<tr><td colspan="9" class="empty-cell">${remJobs.length?'No match for "'+q+'".':'No collections declared for this day.'}</td></tr>`;return}
+  body.innerHTML=list.map(j=>{
     const amt=j.payment_amount!=null?money(j.payment_amount):'—';
     const recd=j.remittance_received
       ? `<span class="status completed">✓ Received</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.remittance_received_by||''}${j.remittance_received_at?' · '+fmtWhen(j.remittance_received_at):''}</div>`
       : `<button class="assign-btn" data-received="${j.id}">Mark received</button>`;
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${j.team||'—'}</strong></td><td>${j.work_account||'—'}</td><td>${j.subscriber||'—'}</td><td>${j.payment_mode||'—'}</td><td><strong>${amt}</strong></td><td>${j.ar_no||'—'}</td><td>${recd}</td></tr>`;
+    // Editable mode of payment (corrects technician mistakes; logged in history)
+    const modeSel=`<select class="rem-mode" data-mode="${j.id}" style="font-size:9px;padding:3px 5px;border:1px solid #dfe5df;border-radius:7px"><option ${j.payment_mode==='Gcash'?'selected':''}>Gcash</option><option ${j.payment_mode==='Cash Remittance'?'selected':''}>Cash Remittance</option></select>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${j.team||'—'}</strong></td><td>${j.work_account||'—'}</td><td>${j.subscriber||'—'}</td><td>${modeSel}</td><td><strong>${amt}</strong></td><td>${j.ar_no||'—'}</td><td>${recd}</td></tr>`;
   }).join('');
   $$('#remittanceBody [data-received]').forEach(b=>b.onclick=()=>markReceived(b.dataset.received));
+  $$('#remittanceBody [data-mode]').forEach(s=>s.onchange=()=>editPaymentMode(s.dataset.mode, s.value));
+}
+async function editPaymentMode(jobId, mode){
+  const j=remJobs.find(x=>x.id===jobId); if(!j||j.payment_mode===mode) return;
+  const who=currentOperator(), now=new Date().toISOString(), prev=j.payment_mode||'—';
+  const hist=appendHistory(j.history, `Mode of payment corrected: ${prev} → ${mode} (by ${who})`);
+  try{
+    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({payment_mode:mode,history:hist,updated_at:now})});
+    j.payment_mode=mode; j.history=hist; remRefresh(); showToast(`${jobId}: mode → ${mode}`);
+  }catch(e){ showToast('Update failed: '+(e.message||e)); }
 }
 async function markReceived(jobId){
   const j=remJobs.find(x=>x.id===jobId); if(!j)return;
