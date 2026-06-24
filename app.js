@@ -248,45 +248,43 @@ async function showTeamTrackOnMap(code, date){
   showToast(`Route history: ${code} · ${date} — ${pts.length} stop${pts.length===1?'':'s'} (tap empty map to clear)`);
 }
 function renderJobs(){
-  maybePromptRollover();
-  const pending=jobs.filter(j=>j.status==='pending');
-  // Badge mirrors the "For Dispatch" column: today's working set only (load_date today/none),
-  // NOT leftover loads from previous days still awaiting rollover.
-  const _td=manilaToday();
-  $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
-  $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong></td><td>${j.type}</td><td>${j.area}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
-  $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${j.type.toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase()}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong><span>${j.plan}</span></td><td>${j.type}</td><td>${j.area}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
-  const today=manilaToday();
+  const hist=!!dashHist, SRC=hist?dashHist:jobs;
+  const today=hist?dashViewDate:manilaToday();
   const isToday=d=>d && new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
-  const loadToday=d=>!d || String(d).slice(0,10)===today;   // today's working set (clears daily)
+  const loadToday=d=>!d || String(d).slice(0,10)===today;   // working set for the day
+  if(!hist){
+    maybePromptRollover();
+    const pending=jobs.filter(j=>j.status==='pending');
+    const _td=manilaToday();
+    if($('#pendingBadge')) $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
+    if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong></td><td>${j.type}</td><td>${j.area}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
+    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase()}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong><span>${j.plan}</span></td><td>${j.type}</td><td>${j.area}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
+  }
   const stages=[['pending','For Dispatch'],['assigned','Acknowledged'],['en-route','Travel'],['on-site,in-progress','On Site'],['negative','Incomplete'],['completed','Completed'],['cancelled','Cancelled']];
   $('#dispatchBoard').innerHTML=stages.map(([keys,label])=>{
     let list;
-    if(keys==='negative'){ list=jobs.filter(j=>j.status==='negative'); }
+    if(hist){ list=SRC.filter(j=>keys.split(',').includes(j.status)); }              // snapshot = that day's EOD set
+    else if(keys==='negative'){ list=jobs.filter(j=>j.status==='negative'); }
     else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&isToday(j.updatedAt)); }
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
-    // For Dispatch: most re-dispatched loads first (highest dispatch_count on top).
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
-  // Turn-Ins = unique loads ENCODED today (by created_at). Loads encoded on other days
-  // (carried-over / re-dispatched) are NOT counted as today's turn-ins.
-  // The breakdown (Incomplete + Cancelled + Completed + active) reconciles to Total Turn-Ins.
   const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
-  const todayLoads=[...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
+  const todayLoads=hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
+                        : [...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
   const cntBy=s=>todayLoads.filter(j=>j.status===s).length;
   const stats=[
-    ['Total Turn-Ins', todayLoads.length, '#4285f4'],   // unique loads na pumasok para sa araw
+    ['Total Turn-Ins', todayLoads.length, '#4285f4'],
     ['Incomplete',     cntBy('negative'),  '#c2503a'],
     ['Cancelled',      cntBy('cancelled'), '#7a8088'],
     ['Completed',      cntBy('completed'), '#11825f']
   ];
   $('#dispatchStats').innerHTML=stats.map(([l,n,c])=>`<div class="small-stat" style="border-left:4px solid ${c}"><span>${l}</span><strong style="color:${c}">${n}</strong></div>`).join('');
-  bindAssignButtons();
-  wireDispatchDnD();
-  applyJobTableFilter();
+  if(!hist){ bindAssignButtons(); wireDispatchDnD(); applyJobTableFilter(); maybeCaptureSnapshot();
+    if(!renderJobs._backfilled && window.dashUser && jobs.length){ renderJobs._backfilled=true; backfillSnapshots('2026-06-22'); } }
+  else { $$('#dispatchBoard .job-card[data-detail]').forEach(c=>c.onclick=e=>{ if(e.target.closest('button'))return; openJobDetail(c.dataset.detail); }); }
   applyDispatchSearch();
-  maybeCaptureSnapshot();   // auto-save today's productivity (throttled)
 }
 function applyDispatchSearch(){
   const q=($('#dispatchSearch')?.value||'').toLowerCase().trim();
@@ -631,6 +629,23 @@ const TL_START=8, TL_END=21;                 // 8 AM – 9 PM
 const TL_HOURS=TL_END-TL_START;              // 13 hourly columns
 const TL_DEFMIN=90;                          // default Job Order duration: 1 hr 30 mins
 const tlDayStr=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
+// Historical End-of-Day view: when a PAST date is picked on the Dashboard, both the Teams
+// timeline and the Dispatch Board render from that day's saved snapshot (read-only).
+let dashHist=null;       // null = live (today); else = array of snapshot job objects
+let dashViewDate=null;   // the selected past date string (YYYY-MM-DD)
+async function onDashDateChange(){
+  const dEl=$('#tlDate'); const date=dEl?dEl.value:manilaToday();
+  if(!date||date===manilaToday()){ dashHist=null; dashViewDate=null; }
+  else {
+    try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${encodeURIComponent(date)}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      const rows=r.ok?await r.json():[]; const snap=rows[0];
+      dashHist=(snap&&snap.data&&Array.isArray(snap.data.jobs))?snap.data.jobs:[]; dashViewDate=date;
+    }catch(e){ dashHist=[]; dashViewDate=date; }
+  }
+  const note=$('#dashHistNote');
+  if(note){ if(dashHist){ note.style.display=''; note.textContent=`📅 Viewing END-OF-DAY snapshot for ${dashViewDate} (read-only). Pumili ng today para sa live view.`; } else note.style.display='none'; }
+  renderTimeline(); renderJobs();
+}
 function tlStatusColor(s){
   const m={pending:['#fff','#56655f','#d4dcd5'],assigned:['#eaf1ff','#0c447c','#b5d4f4'],acknowledged:['#eaf1ff','#0c447c','#b5d4f4'],
     'en-route':['#f0ebff','#5b3aa6','#cecbf6'],travel:['#f0ebff','#5b3aa6','#cecbf6'],'on-site':['#fff4cf','#7a5e0c','#fac775'],
@@ -648,20 +663,20 @@ function setDashView(view){
   if(showLoads) renderJobs(); else renderTimeline();
 }
 function renderTimeline(){
-  const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
+  const dEl=$('#tlDate'); if(dEl){ if(!dEl.value) dEl.value=manilaToday(); dEl.onchange=onDashDateChange; }
   const date=dEl?dEl.value:manilaToday();
+  const hist=!!dashHist, SRC=hist?dashHist:jobs;
   // Same dynamics as the Dispatch Board: For Dispatch = today's WORKING SET (load_date today
   // or none). Leftover loads from previous days only appear here AFTER the dispatcher/superadmin
   // confirms the end-of-day rollover — which we prompt for here too.
-  maybePromptRollover();
-  const loadToday=d=>!d || String(d).slice(0,10)===manilaToday();
-  // Pull online status + newly-created technicians, then re-render so EVERY available
-  // technician team (incl. brand-new accounts from Access Control) shows on the timeline.
-  Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
-  // Backlog: ALL for-dispatch loads in today's working set, not yet placed on the timeline —
+  if(!hist) maybePromptRollover();
+  const loadToday=d=>!d || String(d).slice(0,10)===(hist?date:manilaToday());
+  // Pull online status + newly-created technicians, then re-render (live only).
+  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
+  // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
   // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
-  const backlog=jobs.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date))
+  const backlog=SRC.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date))
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
@@ -682,8 +697,9 @@ function renderTimeline(){
     // Full daily view per team — ALL statuses (Acknowledged, Travel, On-Site, Incomplete,
     // Completed, Cancelled), so the Timeline mirrors the Dispatch Board exactly and can replace it.
     const isTodayUpd=d=>d && tlDayStr(d)===manilaToday();
-    const dayJobs=jobs.filter(j=>{
+    const dayJobs=SRC.filter(j=>{
       if(j.team!==t.code) return false;
+      if(hist) return true;                                                     // snapshot = that day's EOD set
       const st=(j.status||'').toLowerCase();
       if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
       if(date!==manilaToday()) return false;                                    // past/future days: scheduled only
@@ -711,7 +727,7 @@ function renderTimeline(){
     const crewLine=crew?`<span class="tl-crew">${crew}</span>`:(acct?'':'<span class="tl-crew" style="color:#b6c0bc">— not signed in —</span>');
     html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
-  const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); wireTimelineDnD(date); }
+  const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); if(hist){ $$('#tlGrid [data-tlblock]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); }); } else { wireTimelineDnD(date); } }
   // Status tally banner — counts EXACTLY the loads shown above (always in sync with the teams).
   renderTimelineCounts(shownJobs);
   // Search box: highlight matching job orders (backlog + scheduled blocks)
@@ -814,8 +830,8 @@ function renderTimelineHistory(){
   const tg=$('#tlHistToggle'); if(tg&&!tg._wired){ tg._wired=true; tg.onclick=()=>{ const h=$('#tlHistory'); const hidden=h.style.display==='none'; h.style.display=hidden?'':'none'; tg.textContent=hidden?'Hide':'Show'; }; }
 }
 // ---------- Daily productivity snapshots (capture today, backtrack past days) ----------
-function buildDailyMetrics(){
-  const today=manilaToday();
+function buildDailyMetrics(dateArg){
+  const today=dateArg||manilaToday();
   const enc=j=> j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):'';
   const loadToday=d=>!d||String(d).slice(0,10)===today;
   const isTodayUpd=d=>d&&new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
@@ -829,7 +845,9 @@ function buildDailyMetrics(){
   const tm={};
   set.forEach(j=>{ if(!j.team) return; const t=tm[j.team]=tm[j.team]||{code:j.team,total:0,completed:0,incomplete:0}; t.total++; const b=tlBucket(j.status); if(b==='completed')t.completed++; if(b==='incomplete')t.incomplete++; });
   const teamsArr=Object.values(tm).sort((a,b)=>b.completed-a.completed||a.code.localeCompare(b.code));
-  const list=set.map(j=>({id:j.id,subscriber:j.subscriber,status:j.status,team:j.team||'',jo:j.job_order_no||'',completed_at:j.completed_at||null}));
+  // Store FULL job objects (minus heavy history) so the End-of-Day state can re-render BOTH
+  // the Teams timeline and the Dispatch Board for any past date.
+  const list=set.map(j=>{ const c=Object.assign({},j); delete c.history; return c; });
   return {counts,turnins,teams:teamsArr,jobs:list};
 }
 let _lastSnap=0;
@@ -840,6 +858,23 @@ async function captureDailySnapshot(){
     const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data:buildDailyMetrics()};
     await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?on_conflict=work_date`,{method:'POST',headers:{...DH(),Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
   }catch(e){}
+}
+// Best-effort BACKFILL of past daily snapshots from current jobs (for days not captured live,
+// e.g. before this feature was deployed). Reconstructed from current statuses — terminal loads
+// (Completed/Cancelled) are accurate; loads changed since are approximate. Flagged reconstructed.
+async function backfillSnapshots(fromDate){
+  if(!window.dashUser || !jobs.length) return;
+  const today=manilaToday();
+  let have=new Set();
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?select=work_date`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); if(r.ok)(await r.json()).forEach(x=>have.add(String(x.work_date).slice(0,10))); }catch(e){}
+  const dts=[]; let d=new Date(fromDate+'T00:00:00+08:00'); const end=new Date(today+'T00:00:00+08:00');
+  while(d<end){ dts.push(d.toLocaleDateString('en-CA',{timeZone:TZ})); d.setDate(d.getDate()+1); }
+  for(const ds of dts){
+    if(have.has(ds)) continue;
+    const data=buildDailyMetrics(ds); if(!data.jobs.length) continue;
+    data.reconstructed=true;
+    try{ await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?on_conflict=work_date`,{method:'POST',headers:{...DH(),Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({work_date:ds,captured_at:new Date().toISOString(),data})}); }catch(e){}
+  }
 }
 async function renderProductivityHistory(){
   const panel=$('#tlProd'); if(!panel) return;
