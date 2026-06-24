@@ -261,11 +261,15 @@
       <section id="timelinePage" class="page">
         <div class="page-toolbar"><div><h2>Dispatch timeline</h2><p>Schedule jobs onto teams and monitor live status across the day.</p></div><div class="toolbar-actions"><div class="search-box" style="min-width:210px"><i data-icon="search"></i><input id="tlSearch" type="search" placeholder="Search JO #, subscriber, team…"></div><div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><input id="tlDate" type="date"></div></div></div>
         <article class="panel full-table" style="margin-bottom:12px">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For Dispatch · drag onto a team</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-drag ang JO papunta sa team row at oras para i-schedule. I-drag ang block para i-reschedule; i-click para sa info/status.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For Dispatch · drag onto a team</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-drag ang JO papunta sa team row at oras para i-schedule. I-drag ang block para i-reschedule, o ibalik dito para i-unassign (↩ For Dispatch); i-click para sa info/status.</p></div></div>
           <div id="tlBacklog" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px"></div>
           <div id="tlCounts" class="tl-counts"></div>
         </article>
         <article class="panel" style="overflow:auto;padding-bottom:6px"><div id="tlGrid" class="tl-grid"></div></article>
+        <article class="panel full-table" style="margin-top:12px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Status History · today</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Live na status progression ng bawat load — i-click para sa buong details.</p></div><button class="text-btn" id="tlHistToggle">Hide</button></div>
+          <div id="tlHistory" class="tl-history"></div>
+        </article>
       </section>
 
       <section id="teamsPage" class="page">

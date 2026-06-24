@@ -778,6 +778,17 @@ function tlApplySearch(){
   });
   if(q&&firstHit){ try{ firstHit.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'}); }catch(_){} }
 }
+// Return a scheduled load to For Dispatch (unassign) — mirrors the Dispatch Board's
+// ↩ For Dispatch bounce. Negative/incomplete loads come back as 1st Load priority.
+function tlReturnToDispatch(jobId){
+  const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  if(j.status==='pending' && !j.scheduled_at) return;      // already in For Dispatch
+  const wasNeg=j.status==='negative';
+  j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
+  j.history=appendHistory(j.history, wasNeg?'Returned → For Dispatch (1st Load)':'Returned → For Dispatch');
+  save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
+  showToast(`${jobId} → For Dispatch${wasNeg?' (1st Load)':''}`);
+}
 let tlDragId=null;
 function wireTimelineDnD(date){
   $$('#tlBacklog [data-tljob]').forEach(c=>{ c.ondragstart=e=>{ tlDragId=c.dataset.tljob; try{e.dataTransfer.setData('text/plain',tlDragId);}catch(_){} }; c.onclick=()=>openJobDetail(c.dataset.tljob); c.title='Drag to a team to schedule · click for full details'; });
@@ -790,6 +801,14 @@ function wireTimelineDnD(date){
     tr.ondragleave=()=>tr.classList.remove('tl-over');
     tr.ondrop=e=>{ e.preventDefault(); tr.classList.remove('tl-over'); const team=tr.dataset.tlteam; const r=tr.getBoundingClientRect(); const x=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); let hour=TL_START+x*TL_HOURS; hour=Math.round(hour*2)/2; const id=tlDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); tlDragId=null; if(id) tlPickTime(id,team,date,hour); };
   });
+  // Drag a scheduled block back onto the For Dispatch area to UNASSIGN (↩ return to dispatch),
+  // same as dragging a card to the For Dispatch column on the Dispatch Board.
+  const bl=$('#tlBacklog');
+  if(bl){
+    bl.ondragover=e=>{ e.preventDefault(); bl.classList.add('tl-over'); };
+    bl.ondragleave=()=>bl.classList.remove('tl-over');
+    bl.ondrop=e=>{ e.preventDefault(); bl.classList.remove('tl-over'); const id=tlDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); tlDragId=null; if(id) tlReturnToDispatch(id); };
+  }
 }
 // Let the dispatcher choose the PREFERRED arrival time (+ duration) when dropping a load
 // onto a technician, instead of snapping to wherever the mouse landed.
@@ -889,7 +908,7 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId);const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId);const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
