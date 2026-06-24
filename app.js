@@ -406,8 +406,9 @@ function applyStatusUpdate(jobId,choice){
   const j=findJob(jobId); if(!j)return;
   if(choice==='completed') j.status='completed';
   else if(choice==='cancelled') j.status='cancelled';
-  else { j.status='pending'; j.team=null; j.load_date=manilaToday(); }  // incomplete / re-dispatch → For Dispatch (today)
-  const label={completed:'Completed',incomplete:'Incomplete → For Dispatch',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
+  else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
+  else { j.status='pending'; j.team=null; j.load_date=manilaToday(); }  // re-dispatch → For Dispatch (today)
+  const label={completed:'Completed',incomplete:'Incomplete',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
   j.history=appendHistory(j.history, `Status → ${label} (by Dispatcher)`);
   j.updatedAt=new Date().toISOString();
   save(); closeModals(); renderJobs(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
