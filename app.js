@@ -725,7 +725,8 @@ function renderTimeline(){
     const isTodayUpd=d=>d && tlDayStr(d)===manilaToday();
     const dayJobs=SRC.filter(j=>{
       if(j.team!==t.code) return false;
-      if(!tlPassFilter(j)) return false;                                        // Load Type / District / Brgy filter
+      // NOTE: the Load Type / District / Brgy filter applies to the For Dispatch backlog ONLY —
+      // the team Gantt rows always show the full assigned set (di gumagalaw kapag nag-filter).
       if(hist) return true;                                                     // snapshot = that day's EOD set
       const st=(j.status||'').toLowerCase();
       if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
