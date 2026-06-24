@@ -645,13 +645,17 @@ function renderTimeline(){
   teams.forEach(t=>{
     const s=shiftByTeam[t.code]||{};
     const dot=s.online?'#18a57b':'#b0bab7';
-    // Show this team's loads for the day — scheduled blocks AND active loads that were
-    // assigned from the Dispatch Board / mobile (no scheduled_at yet) so the two tabs stay in sync.
-    const TL_ACTIVE=['assigned','acknowledged','en-route','travel','on-site','in-progress'];
-    const dayJobs=jobs.filter(j=>j.team===t.code && loadToday(j.load_date) && (
-      (j.scheduled_at && tlDayStr(j.scheduled_at)===date) ||
-      (!j.scheduled_at && date===manilaToday() && TL_ACTIVE.includes((j.status||'').toLowerCase()))
-    ));
+    // Full daily view per team — ALL statuses (Acknowledged, Travel, On-Site, Incomplete,
+    // Completed, Cancelled), so the Timeline mirrors the Dispatch Board exactly and can replace it.
+    const isTodayUpd=d=>d && tlDayStr(d)===manilaToday();
+    const dayJobs=jobs.filter(j=>{
+      if(j.team!==t.code) return false;
+      const st=(j.status||'').toLowerCase();
+      if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
+      if(date!==manilaToday()) return false;                                    // past/future days: scheduled only
+      if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);    // finished today
+      return loadToday(j.load_date);                                            // active / incomplete working set
+    });
     const laid=tlLayoutTeamJobs(dayJobs,date);
     const blocks=laid.map(({j,startMin,durMin,bumped})=>{
       const hh=startMin/60; const endMin=startMin+durMin;
@@ -690,8 +694,14 @@ function tlLayoutTeamJobs(dayJobs,date){
   const out=[]; let prevEnd=null;
   sorted.forEach(j=>{
     const planned=tlMinOfDay(j.scheduled_at);
-    // Loads with no preferred time (assigned from board/mobile) start near "now" then queue up.
-    let startMin=planned!=null?planned:(isToday?Math.min(Math.max(nowMin,TL_START*60),(TL_END-1)*60):TL_START*60);
+    const stx=(j.status||'').toLowerCase();
+    // Anchor: scheduled time if set; else finished loads sit at their update/completion time;
+    // active loads with no preferred time start near "now" then queue up.
+    let anchor=planned;
+    if(anchor==null && (stx==='completed'||stx==='cancelled'||stx==='negative')){
+      anchor=tlMinOfDay(j.completed_at); if(anchor==null && tlDayStr(j.updatedAt)===date) anchor=tlMinOfDay(j.updatedAt);
+    }
+    let startMin=anchor!=null?anchor:(isToday?Math.min(Math.max(nowMin,TL_START*60),(TL_END-1)*60):TL_START*60);
     let bumped=false;
     if(prevEnd!=null && startMin<prevEnd){ startMin=prevEnd; bumped=true; } // cascade after previous
     let dur=Number(j.est_minutes)||TL_DEFMIN;
