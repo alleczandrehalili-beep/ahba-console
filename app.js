@@ -1104,15 +1104,19 @@ async function renderAccounts(){
   let rows=await fetchTechnicians();
   if(!rows.length){
     // fall back to the 20 known accounts if the table isn't set up yet
-    rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null}));
+    rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null,role:'technician'}));
   }
+  const lim=accessIsDispatcherOnly();
+  if(lim) rows=rows.filter(r=>(r.role||'technician')==='technician');   // dispatchers: technicians only
   $('#accountTotal').textContent=rows.length;
   $('#accountActive').textContent=rows.filter(r=>!r.must_change).length;
   $('#accountPending').textContent=rows.filter(r=>r.must_change).length;
   $('#accountSignedIn').textContent=rows.filter(r=>r.last_login).length;
   body.innerHTML=rows.map(r=>{
     const status=r.must_change?'<span class="status pending">Needs setup</span>':'<span class="status completed">Active</span>';
-    const acts=`<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-areatech="${r.username}" data-area="${(r.area||'').replace(/"/g,'&quot;')}">Area</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
+    const acts=lim
+      ? `<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button></div>`
+      : `<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-areatech="${r.username}" data-area="${(r.area||'').replace(/"/g,'&quot;')}">Area</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
     return `<tr><td><strong>${r.username}</strong></td><td>${r.email||'—'}</td><td>${r.area||'—'}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}</td><td>${acts}</td></tr>`;
   }).join('');
   $$('#accountsBody [data-reset]').forEach(b=>b.onclick=()=>openReset(b.dataset.reset,b.dataset.email));
@@ -1665,7 +1669,8 @@ async function onDashLogin(email){
 }
 function applyAccess(u){
   const allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages:[]);
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=u.is_super?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
+  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
@@ -1697,7 +1702,18 @@ async function deleteAllLoads(){
 function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
 let accessUsers=[];
+// Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
+function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && hasDispatchAccess(u)); }
+function applyAccessScope(){
+  const lim=accessIsDispatcherOnly();
+  ['acCreateDash','acCreateField','acDashUsers'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=lim?'none':''; });
+  const sub=document.querySelector('#accessPage .page-toolbar p');
+  if(sub) sub.textContent=lim?'Reset technician passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
+}
 async function renderAccess(){
+  applyAccessScope();
+  // Dispatcher view: skip the dashboard-user matrix; show technicians (reset PW only).
+  if(accessIsDispatcherOnly()){ renderAccounts(); return; }
   const wrap=$('#accessWrap'); if(!wrap)return;
   wrap.innerHTML='Loading…';
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/dashboard_users?select=*&order=is_super.desc,username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); accessUsers=r.ok?await r.json():[]; }catch(e){accessUsers=[];}

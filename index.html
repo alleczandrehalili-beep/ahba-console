@@ -397,7 +397,7 @@
       </section>
       <section id="accessPage" class="page">
         <div class="page-toolbar"><div><h2>Access control</h2><p>Create users, assign roles/access, and reset passwords. Only Superadmin can access this.</p></div></div>
-        <article class="panel full-table" style="margin-bottom:14px">
+        <article class="panel full-table" id="acCreateDash" style="margin-bottom:14px">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create dashboard (console) user</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Creates a console login account. Set the access in the table below afterward. Your own password will be required as confirmation.</p></div></div>
           <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
             <label class="field"><span>Username *</span><input id="cuUser" autocapitalize="characters"></label>
@@ -408,7 +408,7 @@
             <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="cuCreate" type="button">Create user</button></div>
           </div>
         </article>
-        <article class="panel full-table" style="margin-bottom:14px">
+        <article class="panel full-table" id="acCreateField" style="margin-bottom:14px">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Create mobile / field account</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">For the mobile app: Technician, Sales agent, or Security. Login: <i>username</i>@ahbafield.app. Superadmin only.</p></div></div>
           <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(2,1fr);gap:10px 16px">
             <label class="field"><span>Username * (e.g. AHBA_SLI021)</span><input id="cfUser" autocapitalize="characters"></label>
@@ -418,7 +418,7 @@
             <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="cfCreate" type="button">Create field account</button></div>
           </div>
         </article>
-        <article class="panel full-table">
+        <article class="panel full-table" id="acDashUsers">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Dashboard users</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Tick the access, then click Save for each user. Default password: Ahba@2026 (changed on first login).</p></div></div>
           <div class="table-wrap access-table" id="accessWrap"></div>
         </article>
