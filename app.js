@@ -664,6 +664,23 @@ function setDashView(view){
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.classList.toggle('active',b.dataset.dashview===view));
   if(showLoads) renderJobs(); else renderTimeline();
 }
+// Dashboard filters (For Dispatch + Teams Timeline): Load Type · District · Barangay.
+function tlPassFilter(j){
+  const ty=($('#tlfType')&&$('#tlfType').value)||'';
+  const di=($('#tlfDistrict')&&$('#tlfDistrict').value)||'';
+  const br=($('#tlfBrgy')&&$('#tlfBrgy').value)||'';
+  if(ty && (j.load_type||'SLI')!==ty) return false;
+  if(di && String(j.district||'')!==di) return false;
+  if(br && (j.brgy||'')!==br) return false;
+  return true;
+}
+function tlBuildFilterOptions(pool){
+  const dsel=$('#tlfDistrict'), bsel=$('#tlfBrgy');
+  if(dsel){ const cur=dsel.value; const ds=[...new Set(pool.map(j=>String(j.district||'')).filter(Boolean))].sort();
+    dsel.innerHTML='<option value="">All districts</option>'+ds.map(d=>`<option ${d===cur?'selected':''}>${d}</option>`).join(''); if(!ds.includes(cur)) dsel.value=''; }
+  if(bsel){ const cur=bsel.value; const di=dsel?dsel.value:''; const bs=[...new Set(pool.filter(j=>!di||String(j.district||'')===di).map(j=>(j.brgy||'')).filter(Boolean))].sort();
+    bsel.innerHTML='<option value="">All barangays</option>'+bs.map(b=>`<option ${b===cur?'selected':''}>${(b||'').replace(/</g,'&lt;')}</option>`).join(''); if(!bs.includes(cur)) bsel.value=''; }
+}
 function renderTimeline(){
   const dEl=$('#tlDate'); if(dEl){ if(!dEl.value) dEl.value=manilaToday(); dEl.onchange=onDashDateChange; }
   const date=dEl?dEl.value:manilaToday();
@@ -675,10 +692,17 @@ function renderTimeline(){
   const loadToday=d=>!d || String(d).slice(0,10)===(hist?date:manilaToday());
   // Pull online status + newly-created technicians, then re-render (live only).
   if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
+  // Build filter dropdowns (Load Type · District · Brgy) from the day's loads, then filter the view.
+  const tlDayStr2=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
+  const inDayPool=SRC.filter(j=>{ const st=(j.status||'').toLowerCase();
+    if(st==='pending'&&!j.scheduled_at) return loadToday(j.load_date);
+    if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return j.updatedAt&&tlDayStr2(j.updatedAt)===manilaToday(); return loadToday(j.load_date); }
+    return false; });
+  tlBuildFilterOptions(inDayPool);
   // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
   // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
-  const backlog=SRC.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date))
+  const backlog=SRC.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date) && tlPassFilter(j))
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
   if(bl){
@@ -701,6 +725,7 @@ function renderTimeline(){
     const isTodayUpd=d=>d && tlDayStr(d)===manilaToday();
     const dayJobs=SRC.filter(j=>{
       if(j.team!==t.code) return false;
+      if(!tlPassFilter(j)) return false;                                        // Load Type / District / Brgy filter
       if(hist) return true;                                                     // snapshot = that day's EOD set
       const st=(j.status||'').toLowerCase();
       if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
@@ -2356,6 +2381,9 @@ function init(){
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
+  // Dashboard filters (Load Type · District · Brgy) → re-render the timeline
+  $$('#tlFilters select').forEach(s=>s.onchange=()=>renderTimeline());
+  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);

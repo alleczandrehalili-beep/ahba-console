@@ -263,6 +263,13 @@
         </div>
 
         <div id="dashTeamsView">
+        <div id="tlFilters" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+          <span style="font:800 9px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#8a9894">Filter</span>
+          <select id="tlfType" class="tlf"><option value="">All load types</option><option>SLI</option><option>Migration</option><option>SLR</option></select>
+          <select id="tlfDistrict" class="tlf"><option value="">All districts</option></select>
+          <select id="tlfBrgy" class="tlf"><option value="">All barangays</option></select>
+          <button type="button" id="tlfClear" class="secondary-btn" style="height:34px">Clear</button>
+        </div>
         <article class="panel full-table" style="margin-bottom:12px">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For Dispatch · drag onto a team</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">I-drag ang JO papunta sa team row at oras para i-schedule. I-drag ang block para i-reschedule, o ibalik dito para i-unassign (↩ For Dispatch); i-click para sa info/status.</p></div></div>
           <div id="tlBacklog" style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px"></div>

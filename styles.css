@@ -83,6 +83,8 @@ html,body{overflow-x:hidden;max-width:100%}
 .tl-team{display:flex;flex-direction:column;justify-content:center;gap:2px;padding:5px 10px;border-right:1px solid var(--line);background:#fff;overflow:hidden}
 .tl-team-name{display:flex;align-items:center;font:700 11px Manrope}
 .tl-team-cnt{margin-left:auto;background:#102925;color:#fff;border-radius:20px;min-width:18px;height:16px;padding:0 5px;font:800 9px Manrope;display:inline-flex;align-items:center;justify-content:center}
+.tlf{height:34px;border:1px solid var(--line);background:#fff;border-radius:9px;padding:0 10px;font-size:11px;font-weight:600;color:var(--ink);outline:0;min-width:130px}
+.tlf:focus{border-color:var(--green);box-shadow:0 0 0 3px #18a57b17}
 .tl-acct{font-size:8.5px;font-weight:700;color:#127b5d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-crew{font-size:8px;color:#7d8c88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tl-track{position:relative;height:42px;background:repeating-linear-gradient(90deg,transparent,transparent calc(100%/13 - 1px),#eef1ed calc(100%/13 - 1px),#eef1ed calc(100%/13))}
