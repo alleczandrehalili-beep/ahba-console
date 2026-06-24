@@ -452,8 +452,9 @@
         <label class="field"><span>House no.</span><input name="house_no"></label>
         <label class="field"><span>Street name</span><input name="street_name"></label>
         <label class="field"><span>Village / Subdivision</span><input name="village"></label>
-        <label class="field"><span>Barangay *</span><input name="brgy" required></label>
-        <label class="field"><span>City *</span><input name="city" required></label>
+        <label class="field"><span>District *</span><select name="district" id="ord_district" required><option value="">— Select district —</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+        <label class="field"><span>Barangay *</span><select name="brgy" id="ord_brgy" required><option value="">— Select district first —</option></select></label>
+        <label class="field"><span>City *</span><input name="city" id="ord_city" value="QUEZON CITY" readonly required></label>
 
         <div class="field full form-sec">Service</div>
         <label class="field"><span>Unit type</span><select name="dwelling_type" id="ord_dwelling"><option>SDU</option><option>MDU</option><option>MDU DOCSIS</option></select></label>

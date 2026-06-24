@@ -107,7 +107,7 @@ function renderOverview(){
 // ---------- Live GPS map (Leaflet) ----------
 const AREA_COORDS={'Quezon City':[14.676,121.043],'Manila':[14.599,120.984],'Makati':[14.554,121.024],'Pasig':[14.576,121.085],'Taguig':[14.520,121.053],'Caloocan':[14.651,120.972],'Parañaque':[14.479,121.019],'Mandaluyong':[14.577,121.037],'San Juan':[14.601,121.030],'Marikina':[14.650,121.102]};
 function areaCoord(a){if(!a)return null;if(AREA_COORDS[a])return AREA_COORDS[a];const k=Object.keys(AREA_COORDS).find(x=>x.toLowerCase()===String(a).toLowerCase());return k?AREA_COORDS[k]:null;}
-const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','brgy','city','in_charge','source_of_sales','referral_name'];
+const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','district','brgy','city','in_charge','source_of_sales','referral_name'];
 const safeName=s=>(s||'subscriber').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()||'subscriber';
 let leafMap=null, teamMarkers={}, techIndex={}, trackLayer=null;
 function haversineKm(a,b,c,d){const R=6371,toR=x=>x*Math.PI/180;const dLat=toR(c-a),dLng=toR(d-b);const s=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(s))}
@@ -351,7 +351,7 @@ function openJobDetail(jobId){
   $('#jdInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
-    F('Address',j.address),F('Barangay',j.brgy),F('City',j.city||j.area),
+    F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
     F('Team',j.team),F('Status',statusLabel(j.status||'')),F('Priority',j.priority),
     F('Source / Referral',[j.source_of_sales,j.referral_name].filter(Boolean).join(' · ')),
     F('Account',j.work_account||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].account:'')),
@@ -1021,7 +1021,7 @@ function openValidate(jobId){
     F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),F('Add-ons (2P)',j.addon_count),F('VAS no.',j.vas_no),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
     F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
-    F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
+    F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
   ].join('');
   $('#valJONum').value=j.job_order_no||''; $('#valIbas').value=j.ibass_acct_no||'';
   // 2-PLAY: show one VAS Number field per add-on (required to validate)
@@ -1524,6 +1524,21 @@ const ORD_PLANS_SDU=['PLAN 999 - 100MBPS','PLAN 1500 - 300MBPS','PLAN 1699 - 600
 const ORD_PLANS_MDU=['PLAN 999 - 100MBPS','PLAN 1399 - 200MBPS','PLAN 1500 - 300MBPS','PLAN 2000 - 500MBPS'];
 const ORD_PLANS_MDU_DOCSIS=['SKY FIBER 999 - 100MBPS','SKY FIBER 1399 - 200MBPS','SKY FIBER 1500 - 300MBPS','SKY FIBER 2000 - 500MBPS'];
 const ORD_ADDONS=['SKY TV 99','SKY TV 299','SKY TV 499'];
+// Quezon City barangays grouped by legislative district (1–6). Source: PSA / Wikipedia.
+const QC_BRGYS={
+"1":["Alicia","Bagong Pag-asa","Bahay Toro","Balingasa","Bungad","Damar","Damayan","Del Monte","Katipunan","Lourdes","Maharlika","Manresa","Mariblo","Masambong","N.S. Amoranto","Nayong Kanluran","Paang Bundok","Pag-ibig sa Nayon","Paltok","Paraiso","Phil-Am","Project 6","Ramon Magsaysay","Saint Peter","Salvacion","San Antonio","San Isidro Labrador","San Jose","Santa Cruz","Santa Teresita","Sto. Cristo","Santo Domingo","Siena","Talayan","Vasra","Veterans Village","West Triangle"],
+"2":["Bagong Silangan","Batasan Hills","Commonwealth","Holy Spirit","Payatas"],
+"3":["Amihan","Bagumbayan","Bagumbuhay","Bayanihan","Blue Ridge A","Blue Ridge B","Camp Aguinaldo","Claro (Quirino 3-B)","Dioquino Zobel","Duyan-duyan","E. Rodriguez","East Kamias","Escopa I","Escopa II","Escopa III","Escopa IV","Libis","Loyola Heights","Mangga","Marilag","Masagana","Matandang Balara","Milagrosa","Pansol","Quirino 2-A","Quirino 2-B","Quirino 2-C","Quirino 3-A","St. Ignatius","San Roque","Silangan","Socorro","Tagumpay","Ugong Norte","Villa Maria Clara","West Kamias","White Plains"],
+"4":["Bagong Lipunan ng Crame","Botocan","Central","Damayang Lagi","Don Manuel","Doña Aurora","Doña Imelda","Doña Josefa","Horseshoe","Immaculate Concepcion","Kalusugan","Kamuning","Kaunlaran","Kristong Hari","Krus na Ligas","Laging Handa","Malaya","Mariana","Obrero","Old Capitol Site","Paligsahan","Pinagkaisahan","Pinyahan","Roxas","Sacred Heart","San Isidro Galas","San Martin de Porres","San Vicente","Santol","Sikatuna Village","South Triangle","Santo Niño","Tatalon","Teacher's Village East","Teacher's Village West","U.P. Campus","U.P. Village","Valencia"],
+"5":["Bagbag","Capri","Fairview","Gulod","Greater Lagro","Kaligayahan","Nagkaisang Nayon","North Fairview","Novaliches Proper","Pasong Putik Proper","San Agustin","San Bartolome","Sta. Lucia","Sta. Monica"],
+"6":["Apolonio Samson","Baesa","Balon Bato","Culiat","New Era","Pasong Tamo","Sangandaan","Sauyo","Talipapa","Tandang Sora","Unang Sigaw"]
+};
+function populateOrdBrgys(dist){
+  const sel=$('#ord_brgy'); if(!sel) return; const cur=sel.value;
+  const list=QC_BRGYS[String(dist)]||[];
+  sel.innerHTML=list.length?'<option value="">— Select barangay —</option>'+list.map(b=>`<option>${b}</option>`).join(''):'<option value="">— Select district first —</option>';
+  if(list.includes(cur)) sel.value=cur;
+}
 function ordPopulatePlans(){
   const dw=($('#ord_dwelling')&&$('#ord_dwelling').value)||'SDU';
   const list=dw==='MDU DOCSIS'?ORD_PLANS_MDU_DOCSIS:(dw==='MDU'?ORD_PLANS_MDU:ORD_PLANS_SDU);
@@ -1558,8 +1573,8 @@ async function submitOrder(e){
   const err=m=>{const el=$('#orderErr'); if(el)el.textContent=m||'';};
   err('');
   const t=v=>(v||'').trim();
-  const fn=t(f.first_name), ln=t(f.last_name), brgy=t(f.brgy), city=t(f.city), pno=t(f.primary_no), ono=t(f.other_contact_no);
-  if(!fn||!ln||!pno||!brgy||!city){ err('Please fill: first & last name, primary no., barangay, and city.'); return; }
+  const fn=t(f.first_name), ln=t(f.last_name), dist=t(f.district), brgy=t(f.brgy), city=t(f.city)||'QUEZON CITY', pno=t(f.primary_no), ono=t(f.other_contact_no);
+  if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
   if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
@@ -1567,11 +1582,11 @@ async function submitOrder(e){
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
-  const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,city].filter(Boolean).join(', ');
+  const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
   const job={id:jobId,subscriber:full,service_type:'Installation',plan:t(f.plan),ref_no:t(f.ref_no),area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
-    house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),brgy:brgy,city:city,
+    house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
     dwelling_type:f.dwelling_type,install_fee_type:f.install_fee_type,amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
     special_note:t(f.special_note),updated_at:new Date().toISOString()};
@@ -1586,7 +1601,7 @@ async function submitOrder(e){
       }
     }
     ordDocs={id:[],billing:[],premise:[]};
-    $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)');
+    $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY';
     closeModals(); showToast('Job order submitted to the Validator');
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
   }catch(e2){ err('Submit failed: '+(e2.message||e2)); }
@@ -2167,8 +2182,9 @@ function init(){
 
   $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); ordToggleAddonCount(); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
+  $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);

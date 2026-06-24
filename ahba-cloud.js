@@ -41,7 +41,7 @@
     'payment_mode','payment_amount','ar_no','work_account','crew_driver','crew_tech1','crew_tech2',
     'remittance_received','remittance_received_by','remittance_received_at',
     'dwelling_type','install_fee_type','amount_to_collect','completed_at','add_on','addon_count',
-    'scheduled_at','est_minutes'];
+    'scheduled_at','est_minutes','district'];
 
   function normalizeJob(row) {
     var j = {
