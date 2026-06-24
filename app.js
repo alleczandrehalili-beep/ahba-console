@@ -939,7 +939,8 @@ async function openAssign(jobId){
 async function joTaken(jo,exceptId){
   jo=(jo||'').trim(); if(!jo) return false;
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&job_order_no=eq.${encodeURIComponent(jo)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    // Soft-deleted job orders DON'T reserve the J.O. Number — a new one can reuse it.
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&deleted_at=is.null&job_order_no=eq.${encodeURIComponent(jo)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     if(!r.ok) return false;
     const rows=await r.json();
     return rows.some(x=>String(x.id)!==String(exceptId));
