@@ -286,6 +286,7 @@ function renderJobs(){
   wireDispatchDnD();
   applyJobTableFilter();
   applyDispatchSearch();
+  maybeCaptureSnapshot();   // auto-save today's productivity (throttled)
 }
 function applyDispatchSearch(){
   const q=($('#dispatchSearch')?.value||'').toLowerCase().trim();
@@ -311,8 +312,13 @@ function negReleased(negAt){
 // yesterday's leftover Incomplete loads to "For Dispatch".
 function hasDispatchAccess(u){ return !!(u && (u.is_super || (Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('dispatch')))); }
 let rolloverChecking=false;
+// Automatic rollover of Incomplete loads to For Dispatch has been DISABLED by request.
+// Leftover/Incomplete loads stay where they are; dispatchers can still return a load
+// to For Dispatch manually (unassign / ↩ For Dispatch).
+const ROLLOVER_ENABLED=false;
 // End-of-day rollover: auto-detect leftover loads, then PROMPT the dispatcher for confirmation.
 function maybePromptRollover(){
+  if(!ROLLOVER_ENABLED) return;
   const u=window.dashUser; if(!u || rolloverChecking) return;
   if(!hasDispatchAccess(u)) return;
   const today=manilaToday();
@@ -654,6 +660,8 @@ function renderTimeline(){
   }
   // Clicksoft-style status history feed
   renderTimelineHistory();
+  // Daily productivity snapshot panel (only refresh when viewing today, to avoid re-fetching past days)
+  if(!$('#tlProdDate')||!$('#tlProdDate').value||$('#tlProdDate').value===manilaToday()) renderProductivityHistory();
   // Collect EXACTLY the loads shown on the timeline so the status banner always matches
   // what's displayed (backlog + every team's blocks, incl. completed-today by the team).
   const shownJobs=backlog.slice();
@@ -795,6 +803,53 @@ function renderTimelineHistory(){
   }).join('');
   $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
   const tg=$('#tlHistToggle'); if(tg&&!tg._wired){ tg._wired=true; tg.onclick=()=>{ const h=$('#tlHistory'); const hidden=h.style.display==='none'; h.style.display=hidden?'':'none'; tg.textContent=hidden?'Hide':'Show'; }; }
+}
+// ---------- Daily productivity snapshots (capture today, backtrack past days) ----------
+function buildDailyMetrics(){
+  const today=manilaToday();
+  const enc=j=> j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):'';
+  const loadToday=d=>!d||String(d).slice(0,10)===today;
+  const isTodayUpd=d=>d&&new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
+  const set=jobs.filter(j=>{ const st=(j.status||'').toLowerCase();
+    if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);
+    if(st==='negative') return loadToday(j.load_date)||isTodayUpd(j.updatedAt);
+    return loadToday(j.load_date); });
+  const counts={fordispatch:0,acknowledged:0,travel:0,onsite:0,incomplete:0,completed:0,cancelled:0};
+  set.forEach(j=>{ counts[tlBucket(j.status)]++; });
+  const turnins=[...new Set(jobs.filter(j=>enc(j)===today).map(j=>j.id))].length;
+  const tm={};
+  set.forEach(j=>{ if(!j.team) return; const t=tm[j.team]=tm[j.team]||{code:j.team,total:0,completed:0,incomplete:0}; t.total++; const b=tlBucket(j.status); if(b==='completed')t.completed++; if(b==='incomplete')t.incomplete++; });
+  const teamsArr=Object.values(tm).sort((a,b)=>b.completed-a.completed||a.code.localeCompare(b.code));
+  const list=set.map(j=>({id:j.id,subscriber:j.subscriber,status:j.status,team:j.team||'',jo:j.job_order_no||'',completed_at:j.completed_at||null}));
+  return {counts,turnins,teams:teamsArr,jobs:list};
+}
+let _lastSnap=0;
+function maybeCaptureSnapshot(){ if(!window.dashUser) return; const now=Date.now(); if(now-_lastSnap<180000) return; _lastSnap=now; captureDailySnapshot(); }
+async function captureDailySnapshot(){
+  if(!window.dashUser) return;
+  try{
+    const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data:buildDailyMetrics()};
+    await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?on_conflict=work_date`,{method:'POST',headers:{...DH(),Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
+  }catch(e){}
+}
+async function renderProductivityHistory(){
+  const panel=$('#tlProd'); if(!panel) return;
+  const dEl=$('#tlProdDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); }
+  if(dEl&&!dEl._wired){ dEl._wired=true; dEl.onchange=renderProductivityHistory; }
+  const date=dEl?dEl.value:manilaToday();
+  panel.innerHTML='<div class="empty-row">Loading…</div>';
+  let snap=null, live=(date===manilaToday());
+  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }
+  else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
+  if(!snap){ panel.innerHTML=`<div class="empty-row">Walang naka-save na productivity para sa ${date}. (Magsisimula ang pag-save mula sa araw na ito pasulong.)</div>`; return; }
+  const d=snap.data||{}, c=d.counts||{};
+  const defs=[['Total Turn-Ins',d.turnins||0,'#102925','#fff'],['For Dispatch',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
+  const chips=defs.map(([l,n,bg,fg])=>`<span class="tl-count" style="background:${bg};color:${fg};border:1px solid rgba(0,0,0,.08)"><b>${n}</b>${l}</span>`).join('');
+  const teamRows=(d.teams||[]).map(t=>`<tr><td><strong>${(t.code||'').replace(/</g,'&lt;')}</strong></td><td>${t.total||0}</td><td style="color:#11825f;font-weight:700">${t.completed||0}</td><td style="color:#c2503a;font-weight:700">${t.incomplete||0}</td></tr>`).join('')||'<tr><td colspan="4" class="empty-cell">No team activity recorded.</td></tr>';
+  panel.innerHTML=`<div class="tl-counts" style="border:0;background:transparent;padding:0 0 10px">${chips}</div>`
+    +`<div style="font-size:9px;color:#9aa6a2;margin:0 0 8px">${live?'Live (today, auto-saving)':'Saved snapshot'} · captured ${snap.captured_at?fmtWhen(snap.captured_at):'—'}</div>`
+    +`<div class="table-wrap"><table><thead><tr><th>Team</th><th>Total loads</th><th>Completed</th><th>Incomplete</th></tr></thead><tbody>${teamRows}</tbody></table></div>`;
+  injectIcons();
 }
 // Build a lowercase searchable string per job (JO #, subscriber, team, area, address, JO number)
 function tlSearchText(j){
