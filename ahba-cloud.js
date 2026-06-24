@@ -196,6 +196,10 @@
         jobs = cloudJobs;
         localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs));
         renderOverview();
+        // Live-refresh the active tab too, so the Dispatch Board and Timeline stay in sync
+        // when technicians update status on mobile (realtime + 15s poll).
+        try { if (document.getElementById('dispatchPage') && document.getElementById('dispatchPage').classList.contains('active') && typeof renderJobs === 'function') renderJobs(); } catch (e) {}
+        try { if (document.getElementById('timelinePage') && document.getElementById('timelinePage').classList.contains('active') && typeof renderTimeline === 'function') renderTimeline(); } catch (e) {}
       },
       () => upsertJobs(jobs) // onEmpty: bootstrap a brand-new/empty project once
     );

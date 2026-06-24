@@ -645,7 +645,13 @@ function renderTimeline(){
   teams.forEach(t=>{
     const s=shiftByTeam[t.code]||{};
     const dot=s.online?'#18a57b':'#b0bab7';
-    const dayJobs=jobs.filter(j=>j.team===t.code && j.scheduled_at && tlDayStr(j.scheduled_at)===date && loadToday(j.load_date));
+    // Show this team's loads for the day — scheduled blocks AND active loads that were
+    // assigned from the Dispatch Board / mobile (no scheduled_at yet) so the two tabs stay in sync.
+    const TL_ACTIVE=['assigned','acknowledged','en-route','travel','on-site','in-progress'];
+    const dayJobs=jobs.filter(j=>j.team===t.code && loadToday(j.load_date) && (
+      (j.scheduled_at && tlDayStr(j.scheduled_at)===date) ||
+      (!j.scheduled_at && date===manilaToday() && TL_ACTIVE.includes((j.status||'').toLowerCase()))
+    ));
     const laid=tlLayoutTeamJobs(dayJobs,date);
     const blocks=laid.map(({j,startMin,durMin,bumped})=>{
       const hh=startMin/60; const endMin=startMin+durMin;
@@ -679,11 +685,13 @@ function tlMinOfDay(ts){ if(!ts) return null; const d=new Date(ts); if(isNaN(d))
 function tlLayoutTeamJobs(dayJobs,date){
   const isToday=date===manilaToday();
   const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
-  const sorted=dayJobs.slice().sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at));
+  const keyOf=j=> j.scheduled_at?new Date(j.scheduled_at).getTime() : (j.updatedAt?new Date(j.updatedAt).getTime():0);
+  const sorted=dayJobs.slice().sort((a,b)=>keyOf(a)-keyOf(b));
   const out=[]; let prevEnd=null;
   sorted.forEach(j=>{
     const planned=tlMinOfDay(j.scheduled_at);
-    let startMin=planned!=null?planned:TL_START*60;
+    // Loads with no preferred time (assigned from board/mobile) start near "now" then queue up.
+    let startMin=planned!=null?planned:(isToday?Math.min(Math.max(nowMin,TL_START*60),(TL_END-1)*60):TL_START*60);
     let bumped=false;
     if(prevEnd!=null && startMin<prevEnd){ startMin=prevEnd; bumped=true; } // cascade after previous
     let dur=Number(j.est_minutes)||TL_DEFMIN;
