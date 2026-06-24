@@ -1684,6 +1684,7 @@ function setOrderType(t){
   show('ordSecMigration', t==='Migration');
   show('ordSecSlr', t==='SLR');
   show('ordSecDocs', t==='SLI');
+  const btn=$('#orderSubmit'); if(btn) btn.textContent=(t==='SLI')?'Submit for validation':'Add to For Dispatch';
 }
 let _sbc=null;
 function sbc(){ if(typeof dashAuth!=='undefined' && dashAuth) return dashAuth; /* authenticated client */ if(!_sbc && window.supabase?.createClient) _sbc=window.supabase.createClient(SUPA_URL,SUPA_KEY); return _sbc; }
@@ -1728,7 +1729,9 @@ async function submitOrder(e){
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
   const svcType={SLI:'Installation',Migration:'Migration',SLR:'SLR'}[ordType];
-  const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:'for_validation',wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,
+  // SLI goes to the Validator first. Migration & SLR skip validation → straight to For Dispatch.
+  const initStatus=(ordType==='SLI')?'for_validation':'pending';
+  const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:initStatus,wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(ordType==='SLI'?null:manilaToday()),
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
@@ -1756,10 +1759,11 @@ async function submitOrder(e){
     }
     ordDocs={id:[],billing:[],premise:[]};
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
-    closeModals(); showToast('Job order submitted to the Validator');
+    closeModals(); showToast(ordType==='SLI'?'Job order submitted to the Validator':`${ordType} load added to For Dispatch`);
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
+    if(ordType!=='SLI'){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
   }catch(e2){ err('Submit failed: '+(e2.message||e2)); }
-  btn.disabled=false; btn.textContent='Submit for validation';
+  btn.disabled=false; btn.textContent=(($('#orderForm').dataset.ordtype)==='SLI'?'Submit for validation':'Add to For Dispatch');
 }
 
 // ---------- Dashboard login + role-based access ----------
