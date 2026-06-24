@@ -638,6 +638,14 @@ function tlStatusColor(s){
   return {bg:m[0],fg:m[1],bd:m[2]};
 }
 function tlFmtHour(h){ const hh=Math.floor(h),mm=Math.round((h-hh)*60); const ap=hh<12?'AM':'PM'; const h12=((hh+11)%12)+1; return `${h12}:${String(mm).padStart(2,'0')} ${ap}`; }
+// Dashboard sub-view: 'teams' = team timeline (monitor teams + their loads); 'loads' = dispatch board (monitor loads).
+function setDashView(view){
+  const teams=$('#dashTeamsView'), loads=$('#dashLoadsView');
+  const showLoads=view==='loads';
+  if(teams) teams.hidden=showLoads; if(loads) loads.hidden=!showLoads;
+  $$('#dashViewTabs [data-dashview]').forEach(b=>b.classList.toggle('active',b.dataset.dashview===view));
+  if(showLoads) renderJobs(); else renderTimeline();
+}
 function renderTimeline(){
   const dEl=$('#tlDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); dEl.onchange=renderTimeline; }
   const date=dEl?dEl.value:manilaToday();
@@ -1040,7 +1048,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dispatch timeline'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline')renderTimeline();if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={};
@@ -1688,7 +1696,7 @@ async function submitOrder(e){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['dispatch','Dispatch'],['timeline','Timeline'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -1724,7 +1732,9 @@ async function onDashLogin(email){
   hideDashGates(); applyAccess(u);
 }
 function applyAccess(u){
-  const allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages:[]);
+  let allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages.slice():[]);
+  // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
+  if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
   $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
@@ -1732,7 +1742,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  const first=(allowed[0]||'overview');
+  let first=(allowed[0]||'overview'); if(first==='dispatch')first='timeline';
   switchPage(first);
   renderAnnounceBar();
 }
@@ -2248,7 +2258,7 @@ async function importJobsFromRows(rows){
     }
     // refresh from cloud so the new jobs appear on the board
     if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} }
-    switchPage('dispatch'); renderOverview();
+    switchPage('timeline'); renderOverview();
     alert(`✅ Imported ${out.length} job order(s) → For Dispatch.`+(skipped?`\n${skipped} blank/invalid row(s) skipped.`:''));
   }catch(e){ alert('Import failed: '+(e.message||e)); }
 }
@@ -2261,7 +2271,7 @@ function init(){
   syncTeamsFromDb().then(a=>{ if(a){ renderTeams($('#teamSearch')?.value||''); } });
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
-  const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#dispatchPage')?.classList.contains('active')) renderJobs(); if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
+  const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
   refreshShifts(); setInterval(refreshShifts, 20000);
 
   // Metric cards → clickable shortcuts
@@ -2273,6 +2283,8 @@ function init(){
 
   $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
+  // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
+  $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
