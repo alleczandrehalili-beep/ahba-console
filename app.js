@@ -107,7 +107,7 @@ function renderOverview(){
 // ---------- Live GPS map (Leaflet) ----------
 const AREA_COORDS={'Quezon City':[14.676,121.043],'Manila':[14.599,120.984],'Makati':[14.554,121.024],'Pasig':[14.576,121.085],'Taguig':[14.520,121.053],'Caloocan':[14.651,120.972],'Parañaque':[14.479,121.019],'Mandaluyong':[14.577,121.037],'San Juan':[14.601,121.030],'Marikina':[14.650,121.102]};
 function areaCoord(a){if(!a)return null;if(AREA_COORDS[a])return AREA_COORDS[a];const k=Object.keys(AREA_COORDS).find(x=>x.toLowerCase()===String(a).toLowerCase());return k?AREA_COORDS[k]:null;}
-const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','district','brgy','city','in_charge','source_of_sales','referral_name'];
+const SUB_FIELDS=['dispatch_status','driver','tech1','mapping_team','mapping_remarks','dispatched_remarks','ibass_acct_no','job_order_no','vas_no','play_type','special_note','ref_no','new_ref','primary_no','other_contact_no','first_name','middle_name','last_name','house_no','street_name','village','district','brgy','city','in_charge','source_of_sales','referral_name','deleted_at','deleted_by'];
 const safeName=s=>(s||'subscriber').replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim()||'subscriber';
 let leafMap=null, teamMarkers={}, techIndex={}, trackLayer=null;
 function haversineKm(a,b,c,d){const R=6371,toR=x=>x*Math.PI/180;const dLat=toR(c-a),dLng=toR(d-b);const s=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLng/2)**2;return 2*R*Math.asin(Math.sqrt(s))}
@@ -372,7 +372,23 @@ function openJobDetail(jobId){
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
   $('#jdStatus').value='';
   $('#jdApply').onclick=()=>{const c=$('#jdStatus').value; if(!c){showToast('Select a status to apply');return;} applyStatusUpdate(jobId,c);};
+  if($('#jdDelete')) $('#jdDelete').onclick=()=>deleteJobOrder(jobId);
   openModal($('#jobDetailModal'));
+}
+// Soft-delete a job order: hide it from all views but keep the record (with a history entry)
+// for audit. Console users only.
+function deleteJobOrder(jobId){
+  const j=findJob(jobId); if(!j) return;
+  const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
+  if(!confirm(`Delete job order ${jobId} (${j.subscriber||''})?\n\nIto ay itatago sa Dispatch Board at Timeline. Mananatili sa records ang history.\n\nOK = Delete   ·   Cancel = Huwag`)) return;
+  j.history=appendHistory(j.history,`🗑 Deleted by ${who} (status was: ${statusLabel(j.status||'')})`);
+  j.deleted_at=new Date().toISOString(); j.deleted_by=who;
+  if(window.AHBASync) window.AHBASync(j);            // persist the soft-delete + history to cloud
+  jobs=jobs.filter(x=>x.id!==jobId);                  // remove from the in-memory working set now
+  save(); closeModals();
+  renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline(); renderOverview();
+  if($('#validationPage')?.classList.contains('active')) renderValidation&&renderValidation();
+  showToast(`${jobId} deleted (recorded in history)`);
 }
 function updatePriority(jobId,p){
   const j=findJob(jobId); if(!j||!p||j.priority===p)return;
@@ -636,10 +652,11 @@ function renderTimeline(){
   if(bl){
     bl.innerHTML=backlog.length?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span></div>${dcb}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
   }
-  // Status tally banner under the For Dispatch section
-  renderTimelineCounts();
   // Clicksoft-style status history feed
   renderTimelineHistory();
+  // Collect EXACTLY the loads shown on the timeline so the status banner always matches
+  // what's displayed (backlog + every team's blocks, incl. completed-today by the team).
+  const shownJobs=backlog.slice();
   const hourHdr=Array.from({length:TL_HOURS}).map((_,i)=>{ const h=TL_START+i; const ap=h<12?'AM':'PM'; const h12=((h+11)%12)+1; return `<div class="tl-h">${h12} ${ap}</div>`; }).join('');
   let html=`<div class="tl-headrow"><div class="tl-team-h">Team</div><div class="tl-axis">${hourHdr}</div></div>`;
   teams.forEach(t=>{
@@ -656,6 +673,7 @@ function renderTimeline(){
       if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);    // finished today
       return loadToday(j.load_date);                                            // active / incomplete working set
     });
+    shownJobs.push(...dayJobs);
     const laid=tlLayoutTeamJobs(dayJobs,date);
     const blocks=laid.map(({j,startMin,durMin,bumped})=>{
       const hh=startMin/60; const endMin=startMin+durMin;
@@ -677,6 +695,8 @@ function renderTimeline(){
     html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); wireTimelineDnD(date); }
+  // Status tally banner — counts EXACTLY the loads shown above (always in sync with the teams).
+  renderTimelineCounts(shownJobs);
   // Search box: highlight matching job orders (backlog + scheduled blocks)
   const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
   tlApplySearch();
@@ -731,7 +751,7 @@ function tlBucket(s){
   if(s==='offline'||s==='cancelled') return 'cancelled';
   return 'fordispatch';
 }
-function renderTimelineCounts(){
+function renderTimelineCounts(list){
   const el=$('#tlCounts'); if(!el) return;
   const defs=[
     ['fordispatch','For Dispatch','#fff','#56655f','#d4dcd5'],
@@ -742,10 +762,9 @@ function renderTimelineCounts(){
     ['completed','Completed','#e7f7ef','#11825f','#c4ecd9'],
     ['cancelled','Cancelled','#f2f2f2','#87928f','#dcdfdd']
   ];
-  // Only loads ENCODED today (by created_at, Manila) — same rule as Turn-Ins.
-  const today=manilaToday();
-  const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
-  const todayLoads=[...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
+  // Count EXACTLY the loads currently shown on the timeline (passed in), de-duped by id —
+  // so the banner always matches the teams' actual statuses (incl. completed-today).
+  const todayLoads=[...new Map((list||[]).map(j=>[j.id,j])).values()];
   const cnt={}; defs.forEach(d=>cnt[d[0]]=0);
   todayLoads.forEach(j=>{ cnt[tlBucket(j.status)]++; });
   const total=todayLoads.length;

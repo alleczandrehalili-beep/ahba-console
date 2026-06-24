@@ -103,6 +103,8 @@ html,body{overflow-x:hidden;max-width:100%}
 .tl-count{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:4px 10px;font-size:9px;font-weight:700;line-height:1}
 .tl-count b{font:800 11px Manrope}
 .tl-count-total{background:#102925;color:#fff;border:1px solid #102925}
+.danger-btn{height:40px;border-radius:10px;padding:0 15px;border:1px solid #f3c7bf;background:#fdecea;color:#c2503a;font-weight:700;font-size:12px;display:inline-flex;align-items:center;gap:6px;transition:background .15s ease}
+.danger-btn:hover{background:#fbded9}
 /* Clicksoft-style status history feed */
 .tl-history{max-height:340px;overflow:auto;padding:6px 10px 12px}
 .tl-hist-item{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-top:8px;cursor:pointer;transition:box-shadow .12s ease,border-color .12s ease}
