@@ -725,7 +725,9 @@ function renderTimeline(){
     const acctLine=acct?`<span class="tl-acct">${esc(acct)}</span>`:'';
     const crew=[drv?`D: ${esc(drv)}`:'',[t1,t2].filter(Boolean).map(esc).join(', ')?`T: ${[t1,t2].filter(Boolean).map(esc).join(', ')}`:''].filter(Boolean).join(' · ');
     const crewLine=crew?`<span class="tl-crew">${crew}</span>`:(acct?'':'<span class="tl-crew" style="color:#b6c0bc">— not signed in —</span>');
-    html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
+    const loadCount=dayJobs.length;
+    const cntBadge=loadCount?`<span class="tl-team-cnt" title="${loadCount} load(s) sa team na ito">${loadCount}</span>`:'';
+    html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}${cntBadge}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); if(hist){ $$('#tlGrid [data-tlblock]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); }); } else { wireTimelineDnD(date); } }
   // Status tally banner — counts EXACTLY the loads shown above (always in sync with the teams).
@@ -757,16 +759,16 @@ function tlLayoutTeamJobs(dayJobs,date){
     let startMin=anchor!=null?anchor:(isToday?Math.min(Math.max(nowMin,TL_START*60),(TL_END-1)*60):TL_START*60);
     let bumped=false;
     if(prevEnd!=null && startMin<prevEnd){ startMin=prevEnd; bumped=true; } // cascade after previous
-    let dur=Number(j.est_minutes)||TL_DEFMIN;
     const st=(j.status||'').toLowerCase();
-    // Actual time consumed, based on the team's status update
+    // Work duration = the planned/estimated time per Job Order (default 1h30m). Kept UNIFORM and
+    // capped so blocks stay clean and the per-team count is easy to read (no day-spanning bars).
+    let dur=Number(j.est_minutes)||TL_DEFMIN;
+    // For a COMPLETED load with a recorded completion time, use the real work time IF reasonable.
     if(st==='completed' && j.completed_at){
       const cm=tlMinOfDay(j.completed_at);
-      if(cm!=null && cm>startMin) dur=cm-startMin;            // real time it took
-    } else if(isToday && ['acknowledged','assigned','en-route','travel','on-site','in-progress'].includes(st)){
-      if(nowMin>startMin+dur) dur=nowMin-startMin;            // still running & overran → keeps eating time
+      if(cm!=null && cm>startMin) dur=cm-startMin;
     }
-    if(dur<15) dur=15;
+    dur=Math.max(30, Math.min(dur, 180));                    // 30 min floor · 3 h cap → clean layout
     out.push({j,startMin,durMin:dur,bumped});
     prevEnd=startMin+dur;
   });
