@@ -1153,7 +1153,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={};
@@ -1890,6 +1890,14 @@ async function onDashLogin(email){
   if(u.must_change){ showDashGate('#dashPwGate'); return; }
   hideDashGates(); applyAccess(u);
 }
+// Can the logged-in user EDIT this page? Superadmin = always; others need the page in edit_pages.
+function dashCanEdit(page){ const u=window.dashUser; if(!u) return false; if(u.is_super) return true; return Array.isArray(u.edit_pages)&&u.edit_pages.includes(page); }
+// View-only lock: if the user can view but not edit the active page, disable its action controls.
+function applyViewOnlyLock(page){
+  const u=window.dashUser; const sec=$(`#${page}Page`); if(!sec) return;
+  const viewOnly = !!(u && !u.is_super && Array.isArray(u.allowed_pages) && u.allowed_pages.includes(page) && !dashCanEdit(page));
+  sec.classList.toggle('view-only', viewOnly);
+}
 function applyAccess(u){
   let allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages.slice():[]);
   // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
@@ -1946,7 +1954,9 @@ async function renderAccess(){
   const rows=accessUsers.map(u=>{
     if(u.is_super) return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>Superadmin</td><td colspan="${PAGE_KEYS.length}" style="text-align:center;color:#11825f">Full access (all sections)</td><td><div class="row-actions"><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button></div></td></tr>`;
     const allowed=Array.isArray(u.allowed_pages)?u.allowed_pages:[];
-    const cells=PAGE_KEYS.map(p=>`<td class="perm"><input type="checkbox" data-u="${u.username}" data-pg="${p[0]}" ${allowed.includes(p[0])?'checked':''}></td>`).join('');
+    const editp=Array.isArray(u.edit_pages)?u.edit_pages:[];
+    const cells=PAGE_KEYS.map(p=>{const k=p[0];const lvl=editp.includes(k)?'edit':(allowed.includes(k)?'view':'');
+      return `<td class="perm"><select class="perm-sel" data-u="${u.username}" data-pg="${k}"><option value=""${lvl===''?' selected':''}>—</option><option value="view"${lvl==='view'?' selected':''}>View</option><option value="edit"${lvl==='edit'?' selected':''}>Edit</option></select></td>`;}).join('');
     const canDel = (window.dashUser&&window.dashUser.is_super) && u.username!==(window.dashUser&&window.dashUser.username);
     const delBtn = canDel ? `<button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deldash="${u.username}">Delete</button>` : '';
     return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td><div class="row-actions"><button class="assign-btn" data-saveaccess="${u.username}">Save</button><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button>${delBtn}</div></td></tr>`;
@@ -1959,10 +1969,12 @@ async function renderAccess(){
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
 }
 async function saveAccess(username){
-  const pages=$$(`#accessWrap input[data-u="${username}"]`).filter(c=>c.checked).map(c=>c.dataset.pg);
+  const sels=$$(`#accessWrap select[data-u="${username}"]`);
+  const pages=[], editPages=[];
+  sels.forEach(s=>{ const v=s.value; if(v==='view'||v==='edit') pages.push(s.dataset.pg); if(v==='edit') editPages.push(s.dataset.pg); });
   try{
-    await fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({allowed_pages:pages,updated_at:new Date().toISOString()})});
-    showToast(`${username}: access updated`);
+    await fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({allowed_pages:pages,edit_pages:editPages,updated_at:new Date().toISOString()})});
+    showToast(`${username}: access updated (View/Edit saved)`);
   }catch(e){ showToast('Could not save access'); }
 }
 // ---- Secure admin actions via the admin-reset Edge Function ----
