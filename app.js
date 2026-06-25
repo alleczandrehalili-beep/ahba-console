@@ -283,7 +283,9 @@ function renderJobs(){
     else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&isToday(j.updatedAt)); }
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
-    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
+    // In a PREVIOUS-DATE view, allow carrying that day's Incomplete loads to today's For Dispatch.
+    const carryBtn=(hist && keys==='negative' && list.length)?`<button class="assign-btn" data-carryneg="1" style="width:100%;margin:0 0 8px;background:#fff4e1;border-color:#f0d9a8;color:#a4690f">↩ Carry all to For Dispatch (today)</button>`:'';
+    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
   const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
   const todayLoads=hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
@@ -298,8 +300,30 @@ function renderJobs(){
   $('#dispatchStats').innerHTML=stats.map(([l,n,c])=>`<div class="small-stat" style="border-left:4px solid ${c}"><span>${l}</span><strong style="color:${c}">${n}</strong></div>`).join('');
   if(!hist){ bindAssignButtons(); wireDispatchDnD(); applyJobTableFilter(); maybeCaptureSnapshot();
     if(!renderJobs._backfilled && window.dashUser && jobs.length){ renderJobs._backfilled=true; backfillSnapshots('2026-06-22'); } }
-  else { $$('#dispatchBoard .job-card[data-detail]').forEach(c=>c.onclick=e=>{ if(e.target.closest('button'))return; openJobDetail(c.dataset.detail); }); }
+  else { $$('#dispatchBoard .job-card[data-detail]').forEach(c=>c.onclick=e=>{ if(e.target.closest('button'))return; openJobDetail(c.dataset.detail); });
+    $$('#dispatchBoard [data-carryneg]').forEach(b=>b.onclick=()=>carryNegativesToDispatch((dashHist||[]).filter(j=>j.status==='negative').map(j=>j.id))); }
   applyDispatchSearch();
+}
+// Carry a previous day's Incomplete (negative) loads into TODAY's For Dispatch. They keep their
+// original created_at, so they are NOT counted as new Turn-Ins (turn-ins = encoded today).
+async function carryNegativesToDispatch(ids){
+  ids=(ids||[]).filter(Boolean);
+  if(!ids.length){ showToast('No incomplete loads to carry.'); return; }
+  if(!confirm(`Carry ${ids.length} incomplete load(s) to today's For Dispatch?\n\nMapupunta sila sa kasalukuyang For Dispatch (1st Load) pero HINDI bibilang as new Turn-in.`)) return;
+  const today=manilaToday(); let n=0;
+  for(const id of ids){
+    const j=jobs.find(x=>x.id===id);
+    if(!j || j.status!=='negative') continue;     // only still-incomplete loads
+    j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=today; j.priority='1st Load';
+    j.history=appendHistory(j.history, `Carried to For Dispatch from ${dashViewDate||'previous day'} (not a new turn-in)`);
+    if(window.AHBASync) window.AHBASync(j);
+    n++;
+  }
+  // Jump back to today's live view so the carried loads are visible in For Dispatch.
+  const dEl=$('#tlDate'); if(dEl) dEl.value=today; dashHist=null; dashViewDate=null;
+  const note=$('#dashHistNote'); if(note) note.style.display='none';
+  save(); renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline();
+  showToast(`${n} incomplete load(s) carried to For Dispatch (not counted as turn-in)`);
 }
 function applyDispatchSearch(){
   const q=($('#dispatchSearch')?.value||'').toLowerCase().trim();
