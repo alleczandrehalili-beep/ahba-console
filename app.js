@@ -743,7 +743,7 @@ function renderTimeline(){
   if(!hist) maybePromptRollover();
   const loadToday=d=>!d || String(d).slice(0,10)===(hist?date:manilaToday());
   // Pull online status + newly-created technicians, then re-render (live only).
-  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ const sig=JSON.stringify(shiftByTeam); if(added||sig!==renderTimeline._sig){ renderTimeline._sig=sig; renderTimeline(); } });
+  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0),loadAgentNames().catch(()=>{})]).then(([,added])=>{ const sig=JSON.stringify(shiftByTeam)+JSON.stringify(agentNames); if(added||sig!==renderTimeline._sig){ renderTimeline._sig=sig; renderTimeline(); } });
   // Build filter dropdowns (Load Type · District · Brgy) from the day's loads, then filter the view.
   const tlDayStr2=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
   const inDayPool=SRC.filter(j=>{ const st=(j.status||'').toLowerCase();
@@ -760,7 +760,7 @@ function renderTimeline(){
   // Status-bar filter: when a non-"For Dispatch" status is selected, hide the backlog (it IS For Dispatch).
   const showBacklog = !tlStatusFilter || tlStatusFilter==='fordispatch';
   if(bl){
-    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const src=[j.source_of_sales,j.referral_name].filter(Boolean).join(' · ');const by=([src,(j.created_by||'')].filter(Boolean).join(' · ')||'—').replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">By: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'Walang naghihintay na unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
+    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=tlBy(j).replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">Agent: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'Walang naghihintay na unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
   }
   // Clicksoft-style status history feed
   renderTimelineHistory();
@@ -800,7 +800,7 @@ function renderTimeline(){
       const c=tlStatusColor(j.status);
       const win=`${tlFmtHour(startMin/60)}–${tlFmtHour(endMin/60)}`;
       const mark=bumped?'↪ ':'';
-      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win} · By: ${tlBy(j).replace(/"/g,'&quot;')}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win} · Agent: ${tlBy(j).replace(/"/g,'&quot;')}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
     }).join('');
     // Assigned account + designated driver / technician for this team's current shift
     const acct=s.account||t.account||'';
@@ -911,7 +911,7 @@ function renderTimelineHistory(){
     const dc=Number(j.dispatch_count)||0;
     return `<div class="tl-hist-item" data-tlhist="${j.id}" data-tlsearch="${tlSearchText(j)}">`
       +`<div class="tl-hist-head"><b>${sub}</b><span class="tl-hist-jo">J.O. ${jo}</span><span class="status ${cls}">${lbl}</span>${j.team?`<span class="tl-hist-team">${j.team.replace(/</g,'&lt;')}</span>`:''}${dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px">⟳${dc}</span>`:''}</div>`
-      +`<div class="tl-chip-by" style="margin:3px 0 0">By: ${tlBy(j).replace(/</g,'&lt;')}</div>`
+      +`<div class="tl-chip-by" style="margin:3px 0 0">Agent: ${tlBy(j).replace(/</g,'&lt;')}</div>`
       +`<div class="tl-hist-log">${log}</div></div>`;
   }).join('');
   $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
@@ -988,8 +988,8 @@ function tlSearchText(j){
   return [j.id,j.subscriber,j.team,j.area,j.city,j.address,j.job_order_no,j.primary_no,j.created_by,j.source_of_sales,j.referral_name]
     .filter(Boolean).join(' ').toLowerCase().replace(/"/g,'&quot;');
 }
-// "By:" = Source/Referral + the AHBA_SA account that encoded the load (who it came from).
-function tlBy(j){ const s=[j.source_of_sales,j.referral_name].filter(Boolean).join(' · '); return [s,(j.created_by||'')].filter(Boolean).join(' · ')||'—'; }
+// "By:" = the Sales Agent (account · agent name), same as the Validation page. (No source of sales.)
+function tlBy(j){ return agentLabel(j.created_by)||'—'; }
 // Highlight matches and dim the rest; clears when the box is empty
 function tlApplySearch(){
   const sb=$('#tlSearch'); const q=(sb?sb.value:'').trim().toLowerCase();
