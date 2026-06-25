@@ -713,6 +713,9 @@ function setDashView(view){
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.classList.toggle('active',b.dataset.dashview===view));
   if(showLoads) renderJobs(); else renderTimeline();
 }
+// Status-bar filter: click a status chip to show ONLY that status on the Gantt; '' = Total (show all).
+let tlStatusFilter='';
+function setTlStatusFilter(b){ tlStatusFilter=(tlStatusFilter===b)?'':b; renderTimeline(); }
 // Dashboard filters (For Dispatch + Teams Timeline): Load Type · District · Barangay.
 function tlPassFilter(j){
   const ty=($('#tlfType')&&$('#tlfType').value)||'';
@@ -754,8 +757,10 @@ function renderTimeline(){
   const backlog=SRC.filter(j=>j.status==='pending' && !j.scheduled_at && loadToday(j.load_date) && tlPassFilter(j))
     .sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)||prio(a.priority)-prio(b.priority)||String(a.id).localeCompare(String(b.id)));
   const bl=$('#tlBacklog');
+  // Status-bar filter: when a non-"For Dispatch" status is selected, hide the backlog (it IS For Dispatch).
+  const showBacklog = !tlStatusFilter || tlStatusFilter==='fordispatch';
   if(bl){
-    bl.innerHTML=backlog.length?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span></div>${dcb}</span>`;}).join(''):'<span style="color:#9aa6a2;font-size:11px">Walang naghihintay na unscheduled load.</span>';
+    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=(j.created_by||'—').replace(/</g,'&lt;').slice(0,22);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">By: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'Walang naghihintay na unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
   }
   // Clicksoft-style status history feed
   renderTimelineHistory();
@@ -783,8 +788,10 @@ function renderTimeline(){
       if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);    // finished today
       return loadToday(j.load_date);                                            // active / incomplete working set
     });
-    shownJobs.push(...dayJobs);
-    const laid=tlLayoutTeamJobs(dayJobs,date);
+    shownJobs.push(...dayJobs);   // full set for the status-bar counts
+    // Status-bar filter: 'fordispatch' shows no team blocks; another status shows only that bucket.
+    const drawJobs = !tlStatusFilter ? dayJobs : (tlStatusFilter==='fordispatch' ? [] : dayJobs.filter(j=>tlBucket(j.status)===tlStatusFilter));
+    const laid=tlLayoutTeamJobs(drawJobs,date);
     const blocks=laid.map(({j,startMin,durMin,bumped})=>{
       const hh=startMin/60; const endMin=startMin+durMin;
       let left=((hh-TL_START)/TL_HOURS)*100; let w=((durMin/60)/TL_HOURS)*100;
@@ -802,13 +809,13 @@ function renderTimeline(){
     const acctLine=acct?`<span class="tl-acct">${esc(acct)}</span>`:'';
     const crew=[drv?`D: ${esc(drv)}`:'',[t1,t2].filter(Boolean).map(esc).join(', ')?`T: ${[t1,t2].filter(Boolean).map(esc).join(', ')}`:''].filter(Boolean).join(' · ');
     const crewLine=crew?`<span class="tl-crew">${crew}</span>`:(acct?'':'<span class="tl-crew" style="color:#b6c0bc">— not signed in —</span>');
-    const loadCount=dayJobs.length;
+    const loadCount=(tlStatusFilter?drawJobs.length:dayJobs.length);
     const cntBadge=loadCount?`<span class="tl-team-cnt" title="${loadCount} load(s) sa team na ito">${loadCount}</span>`:'';
     html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}${cntBadge}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); if(hist){ $$('#tlGrid [data-tlblock]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); }); } else { wireTimelineDnD(date); } }
-  // Status tally banner — counts EXACTLY the loads shown above (always in sync with the teams).
-  renderTimelineCounts(shownJobs);
+  // Status tally banner — full day's counts (stable), clickable to filter the Gantt by status.
+  renderTimelineCounts(inDayPool);
   // Search box: highlight matching job orders (backlog + scheduled blocks)
   const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
   tlApplySearch();
@@ -881,8 +888,9 @@ function renderTimelineCounts(list){
   todayLoads.forEach(j=>{ cnt[tlBucket(j.status)]++; });
   const total=todayLoads.length;
   el.innerHTML=defs.map(([k,label,bg,fg,bd])=>
-    `<span class="tl-count" style="background:${bg};color:${fg};border:1px solid ${bd}"><b>${cnt[k]}</b>${label}</span>`
-  ).join('')+`<span class="tl-count tl-count-total"><b>${total}</b>Total</span>`;
+    `<span class="tl-count${tlStatusFilter===k?' tl-count-on':''}" data-tlstatus="${k}" style="background:${bg};color:${fg};border:1px solid ${bd};cursor:pointer"><b>${cnt[k]}</b>${label}</span>`
+  ).join('')+`<span class="tl-count tl-count-total${tlStatusFilter===''?' tl-count-on':''}" data-tlstatus="" style="cursor:pointer"><b>${total}</b>Total</span>`;
+  $$('#tlCounts [data-tlstatus]').forEach(c=>c.onclick=()=>setTlStatusFilter(c.dataset.tlstatus));
 }
 // Clicksoft-style monitoring: a feed of today's loads with their full status progression.
 function renderTimelineHistory(){
