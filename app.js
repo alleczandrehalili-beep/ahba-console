@@ -116,12 +116,27 @@ function isOnline(loc){return loc && loc.location_at && (Date.now()-new Date(loc
 // ---- Live team shifts (account + crew) read from today's attendance ----
 let shiftByTeam={};   // { AHBA_SLI001: {account,driver,tech1,tech2,online,time_in} }
 async function loadTeamShifts(){
-  const date=manilaToday();
+  const today=manilaToday();
+  const yd=new Date(); yd.setDate(yd.getDate()-1); const yest=yd.toLocaleDateString('en-CA',{timeZone:TZ});
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=username,time_in,time_out,work_account,crew_driver,crew_tech1,crew_tech2,deployed_verified&work_date=eq.${date}&order=time_in.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    // Include yesterday too, so a team that timed in before midnight (and is still open) stays ONLINE.
+    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=username,work_date,time_in,time_out,work_account,crew_driver,crew_tech1,crew_tech2,deployed_verified,verified_by,verified_at&or=(work_date.eq.${today},work_date.eq.${yest})&order=time_in.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const rows=r.ok?await r.json():[];
     const m={};
-    rows.forEach(a=>{ if(!m[a.username]) m[a.username]={account:a.work_account||'',driver:a.crew_driver||'',tech1:a.crew_tech1||'',tech2:a.crew_tech2||'',online:!!(a.time_in&&!a.time_out),time_in:a.time_in,verified:a.deployed_verified===true,verified_by:a.verified_by||'',verified_at:a.verified_at||''}; });
+    // Rows are newest-first. A team is ONLINE if ANY of its rows is still open (time_in && no time_out),
+    // not just the latest — avoids showing an actually-logged-in team as offline.
+    rows.forEach(a=>{
+      const open=!!(a.time_in&&!a.time_out);
+      const cur=m[a.username];
+      if(!cur){
+        m[a.username]={account:a.work_account||'',driver:a.crew_driver||'',tech1:a.crew_tech1||'',tech2:a.crew_tech2||'',online:open,time_in:a.time_in,verified:a.deployed_verified===true,verified_by:a.verified_by||'',verified_at:a.verified_at||''};
+      } else if(open && !cur.online){
+        // Found an open shift on an older row → upgrade to ONLINE, prefer its account/crew.
+        cur.online=true; cur.time_in=a.time_in;
+        cur.account=a.work_account||cur.account; cur.driver=a.crew_driver||cur.driver; cur.tech1=a.crew_tech1||cur.tech1; cur.tech2=a.crew_tech2||cur.tech2;
+        if(a.deployed_verified===true){ cur.verified=true; cur.verified_by=a.verified_by||cur.verified_by; cur.verified_at=a.verified_at||cur.verified_at; }
+      }
+    });
     shiftByTeam=m;
   }catch(e){}
 }
@@ -691,7 +706,7 @@ function renderTimeline(){
   if(!hist) maybePromptRollover();
   const loadToday=d=>!d || String(d).slice(0,10)===(hist?date:manilaToday());
   // Pull online status + newly-created technicians, then re-render (live only).
-  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ if(added||!renderTimeline._shifted){ renderTimeline._shifted=true; renderTimeline(); } });
+  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0)]).then(([,added])=>{ const sig=JSON.stringify(shiftByTeam); if(added||sig!==renderTimeline._sig){ renderTimeline._sig=sig; renderTimeline(); } });
   // Build filter dropdowns (Load Type · District · Brgy) from the day's loads, then filter the view.
   const tlDayStr2=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
   const inDayPool=SRC.filter(j=>{ const st=(j.status||'').toLowerCase();
