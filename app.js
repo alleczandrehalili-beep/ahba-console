@@ -1416,8 +1416,9 @@ async function fetchCompleted(date){
   try{
     const q=`status=eq.completed&${or}&select=*&order=updated_at.desc&limit=2000`;
     const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    return r.ok?await r.json():[];
-  }catch(e2){return[]}
+    if(!r.ok){ try{ fetchCompleted._err='HTTP '+r.status+' — '+(await r.text()).slice(0,140); }catch(_){ fetchCompleted._err='HTTP '+r.status; } return []; }
+    fetchCompleted._err=''; return await r.json();
+  }catch(e2){ fetchCompleted._err=String(e2&&e2.message||e2); return[]; }
 }
 async function fetchPhotosFor(ids){
   if(!ids.length)return{};
@@ -1644,7 +1645,7 @@ function remDraw(){
   const body=$('#remittanceBody'); if(!body)return;
   const q=($('#remSearch')?.value||'').toLowerCase().trim();
   const list=remJobs.filter(j=>!q || (j.subscriber||'').toLowerCase().includes(q) || String(j.job_order_no||'').toLowerCase().includes(q) || String(j.id||'').toLowerCase().includes(q));
-  if(!list.length){body.innerHTML=`<tr><td colspan="9" class="empty-cell">${remJobs.length?'No match for "'+q+'".':'No collections declared for this day.'}</td></tr>`;return}
+  if(!list.length){const err=fetchCompleted._err?` · ⚠ ${fetchCompleted._err}`:'';body.innerHTML=`<tr><td colspan="9" class="empty-cell">${remJobs.length?'No match for "'+q+'".':'No collections declared for this day.'+err}</td></tr>`;return}
   body.innerHTML=list.map(j=>{
     const amt=j.payment_amount!=null?money(j.payment_amount):'—';
     const recd=j.remittance_received
