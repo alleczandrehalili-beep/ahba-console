@@ -800,7 +800,7 @@ function renderTimeline(){
       const c=tlStatusColor(j.status);
       const win=`${tlFmtHour(startMin/60)}–${tlFmtHour(endMin/60)}`;
       const mark=bumped?'↪ ':'';
-      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win} · By: ${tlBy(j).replace(/"/g,'&quot;')}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
     }).join('');
     // Assigned account + designated driver / technician for this team's current shift
     const acct=s.account||t.account||'';
@@ -911,6 +911,7 @@ function renderTimelineHistory(){
     const dc=Number(j.dispatch_count)||0;
     return `<div class="tl-hist-item" data-tlhist="${j.id}" data-tlsearch="${tlSearchText(j)}">`
       +`<div class="tl-hist-head"><b>${sub}</b><span class="tl-hist-jo">J.O. ${jo}</span><span class="status ${cls}">${lbl}</span>${j.team?`<span class="tl-hist-team">${j.team.replace(/</g,'&lt;')}</span>`:''}${dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px">⟳${dc}</span>`:''}</div>`
+      +`<div class="tl-chip-by" style="margin:3px 0 0">By: ${tlBy(j).replace(/</g,'&lt;')}</div>`
       +`<div class="tl-hist-log">${log}</div></div>`;
   }).join('');
   $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
@@ -984,9 +985,11 @@ async function renderProductivityHistory(){
 }
 // Build a lowercase searchable string per job (JO #, subscriber, team, area, address, JO number)
 function tlSearchText(j){
-  return [j.id,j.subscriber,j.team,j.area,j.city,j.address,j.job_order_no,j.primary_no]
+  return [j.id,j.subscriber,j.team,j.area,j.city,j.address,j.job_order_no,j.primary_no,j.created_by,j.source_of_sales,j.referral_name]
     .filter(Boolean).join(' ').toLowerCase().replace(/"/g,'&quot;');
 }
+// "By:" = Source/Referral + the AHBA_SA account that encoded the load (who it came from).
+function tlBy(j){ const s=[j.source_of_sales,j.referral_name].filter(Boolean).join(' · '); return [s,(j.created_by||'')].filter(Boolean).join(' · ')||'—'; }
 // Highlight matches and dim the rest; clears when the box is empty
 function tlApplySearch(){
   const sb=$('#tlSearch'); const q=(sb?sb.value:'').trim().toLowerCase();
