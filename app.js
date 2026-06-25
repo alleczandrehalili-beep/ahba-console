@@ -309,7 +309,7 @@ function renderJobs(){
 async function carryNegativesToDispatch(ids){
   ids=(ids||[]).filter(Boolean);
   if(!ids.length){ showToast('No incomplete loads to carry.'); return; }
-  if(!confirm(`Carry ${ids.length} incomplete load(s) to today's For Dispatch?\n\nMapupunta sila sa kasalukuyang For Dispatch (1st Load) pero HINDI bibilang as new Turn-in.`)) return;
+  if(!confirm(`Carry ${ids.length} incomplete load(s) to today's For Dispatch?\n\nThey will go to the current For Dispatch (1st Load) but will NOT be counted as new Turn-ins.`)) return;
   const today=manilaToday(); let n=0;
   for(const id of ids){
     const j=jobs.find(x=>x.id===id);
@@ -393,7 +393,7 @@ function openJobDetail(jobId){
   $('#jdSub').textContent=`${statusLabel(j.status||'—')}${j.team?' · '+j.team:''}${j.dispatch_count?' · ⟳ ×'+j.dispatch_count:''}`;
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
-    F('Load type',j.load_type||'SLI'),
+    F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
@@ -426,7 +426,7 @@ function openJobDetail(jobId){
 function deleteJobOrder(jobId){
   const j=findJob(jobId); if(!j) return;
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
-  if(!confirm(`Delete job order ${jobId} (${j.subscriber||''})?\n\nIto ay itatago sa Dispatch Board at Timeline. Mananatili sa records ang history.\n\nOK = Delete   ·   Cancel = Huwag`)) return;
+  if(!confirm(`Delete job order ${jobId} (${j.subscriber||''})?\n\nIt will be hidden from the Dispatch Board and Timeline. The history stays in the records.\n\nOK = Delete   ·   Cancel = Keep`)) return;
   j.history=appendHistory(j.history,`🗑 Deleted by ${who} (status was: ${statusLabel(j.status||'')})`);
   j.deleted_at=new Date().toISOString(); j.deleted_by=who;
   if(window.AHBASync) window.AHBASync(j);            // persist the soft-delete + history to cloud
@@ -607,7 +607,7 @@ async function sendTeamChat(code){
 }
 const PER_HEAD=955;       // bawat driver / technician na naka-declare sa Start shift
 const GAS_PER_TEAM=400;   // gasolina kada na-deploy na team
-const CONSOLE_COST=1415;  // bawat dashboard user na nag-login ngayong araw
+const CONSOLE_COST=1415;  // per dashboard user who logged in today
 async function renderExpenses(){
   const dEl=$('#expDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderExpenses;}
   const date=dEl&&dEl.value?dEl.value:manilaToday(), H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
@@ -694,7 +694,7 @@ async function onDashDateChange(){
     }catch(e){ dashHist=[]; dashViewDate=date; }
   }
   const note=$('#dashHistNote');
-  if(note){ if(dashHist){ note.style.display=''; note.textContent=`📅 Viewing END-OF-DAY snapshot for ${dashViewDate} (read-only). Pumili ng today para sa live view.`; } else note.style.display='none'; }
+  if(note){ if(dashHist){ note.style.display=''; note.textContent=`📅 Viewing END-OF-DAY snapshot for ${dashViewDate} (read-only). Select today for the live view.`; } else note.style.display='none'; }
   renderTimeline(); renderJobs();
 }
 function tlStatusColor(s){
@@ -760,7 +760,7 @@ function renderTimeline(){
   // Status-bar filter: when a non-"For Dispatch" status is selected, hide the backlog (it IS For Dispatch).
   const showBacklog = !tlStatusFilter || tlStatusFilter==='fordispatch';
   if(bl){
-    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Hindi pa na-dispatch':'Na-dispatch '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=tlBy(j).replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">Agent: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'Walang naghihintay na unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
+    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Not yet dispatched':'Dispatched '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=tlBy(j).replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">Agent: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'No waiting unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
   }
   // Clicksoft-style status history feed
   renderTimelineHistory();
@@ -780,7 +780,7 @@ function renderTimeline(){
     const dayJobs=SRC.filter(j=>{
       if(j.team!==t.code) return false;
       // NOTE: the Load Type / District / Brgy filter applies to the For Dispatch backlog ONLY —
-      // the team Gantt rows always show the full assigned set (di gumagalaw kapag nag-filter).
+      // the team Gantt rows always show the full assigned set (they don't move when filtering).
       if(hist) return true;                                                     // snapshot = that day's EOD set
       const st=(j.status||'').toLowerCase();
       if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
@@ -810,7 +810,7 @@ function renderTimeline(){
     const crew=[drv?`D: ${esc(drv)}`:'',[t1,t2].filter(Boolean).map(esc).join(', ')?`T: ${[t1,t2].filter(Boolean).map(esc).join(', ')}`:''].filter(Boolean).join(' · ');
     const crewLine=crew?`<span class="tl-crew">${crew}</span>`:(acct?'':'<span class="tl-crew" style="color:#b6c0bc">— not signed in —</span>');
     const loadCount=(tlStatusFilter?drawJobs.length:dayJobs.length);
-    const cntBadge=loadCount?`<span class="tl-team-cnt" title="${loadCount} load(s) sa team na ito">${loadCount}</span>`:'';
+    const cntBadge=loadCount?`<span class="tl-team-cnt" title="${loadCount} load(s) for this team">${loadCount}</span>`:'';
     html+=`<div class="tl-row"><div class="tl-team"><div class="tl-team-name"><span style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block;margin-right:6px;flex:none"></span>${t.code}${cntBadge}</div>${acctLine}${crewLine}</div><div class="tl-track" data-tlteam="${t.code}">${blocks}</div></div>`;
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); if(hist){ $$('#tlGrid [data-tlblock]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); }); } else { wireTimelineDnD(date); } }
@@ -899,7 +899,7 @@ function renderTimelineHistory(){
   const encToday=j=>{ const t=j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):''; return t===today; };
   const loads=jobs.filter(encToday)
     .sort((a,b)=>new Date(b.updatedAt||b.created_at||0)-new Date(a.updatedAt||a.created_at||0));
-  if(!loads.length){ el.innerHTML='<div class="empty-row">Wala pang load na na-encode ngayong araw.</div>'; return; }
+  if(!loads.length){ el.innerHTML='<div class="empty-row">No loads encoded today yet.</div>'; return; }
   el.innerHTML=loads.map(j=>{
     const cls=(j.status||'pending'); const lbl=statusLabel(j.status||'pending');
     const lines=(j.history||'').split('\n').map(s=>s.trim()).filter(Boolean);
@@ -973,7 +973,7 @@ async function renderProductivityHistory(){
   let snap=null, live=(date===manilaToday());
   if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
-  if(!snap){ panel.innerHTML=`<div class="empty-row">Walang naka-save na productivity para sa ${date}. (Magsisimula ang pag-save mula sa araw na ito pasulong.)</div>`; return; }
+  if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
   const d=snap.data||{}, c=d.counts||{};
   const defs=[['Total Turn-Ins',d.turnins||0,'#102925','#fff'],['For Dispatch',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
   const chips=defs.map(([l,n,bg,fg])=>`<span class="tl-count" style="background:${bg};color:${fg};border:1px solid rgba(0,0,0,.08)"><b>${n}</b>${l}</span>`).join('');
@@ -1056,7 +1056,7 @@ function tlPickTime(jobId, team, date, defHour){
   m.querySelector('#tlTimeDur').value=String(j.est_minutes||TL_DEFMIN);
   m.querySelector('#tlTimeSub').textContent=jobId+' · '+(j.subscriber||'').slice(0,28)+' → '+team;
   m.querySelector('#tlTimeOk').onclick=()=>{
-    const v=m.querySelector('#tlTimeInput').value; if(!v){ showToast('Pumili ng oras'); return; }
+    const v=m.querySelector('#tlTimeInput').value; if(!v){ showToast('Select a time'); return; }
     const p=v.split(':').map(Number); const hour=p[0]+(p[1]||0)/60;
     const est=parseInt(m.querySelector('#tlTimeDur').value,10)||60;
     closeModals(); tlSchedule(jobId,team,date,hour,est);
@@ -1413,7 +1413,7 @@ async function renderAttendance(){
 // Release a locked work account (clear it from all open attendance rows today) so another team can use it.
 async function freeWorkAccount(account){
   if(!account) return;
-  if(!confirm(`Free work account "${account}"?\nMapapalaya ito para magamit ng ibang team. Hindi mato-time-out ang kasalukuyang user — mawawala lang ang account selection nila.`)) return;
+  if(!confirm(`Free work account "${account}"?\nIt will be released for another team to use. The current user is NOT timed out — only their account selection is cleared.`)) return;
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/attendance?work_account=eq.${encodeURIComponent(account)}&time_out=is.null`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({work_account:null})});
     if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
@@ -1445,12 +1445,14 @@ async function renderGateLog(date){
     return `<tr><td><strong>${fmtTime(g.checked_at)}</strong> ${typeBadge}</td><td><strong>${g.team||'—'}</strong></td><td>${g.account||'—'}</td><td><strong>${g.plate_no||'—'}</strong></td><td>${odoFuel}</td><td>${g.crew_driver||'—'}</td><td>${crew||'—'}</td><td>${okb}${rem?` <span style="color:#c2503a;font-size:9px">${rem}</span>`:''}</td><td>${g.security_user||'—'}</td></tr>`;
   }).join('');
 }
+// All exported VALUES are forced UPPERCASE (keys/headers unchanged); numbers/blanks untouched.
+function upperRows(rows){ return (rows||[]).map(r=>{ const o={}; for(const k in r){ const v=r[k]; o[k]=(typeof v==='string')?v.toUpperCase():v; } return o; }); }
 function exportAttendance(){
   if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
   if(!attRows.length){showToast('Nothing to export');return}
   const date=$('#attDate')?.value||manilaToday();
   const rows=attRows.map(r=>({'TECHNICIAN':r.username,'DATE':r.work_date,'TIME IN':r.time_in?fmtWhen(r.time_in):'','TIME OUT':r.time_out?fmtWhen(r.time_out):'','HOURS':fmtDur(r.time_in,r.time_out),'STATUS':r.time_out?'Timed out':'Timed in','ACCOUNT':r.work_account||'','DRIVER':r.crew_driver||'','TECH 1':r.crew_tech1||'','TECH 2':r.crew_tech2||''}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Attendance');
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upperRows(rows)),'Attendance');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_attendance_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Attendance exported');
 }
@@ -1459,7 +1461,7 @@ function exportGateLog(){
   if(!gateRows.length){showToast('No vehicle log to export');return}
   const date=$('#attDate')?.value||manilaToday();
   const rows=gateRows.map(g=>({'TIME':fmtWhen(g.checked_at),'TYPE':(g.gate_type==='incoming'?'INCOMING':'OUTGOING'),'TEAM':g.team||'','ACCOUNT':g.account||'','PLATE NO.':g.plate_no||'','ODOMETER (KM)':(g.odometer!=null?g.odometer:''),'FUEL':g.fuel_level||'','DRIVER':g.crew_driver||'','TECH 1':g.crew_tech1||'','TECH 2':g.crew_tech2||'','CREW OK':(g.gate_type==='incoming'?'':(g.crew_ok?'YES':'NO')),'CREW REMARKS':g.crew_remarks||'','VEHICLE REMARKS':g.vehicle_remarks||'','VALIDATED BY':g.security_user||'','DATE':g.work_date||date}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Vehicle log');
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upperRows(rows)),'Vehicle log');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_vehicle_log_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Vehicle log exported');
 }
@@ -1579,7 +1581,7 @@ async function exportZip(){
     'WO ID': j.id
   }));
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Completed');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(rows)), 'Completed');
   zip.file(`AHBA_completed_${date}.xlsx`, XLSX.write(wb,{type:'array',bookType:'xlsx'}));
 
   // --- Photos: one folder per subscriber, files named with the subscriber name ---
@@ -1669,7 +1671,7 @@ async function exportHistoryExcel(){
   if(!histJobs.length){showToast('Nothing to export for this range');return}
   await loadAgentNames();
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(histJobs.map(j=>jobToRow(j))), 'Load History');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(histJobs.map(j=>jobToRow(j)))), 'Load History');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_load_history_${$('#histFrom').value}_to_${$('#histTo').value}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),10000);
@@ -1746,7 +1748,7 @@ function exportRemittance(){
     'MODE OF PAYMENT': j.payment_mode||'', 'AMOUNT': (j.payment_amount!=null?j.payment_amount:''), 'AR NO.': j.ar_no||'',
     'RECEIVED': j.remittance_received?'YES':'NO', 'RECEIVED BY': j.remittance_received_by||'', 'RECEIVED AT': j.remittance_received_at?fmtWhen(j.remittance_received_at):''
   }));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Remittance');
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(rows)), 'Remittance');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_remittance_${$('#remDate').value}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),10000);
