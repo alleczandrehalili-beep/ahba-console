@@ -381,10 +381,11 @@ function maybePromptRollover(){
 function unassignJob(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j||!['assigned','en-route','negative'].includes(j.status))return;
   const wasNeg=j.status==='negative';
-  j.status='pending'; j.team=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
+  j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
   j.history=appendHistory(j.history, wasNeg?'Manually returned → For Dispatch (1st Load)':'Moved back to For Dispatch');
-  save(); renderJobs(); showToast(`${jobId} → For Dispatch${wasNeg?' (High priority)':''}`);
+  save(); showToast(`${jobId} → For Dispatch${wasNeg?' (High priority)':''}`);
   if(window.AHBASync) window.AHBASync(j);
+  if(dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
 }
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
@@ -446,12 +447,21 @@ function applyStatusUpdate(jobId,choice){
   if(choice==='completed') j.status='completed';
   else if(choice==='cancelled') j.status='cancelled';
   else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
-  else { j.status='pending'; j.team=null; j.load_date=manilaToday(); }  // re-dispatch → For Dispatch (today)
+  else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); }  // re-dispatch → CURRENT For Dispatch (today)
   const label={completed:'Completed',incomplete:'Incomplete',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
   j.history=appendHistory(j.history, `Status → ${label} (by Dispatcher)`);
   j.updatedAt=new Date().toISOString();
-  save(); closeModals(); renderJobs(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
+  save(); closeModals(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
   if(window.AHBASync) window.AHBASync(j);
+  // If moved to For Dispatch while viewing a PAST date, jump to today's live view so it shows up.
+  if(choice!=='completed'&&choice!=='incomplete'&&choice!=='cancelled'&&dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
+}
+// Leave the previous-date (read-only) view and return to today's live Dashboard.
+function exitHistToToday(){
+  dashHist=null; dashViewDate=null;
+  const dEl=$('#tlDate'); if(dEl) dEl.value=manilaToday();
+  const note=$('#dashHistNote'); if(note) note.style.display='none';
+  renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline();
 }
 function wireDispatchDnD(){
   $$('#dispatchBoard .job-card[data-detail]').forEach(c=>c.onclick=e=>{ if(e.target.closest('button'))return; openJobDetail(c.dataset.detail); });
