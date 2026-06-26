@@ -2109,7 +2109,9 @@ function myCwCode(){ return 'C:'+((window.dashUser&&window.dashUser.username)||'
 function codeDisplay(code){ if(!code) return ''; if(code.startsWith('T:')) return 'Team '+code.slice(2); if(code.startsWith('C:')) return code.slice(2); return code; }
 function msgThreadKey(m){ return m.dm_a ? ('dm:'+m.dm_a+'|'+m.dm_b) : ('team:'+m.team); }
 function curThreadKeyDash(){ if(!cwCur) return ''; return cwCur.kind==='dm' ? ('dm:'+cwCur.a+'|'+cwCur.b) : ('team:'+cwCur.code); }
-function setDcInputEnabled(on){ const i=$('#dcInput'),s=$('#dcSend'); if(i){ i.disabled=!on; i.placeholder=on?'Type a message…':'Monitoring only — read-only'; } if(s) s.disabled=!on; }
+function setDcInputEnabled(on){ const i=$('#dcInput'),s=$('#dcSend'),p=$('#dcPhotoBtn'); if(i){ i.disabled=!on; i.placeholder=on?'Type a message…':'Monitoring only — read-only'; } if(s) s.disabled=!on; if(p) p.disabled=!on; }
+let cwPhotoFile=null;   // pending chat image (console)
+function setCwPhoto(file){ cwPhotoFile=file||null; const n=$('#dcPhotoName'); if(n) n.textContent=cwPhotoFile?('📎 '+(cwPhotoFile.name||'photo')):''; }
 function playBeepDash(){ try{ const C=window.AudioContext||window.webkitAudioContext; if(!C)return; const ctx=playBeepDash._c||(playBeepDash._c=new C()); if(ctx.state==='suspended')ctx.resume(); const o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(880,ctx.currentTime); o.frequency.setValueAtTime(1170,ctx.currentTime+0.12); o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.0001,ctx.currentTime); g.gain.exponentialRampToValueAtTime(0.3,ctx.currentTime+0.02); g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35); o.start(); o.stop(ctx.currentTime+0.36);}catch(e){} }
 // ---- Team-monitoring alert sounds (travel overdue / idle team) ----
 function dashCtx(){ const C=window.AudioContext||window.webkitAudioContext; if(!C)return null; const ctx=dashCtx._c||(dashCtx._c=new C()); if(ctx.state==='suspended')ctx.resume(); return ctx; }
@@ -2201,7 +2203,7 @@ async function showCwTeams(){
         av=(m.team||'').slice(-3);
         title=(m.role==='team'&&m.sender)?m.sender:(teamCrew(m.team)||m.team);
       }
-      const sub=(m.role==='dispatch'?( (m.sender||'You')+': '):((m.sender? m.sender+': ':'')))+(m.body||'');
+      const sub=(m.role==='dispatch'?( (m.sender||'You')+': '):((m.sender? m.sender+': ':'')))+(m.body||(m.image_path?'📷 Photo':''));
       return `<div class="dc-team" data-k="${k}"><div class="dc-av">${av}</div><div class="dc-tmeta"><strong>${lock}${(title||'').replace(/</g,'&lt;')}${u?`<span class="dc-ucount">${u}</span>`:''}</strong><p>${(sub||'').replace(/</g,'&lt;').slice(0,46)}</p></div><time>${timeAgo(m.created_at)}</time></div>`;
     }).join('');
     $$('#dcTeams [data-k]').forEach(d=>d.onclick=()=>openCwByKey(d.dataset.k));
@@ -2237,10 +2239,10 @@ async function openCwDm(a,b,team){
   }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
 }
 function renderCwMsgs(rows){
-  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; return `<div class="dc-msg ${d?'me':'them'}"><div>${(m.body||'').replace(/</g,'&lt;')}</div><span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
+  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; const img=m.image_path?`<a href="${photoBase(m.image_path)}" target="_blank" rel="noopener"><img src="${photoBase(m.image_path)}" alt="photo" style="max-width:200px;max-height:200px;border-radius:9px;display:block;margin:2px 0"></a>`:''; const txt=(m.body||'').trim()?`<div>${(m.body||'').replace(/</g,'&lt;')}</div>`:''; return `<div class="dc-msg ${d?'me':'them'}">${img}${txt}<span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
 }
 async function sendCw(){
-  const inp=$('#dcInput'); const v=(inp.value||'').trim(); if(!v||!cwCur)return;
+  const inp=$('#dcInput'); const v=(inp.value||'').trim(); if((!v && !cwPhotoFile)||!cwCur)return;
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Dispatcher';
   const myRoleLabel=(window.dashUser&&window.dashUser.is_super)?'Superadmin':((window.dashUser&&window.dashUser.role_label)||'Console');
   const row={sender:who, sender_role:myRoleLabel, role:'dispatch', body:v};
@@ -2249,8 +2251,18 @@ async function sendCw(){
     row.dm_a=cwCur.a; row.dm_b=cwCur.b;
     row.team=cwCur.team||(cwCur.a.startsWith('T:')?cwCur.a.slice(2):(cwCur.b.startsWith('T:')?cwCur.b.slice(2):cwCur.a));
   } else { row.team=cwCur.code; }
-  inp.value='';
-  try{ await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify(row)}); pushNotify({team:row.team,title:'Message from '+who,body:v}); if(cwCur.kind==='dm') openCwDm(cwCur.a,cwCur.b,cwCur.team); else openCwThread(cwCur.code); }catch(e){ showToast('Send failed'); }
+  // Upload the attached photo (if any) to the public job-photos bucket under chat/.
+  if(cwPhotoFile){
+    const btn=$('#dcSend'); if(btn){ btn.disabled=true; btn.textContent='…'; }
+    try{ const blob=await compressImage(cwPhotoFile,1200,140); const client=sbc();
+      const path=`chat/${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`;
+      const {error:e2}=await client.storage.from('job-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+      if(!e2) row.image_path=path; else showToast('Photo upload failed');
+    }catch(e){ showToast('Photo upload failed'); }
+    if(btn){ btn.disabled=false; btn.textContent='Send'; }
+  }
+  inp.value=''; setCwPhoto(null); const pf=$('#dcPhoto'); if(pf) pf.value='';
+  try{ await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify(row)}); pushNotify({team:row.team,title:'Message from '+who,body:(v||'📷 Photo')}); if(cwCur.kind==='dm') openCwDm(cwCur.a,cwCur.b,cwCur.team); else openCwThread(cwCur.code); }catch(e){ showToast('Send failed'); }
 }
 function startDashChat(){
   if(cwChan||!window.supabase?.createClient) return;
@@ -2268,8 +2280,9 @@ function startDashChat(){
       playBeepDash();
       if(!onThis){ cwUnread[k]=(cwUnread[k]||0)+1; updateDcBadge(); if(widgetOpen) showCwTeams(); }
       const nm=(m.sender||m.team||'Message')+(m.dm_a?' (DM)':'');
-      showToast('💬 '+nm+': '+(m.body||'').slice(0,40));
-      try{ if('Notification'in window&&Notification.permission==='granted') new Notification('💬 '+nm,{body:m.body,icon:'favicon.png'}); }catch(e){}
+      const prev=(m.body||(m.image_path?'📷 Photo':''));
+      showToast('💬 '+nm+': '+prev.slice(0,40));
+      try{ if('Notification'in window&&Notification.permission==='granted') new Notification('💬 '+nm,{body:prev,icon:'favicon.png'}); }catch(e){}
     } else if(!onThis && widgetOpen){ showCwTeams(); }
   }).subscribe();
 }
@@ -2551,6 +2564,8 @@ function init(){
   $('#dcHead')?.addEventListener('click',()=>{ const w=$('#dashChatWidget'); if(w.classList.contains('min')) w.classList.remove('min'); });
   $('#dcSend')?.addEventListener('click',sendCw);
   $('#dcInput')?.addEventListener('keydown',e=>{ if(e.key==='Enter') sendCw(); });
+  $('#dcPhotoBtn')?.addEventListener('click',()=>$('#dcPhoto')?.click());
+  $('#dcPhoto')?.addEventListener('change',e=>{ setCwPhoto(e.target.files&&e.target.files[0]); });
   startDashChat();
   $('#importTemplateBtn')?.addEventListener('click',downloadImportTemplate);
   $('#importXlsxBtn')?.addEventListener('click',()=>$('#importXlsxInput').click());
