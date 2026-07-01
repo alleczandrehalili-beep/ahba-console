@@ -85,8 +85,9 @@
   }
 
   async function getJobs() {
-    const rows = await request('jobs?select=*&order=updated_at.desc');
-    // Soft-deleted job orders are hidden from all views (record stays in the DB for audit).
+    // Soft-deleted rows are excluded server-side (smaller payload as the table grows);
+    // the client filter below stays as a backstop in case a row slips through.
+    const rows = await request('jobs?select=*&deleted_at=is.null&order=updated_at.desc');
     return rows ? rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob) : [];
   }
 

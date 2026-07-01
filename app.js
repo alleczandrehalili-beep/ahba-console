@@ -2,6 +2,13 @@
 const $ = (s, el=document) => el.querySelector(s);
 const $$ = (s, el=document) => [...el.querySelectorAll(s)];
 const money = n => `₱${Number(n).toLocaleString('en-PH')}`;
+// HTML-escape values interpolated into innerHTML — stops markup-break / stored XSS from field-entered data.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// On-demand loaders for heavy libraries (xlsx ≈ 900KB, jszip) so they stay OFF the initial render path.
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(new Error('load failed: '+src)); document.head.appendChild(s); }); }
+let _xlsxP, _jszipP;
+function ensureXLSX(){ return window.XLSX ? Promise.resolve() : (_xlsxP||(_xlsxP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'))); }
+function ensureJSZip(){ return window.JSZip ? Promise.resolve() : (_jszipP||(_jszipP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'))); }
 
 const icons = {
   grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -272,8 +279,8 @@ function renderJobs(){
     const pending=jobs.filter(j=>j.status==='pending');
     const _td=manilaToday();
     if($('#pendingBadge')) $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
-    if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong></td><td>${j.type}</td><td>${j.area}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
-    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase()}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${j.subscriber}</strong><span>${j.plan}</span></td><td>${j.type}</td><td>${j.area}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
+    if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong></td><td>${j.type}</td><td>${esc(j.area)}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
+    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
   }
   const stages=[['pending','For Dispatch'],['assigned','Acknowledged'],['en-route','Travel'],['on-site,in-progress','On Site'],['negative','Incomplete'],['completed','Completed'],['cancelled','Cancelled']];
   $('#dispatchBoard').innerHTML=stages.map(([keys,label])=>{
@@ -495,7 +502,7 @@ function jobCard(j){
   const crewLine=crew?`<span>👤 ${crew}</span>`:'';
   return `<article class="job-card compact" data-detail="${j.id}" data-name="${(j.subscriber||'').toLowerCase().replace(/"/g,'')}"${drag}>
     <div class="job-top"><span class="job-id">${j.id}</span><span style="display:flex;gap:5px;align-items:center">${dcBadge}${prio}</span></div>
-    <h3>${j.subscriber||'—'}</h3>
+    <h3>${esc(j.subscriber||'—')}</h3>
     <div class="jc-meta">
       <span><span class="status ${j.status}">${statusLabel(j.status)}</span></span>
       <span>👥 ${j.team||'Unassigned'}</span>
@@ -1447,8 +1454,8 @@ async function renderGateLog(date){
 }
 // All exported VALUES are forced UPPERCASE (keys/headers unchanged); numbers/blanks untouched.
 function upperRows(rows){ return (rows||[]).map(r=>{ const o={}; for(const k in r){ const v=r[k]; o[k]=(typeof v==='string')?v.toUpperCase():v; } return o; }); }
-function exportAttendance(){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
+async function exportAttendance(){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!attRows.length){showToast('Nothing to export');return}
   const date=$('#attDate')?.value||manilaToday();
   const rows=attRows.map(r=>({'TECHNICIAN':r.username,'DATE':r.work_date,'TIME IN':r.time_in?fmtWhen(r.time_in):'','TIME OUT':r.time_out?fmtWhen(r.time_out):'','HOURS':fmtDur(r.time_in,r.time_out),'STATUS':r.time_out?'Timed out':'Timed in','ACCOUNT':r.work_account||'','DRIVER':r.crew_driver||'','TECH 1':r.crew_tech1||'','TECH 2':r.crew_tech2||''}));
@@ -1456,8 +1463,8 @@ function exportAttendance(){
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_attendance_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Attendance exported');
 }
-function exportGateLog(){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
+async function exportGateLog(){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!gateRows.length){showToast('No vehicle log to export');return}
   const date=$('#attDate')?.value||manilaToday();
   const rows=gateRows.map(g=>({'TIME':fmtWhen(g.checked_at),'TYPE':(g.gate_type==='incoming'?'INCOMING':'OUTGOING'),'TEAM':g.team||'','ACCOUNT':g.account||'','PLATE NO.':g.plate_no||'','ODOMETER (KM)':(g.odometer!=null?g.odometer:''),'FUEL':g.fuel_level||'','DRIVER':g.crew_driver||'','TECH 1':g.crew_tech1||'','TECH 2':g.crew_tech2||'','CREW OK':(g.gate_type==='incoming'?'':(g.crew_ok?'YES':'NO')),'CREW REMARKS':g.crew_remarks||'','VEHICLE REMARKS':g.vehicle_remarks||'','VALIDATED BY':g.security_user||'','DATE':g.work_date||date}));
@@ -1528,7 +1535,7 @@ async function validateJob(jobId){
   }catch(e){showToast('Could not validate')}
 }
 async function exportZip(){
-  if(typeof JSZip==='undefined'||typeof XLSX==='undefined'){showToast('Libraries still loading — try again');return}
+  try{ await ensureXLSX(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
   if(!compJobs.length){showToast('Nothing to export for this day');return}
   const date=$('#compDate').value||manilaToday();
   showToast('Building archive (Excel + photos)…');
@@ -1667,7 +1674,7 @@ async function renderHistory(){
   $$('#historyBody [data-detail]').forEach(r=>r.onclick=()=>openJobDetail(r.dataset.detail));
 }
 async function exportHistoryExcel(){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!histJobs.length){showToast('Nothing to export for this range');return}
   await loadAgentNames();
   const wb=XLSX.utils.book_new();
@@ -1739,8 +1746,8 @@ async function markReceived(jobId){
     renderRemittance(); showToast(`${jobId}: remittance received`);
   }catch(e){ showToast('Could not mark received'); }
 }
-function exportRemittance(){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
+async function exportRemittance(){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!remJobs.length){showToast('Nothing to export for this day');return}
   const rows=remJobs.map(j=>({
     'DATE': $('#remDate').value, 'WO ID': j.id, 'JOB ORDER NO.': j.job_order_no||'', 'TEAM': j.team||'',
@@ -2391,8 +2398,8 @@ const IMPORT_HMAP={};
  ['date','load_date'],['preferreddate','load_date'],['loaddate','load_date']
 ].forEach(([k,v])=>IMPORT_HMAP[k]=v);
 const normHdr=h=>String(h||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-function downloadImportTemplate(){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading');return}
+async function downloadImportTemplate(){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   const headers=['Date','IBAS ACCT NO','1P or 2P','REF NO','PLAN','PRIMARY NO','SECONDARY NO','FIRST NAME','MIDDLE NAME','LAST NAME','HOUSE NO','STREET NAME','VILLAGE/SUBDIVISION','BARANGAY','CITY','SOURCE OF SALES','REFERRAL NAME'];
   const ws=XLSX.utils.aoa_to_sheet([headers]); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'NEW LOADS');
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
@@ -2418,8 +2425,8 @@ function parseWorkbook(wb){
   }
   return {rows,headers:hdr,score:best.score,sheet:best.sheet};
 }
-function handleImportFile(file){
-  if(typeof XLSX==='undefined'){showToast('Excel library still loading — try again');return}
+async function handleImportFile(file){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   const reader=new FileReader();
   reader.onload=e=>{
     let parsed;
