@@ -1721,8 +1721,25 @@ async function renderHistory(){
   $('#histCompleted').textContent=histJobs.filter(j=>j.status==='completed').length;
   $('#histNegative').textContent=histJobs.filter(j=>j.negative_remark).length;
   $('#histCancelled').textContent=histJobs.filter(j=>j.status==='cancelled').length;
-  if(!histJobs.length){body.innerHTML=`<tr><td colspan="8" class="empty-cell">No loads in this range.</td></tr>`;return}
-  body.innerHTML=histJobs.map(j=>`<tr data-detail="${j.id}" style="cursor:pointer"><td>${dayOf(j)}</td><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${j.subscriber||'—'}</strong></td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status||'')}</span></td><td>⟳ ${j.dispatch_count||0}</td><td>${j.area||j.city||'—'}</td></tr>`).join('');
+  // Populate the Team filter from the loads in range (preserve current pick); wire filters once.
+  const teamSel=$('#histfTeam');
+  if(teamSel){ const cur=teamSel.value; const teams=[...new Set(histJobs.map(j=>j.team).filter(Boolean))].sort();
+    teamSel.innerHTML='<option value="">All teams</option>'+teams.map(t=>`<option value="${t}">${t}</option>`).join('');
+    if(teams.includes(cur)) teamSel.value=cur; }
+  const stSel=$('#histfStatus');
+  if(stSel && !stSel.dataset.wired){ stSel.dataset.wired='1'; stSel.onchange=renderHistoryRows; if(teamSel) teamSel.onchange=renderHistoryRows; }
+  renderHistoryRows();
+}
+// Render the weekly-load-log table from histJobs, applying the Status + Team filters.
+function renderHistoryRows(){
+  const body=$('#historyBody'); if(!body) return;
+  const st=($('#histfStatus')&&$('#histfStatus').value)||'', tm=($('#histfTeam')&&$('#histfTeam').value)||'';
+  const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
+  let rows=histJobs||[];
+  if(st) rows=rows.filter(j=>(j.status||'')===st);
+  if(tm) rows=rows.filter(j=>(j.team||'')===tm);
+  if(!rows.length){ body.innerHTML=`<tr><td colspan="8" class="empty-cell">No loads match the filter.</td></tr>`; return; }
+  body.innerHTML=rows.map(j=>`<tr data-detail="${j.id}" style="cursor:pointer"><td>${dayOf(j)}</td><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status||'')}</span></td><td>⟳ ${j.dispatch_count||0}</td><td>${esc(j.area||j.city||'—')}</td></tr>`).join('');
   $$('#historyBody [data-detail]').forEach(r=>r.onclick=()=>openJobDetail(r.dataset.detail));
 }
 async function exportHistoryExcel(){

@@ -407,7 +407,12 @@
           <div class="small-stat"><span>Cancelled</span><strong id="histCancelled">0</strong></div>
         </div>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Click a load to see its full details and history.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Click a load to see its full details and history.</p></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="histfStatus" style="height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:11px;color:#52635f;background:#fff"><option value="">All statuses</option><option value="completed">Completed</option><option value="negative">Incomplete</option><option value="cancelled">Cancelled</option><option value="pending">Pending</option><option value="assigned">Assigned</option><option value="en-route">En route</option><option value="on-site">On site</option><option value="in-progress">In progress</option></select>
+              <select id="histfTeam" style="height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:11px;color:#52635f;background:#fff;max-width:160px"><option value="">All teams</option></select>
+            </div>
+          </div>
           <div class="table-wrap"><table><thead><tr><th>Date</th><th>Work order</th><th>J.O. No</th><th>Subscriber</th><th>Team</th><th>Status</th><th>Dispatched</th><th>Area</th></tr></thead><tbody id="historyBody"></tbody></table></div>
         </article>
       </section>
