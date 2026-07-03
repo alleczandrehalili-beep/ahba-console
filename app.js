@@ -660,7 +660,7 @@ async function renderExpenses(){
     const gasRow=`<tr><td>—</td><td><strong>${deployedTeams} teams deployed</strong></td><td>Gas</td><td>Gasoline — ${deployedTeams} deployed teams × ₱${GAS_PER_TEAM.toLocaleString('en-PH')}</td><td>—</td><td><strong>${money(gasCost)}</strong></td><td><span class="status completed">Auto</span></td></tr>`;
     const consoleRow=`<tr><td>—</td><td><strong>${consoleUsers} console login(s)</strong></td><td>Console</td><td>Dashboard access — ${consoleUsers} user(s) logged in today × ₱${CONSOLE_COST.toLocaleString('en-PH')}</td><td>—</td><td><strong>${money(consoleCost)}</strong></td><td><span class="status completed">Auto</span></td></tr>`;
     const pendingRow=pendingTeams?`<tr style="opacity:.7"><td>—</td><td><strong>${pendingTeams} team(s)</strong></td><td>Deployment</td><td>Logged in but not yet counted — no load activity / awaiting dispatcher verification</td><td>—</td><td><strong>${money(0)}</strong></td><td><span class="status pending">Pending</span></td></tr>`:'';
-    const expRows=cloudExp.map(e=>`<tr><td>${e.created_at?fmtTime(e.created_at):''}</td><td><strong>${e.team||'—'}</strong></td><td>${e.category||''}</td><td>${e.description||''}</td><td>${e.job_id||'—'}</td><td><strong>${money(e.amount)}</strong></td><td><span class="status ${e.status==='Approved'?'completed':'pending'}">${e.status||'Pending'}</span></td></tr>`).join('');
+    const expRows=cloudExp.map(e=>`<tr><td>${e.created_at?fmtTime(e.created_at):''}</td><td><strong>${esc(e.team||'—')}</strong></td><td>${esc(e.category||'')}</td><td>${esc(e.description||'')}</td><td>${e.job_id||'—'}</td><td><strong>${money(e.amount)}</strong></td><td><span class="status ${e.status==='Approved'?'completed':'pending'}">${e.status||'Pending'}</span></td></tr>`).join('');
     $('#expenseBody').innerHTML=manpowerRow+gasRow+consoleRow+pendingRow+expRows;
   }
   if($('#expenseSummary'))$('#expenseSummary').innerHTML=[
@@ -1366,7 +1366,7 @@ async function renderAccounts(){
     const acts=lim
       ? `<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button></div>`
       : `<div class="row-actions"><button class="assign-btn" data-reset="${r.username}" data-email="${r.email||''}">Reset PW</button><button class="assign-btn" data-areatech="${r.username}" data-area="${(r.area||'').replace(/"/g,'&quot;')}">Area</button><button class="assign-btn" data-renametech="${r.username}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deltech="${r.username}">Delete</button></div>`;
-    return `<tr><td><strong>${r.username}</strong></td><td>${r.email||'—'}</td><td>${r.area||'—'}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}</td><td>${acts}</td></tr>`;
+    return `<tr><td><strong>${esc(r.username)}</strong></td><td>${esc(r.email||'—')}</td><td>${esc(r.area||'—')}</td><td>${status}</td><td>${fmtWhen(r.last_login)}</td><td>${r.must_change?'<span style="color:#9aa6a2">default</span>':fmtWhen(r.password_changed_at)}</td><td>${acts}</td></tr>`;
   }).join('');
   $$('#accountsBody [data-reset]').forEach(b=>b.onclick=()=>openReset(b.dataset.reset,b.dataset.email));
   $$('#accountsBody [data-renametech]').forEach(b=>b.onclick=()=>renameTechUser(b.dataset.renametech));
@@ -1501,7 +1501,7 @@ async function renderGateLog(date){
     const okb=isIn?'—':(g.crew_ok?'<span class="status completed">OK</span>':`<span class="status pending">Diff</span>`);
     const rem=isIn?(g.vehicle_remarks||''):(g.crew_remarks||'');
     const odoFuel=`${g.odometer!=null?g.odometer:'—'}${g.fuel_level?(' · '+g.fuel_level):''}`;
-    return `<tr><td><strong>${fmtTime(g.checked_at)}</strong> ${typeBadge}</td><td><strong>${g.team||'—'}</strong></td><td>${g.account||'—'}</td><td><strong>${g.plate_no||'—'}</strong></td><td>${odoFuel}</td><td>${g.crew_driver||'—'}</td><td>${crew||'—'}</td><td>${okb}${rem?` <span style="color:#c2503a;font-size:9px">${rem}</span>`:''}</td><td>${g.security_user||'—'}</td></tr>`;
+    return `<tr><td><strong>${fmtTime(g.checked_at)}</strong> ${typeBadge}</td><td><strong>${g.team||'—'}</strong></td><td>${esc(g.account||'—')}</td><td><strong>${esc(g.plate_no||'—')}</strong></td><td>${odoFuel}</td><td>${esc(g.crew_driver||'—')}</td><td>${esc(crew||'—')}</td><td>${okb}${rem?` <span style="color:#c2503a;font-size:9px">${esc(rem)}</span>`:''}</td><td>${esc(g.security_user||'—')}</td></tr>`;
   }).join('');
 }
 // All exported VALUES are forced UPPERCASE (keys/headers unchanged); numbers/blanks untouched.
