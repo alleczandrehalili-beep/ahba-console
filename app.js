@@ -1565,7 +1565,9 @@ async function renderCompleted(){
   if(!compJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No completed jobs for this day.</td></tr>`;return}
   body.innerHTML=compJobs.map(j=>{
     const n=(compPhotos[j.id]||[]).length;
-    const vb=j.validated?'<span class="vbadge yes">Validated</span>':'<span class="vbadge no">Pending</span>';
+    const vb=j.validated
+      ? `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`
+      : '<span class="vbadge no">Pending</span>';
     return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${j.validated?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
@@ -1581,9 +1583,12 @@ function openGallery(jobId){
   openModal($('#photoModal'));
 }
 async function validateJob(jobId){
+  const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
+  const now=new Date().toISOString();
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:new Date().toISOString()})});
-    showToast(`${jobId} validated`); renderCompleted();
+    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:now,validated_by:who})});
+    const cj=compJobs.find(x=>x.id===jobId); if(cj){ cj.validated=true; cj.validated_at=now; cj.validated_by=who; }
+    showToast(`${jobId} validated (by ${who})`); renderCompleted();
   }catch(e){showToast('Could not validate')}
 }
 async function exportZip(){
