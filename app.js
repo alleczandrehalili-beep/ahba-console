@@ -1010,6 +1010,54 @@ function tlApplySearch(){
     if(hit&&!firstHit) firstHit=el;
   });
   if(q&&firstHit){ try{ firstHit.scrollIntoView({block:'nearest',inline:'nearest',behavior:'smooth'}); }catch(_){} }
+  tlSearchOtherDays(q,!!firstHit);
+}
+// ---- Cross-date JO search --------------------------------------------------
+// The Dashboard only renders the selected day, so the search box also scans the
+// FULL jobs list; matches that live on a different working day are offered in a
+// dropdown — click one to jump the Dashboard to that date and open the JO.
+function tlJobDay(j){
+  const day=d=>{ try{ return new Date(d).toLocaleDateString('en-CA',{timeZone:TZ}); }catch(_){ return ''; } };
+  if(j.scheduled_at) return day(j.scheduled_at);
+  if(j.load_date) return String(j.load_date).slice(0,10);
+  if(j.updatedAt) return day(j.updatedAt);
+  if(j.created_at) return day(j.created_at);
+  return '';
+}
+function tlSearchOtherDays(q,hasLocalHit){
+  const sb=$('#tlSearch'); if(!sb) return;
+  const box=sb.closest('.search-box')||sb.parentElement;
+  let drop=box.querySelector('.tl-search-drop');
+  if(!q||q.length<2){ if(drop) drop.remove(); return; }
+  // Close when clicking anywhere outside the search box (wired once).
+  if(!tlSearchOtherDays._wired){ tlSearchOtherDays._wired=true;
+    document.addEventListener('click',e=>{ if(!e.target.closest('.search-box')) $$('.tl-search-drop').forEach(d=>d.remove()); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') $$('.tl-search-drop').forEach(d=>d.remove()); });
+  }
+  const sel=($('#tlDate')&&$('#tlDate').value)||manilaToday();
+  const hits=jobs.filter(j=>tlSearchText(j).includes(q)&&tlJobDay(j)!==sel)
+    .sort((a,b)=>tlJobDay(b).localeCompare(tlJobDay(a)));           // nearest day first
+  if(!hits.length){ if(drop) drop.remove();
+    if(!hasLocalHit){ if(!drop){ drop=document.createElement('div'); drop.className='tl-search-drop'; box.appendChild(drop); }
+      drop.innerHTML='<div class="tl-sd-empty">No match on this or any other day.</div>'; }
+    return; }
+  if(!drop){ drop=document.createElement('div'); drop.className='tl-search-drop'; box.appendChild(drop); }
+  const esc=v=>String(v==null?'':v).replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const fmtD=d=>{ try{ return new Date(d+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}); }catch(_){ return d; } };
+  drop.innerHTML=`<div class="tl-sd-head">${hits.length>8?'8 of '+hits.length:hits.length} found on other days · click to view</div>`
+    +hits.slice(0,8).map(j=>{ const d=tlJobDay(j);
+      return `<button type="button" class="tl-sd-item" data-sdjob="${esc(j.id)}" data-sdday="${esc(d)}">`
+        +`<b>${esc((j.subscriber||'(no name)').slice(0,28))}</b>`
+        +`<span>J.O. ${esc(j.job_order_no||'—')} · ${esc(statusLabel(j.status||'pending'))}${j.team?' · '+esc(j.team):''}</span>`
+        +`<small>📅 ${esc(fmtD(d))}</small></button>`; }).join('');
+  drop.querySelectorAll('[data-sdjob]').forEach(b=>{
+    b.onclick=async()=>{
+      const id=b.dataset.sdjob, day=b.dataset.sdday;
+      const dEl=$('#tlDate'); if(dEl&&day&&dEl.value!==day){ dEl.value=day; try{ await onDashDateChange(); }catch(_){} }
+      const d2=box.querySelector('.tl-search-drop'); if(d2) d2.remove();
+      openJobDetail(id);
+    };
+  });
 }
 // Return a scheduled load to For Dispatch (unassign) — mirrors the Dispatch Board's
 // ↩ For Dispatch bounce. Negative/incomplete loads come back as 1st Load priority.

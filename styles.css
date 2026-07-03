@@ -130,3 +130,13 @@ html,body{overflow-x:hidden;max-width:100%}
 /* Search highlight: matches glow, the rest dim */
 .tl-hit{outline:2px solid var(--green);outline-offset:1px;box-shadow:0 0 0 4px #18a57b30!important;z-index:6}
 .tl-dim{opacity:.28;filter:grayscale(.4)}
+/* Cross-date JO search dropdown (Dashboard search box) */
+.search-box{position:relative}
+.tl-search-drop{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;width:max-content;max-width:340px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 40px rgba(24,49,44,.16);z-index:60;max-height:300px;overflow:auto;padding:6px}
+.tl-sd-head{font-size:9px;font-weight:800;color:#8a9894;text-transform:uppercase;letter-spacing:.06em;padding:6px 8px 4px}
+.tl-sd-item{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;border:0;background:transparent;border-radius:8px;padding:7px 8px;cursor:pointer}
+.tl-sd-item:hover{background:#eef6f1}
+.tl-sd-item b{font-size:11px;color:var(--ink)}
+.tl-sd-item span{font-size:9px;color:#71817d}
+.tl-sd-item small{font-size:9px;color:#11825f;font-weight:700}
+.tl-sd-empty{font-size:10px;color:#9aa6a2;padding:8px}
