@@ -87,7 +87,7 @@
   async function getJobs() {
     // Soft-deleted rows are excluded server-side (smaller payload as the table grows);
     // the client filter below stays as a backstop in case a row slips through.
-    const rows = await request('jobs?select=*&deleted_at=is.null&order=updated_at.desc');
+    const rows = await request('jobs?select=*&deleted_at=is.null&order=updated_at.desc&limit=10000');
     return rows ? rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob) : [];
   }
 
@@ -141,7 +141,10 @@
           await onEmpty();
           return refresh();
         }
-        const nextSignature = JSON.stringify(cloudJobs);
+        // Lightweight change signature (row count + newest updated_at) — avoids stringifying
+        // the whole array on every 15s poll; any add/remove/edit still changes it.
+        var maxUpd = 0; for (var _i = 0; _i < cloudJobs.length; _i++) { var _u = +new Date(cloudJobs[_i].updatedAt || 0); if (_u > maxUpd) maxUpd = _u; }
+        const nextSignature = cloudJobs.length + ':' + maxUpd;
         if (cloudJobs.length && nextSignature !== signature) {
           signature = nextSignature;
           onJobs(cloudJobs);
