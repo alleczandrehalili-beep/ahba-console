@@ -1704,8 +1704,8 @@ function jobToRow(j,nPhotos){
     'VALIDATED': j.validated?'YES':'NO', 'WO ID': j.id
   };
 }
-function findJob(id){ return jobs.find(x=>x.id===id)||histJobs.find(x=>x.id===id)||compJobs.find(x=>x.id===id)||valJobs.find(x=>x.id===id)||(Array.isArray(dashHist)?dashHist.find(x=>x.id===id):null)||null; }
-let histJobs=[];
+function findJob(id){ return jobs.find(x=>x.id===id)||histJobs.find(x=>x.id===id)||(Array.isArray(histDeleted)?histDeleted.find(x=>x.id===id):null)||compJobs.find(x=>x.id===id)||valJobs.find(x=>x.id===id)||(Array.isArray(dashHist)?dashHist.find(x=>x.id===id):null)||null; }
+let histJobs=[], histDeleted=[];
 async function renderHistory(){
   const fromEl=$('#histFrom'), toEl=$('#histTo'), body=$('#historyBody'); if(!body)return;
   if(toEl&&!toEl.value) toEl.value=manilaToday();
@@ -1716,18 +1716,27 @@ async function renderHistory(){
   await loadAgentNames();
   let all=[]; try{ const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&order=updated_at.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); all=r.ok?await r.json():[]; }catch(e){}
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
-  histJobs=all.filter(j=>{const d=dayOf(j);return d&&d>=from&&d<=to;});
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
+  const inRange=all.filter(j=>{const d=dayOf(j);return d&&d>=from&&d<=to;});
+  histJobs=inRange.filter(j=>!j.deleted_at);                  // live set → stats, export, normal table
+  histDeleted=isSuper ? inRange.filter(j=>j.deleted_at) : []; // soft-deleted set → Superadmin only
   $('#histTotal').textContent=histJobs.length;
   $('#histCompleted').textContent=histJobs.filter(j=>j.status==='completed').length;
   $('#histNegative').textContent=histJobs.filter(j=>j.negative_remark).length;
   $('#histCancelled').textContent=histJobs.filter(j=>j.status==='cancelled').length;
-  // Populate the Team filter from the loads in range (preserve current pick); wire filters once.
+  // Team filter from the loads in range (preserve current pick).
   const teamSel=$('#histfTeam');
-  if(teamSel){ const cur=teamSel.value; const teams=[...new Set(histJobs.map(j=>j.team).filter(Boolean))].sort();
+  if(teamSel){ const cur=teamSel.value; const teams=[...new Set(histJobs.concat(histDeleted).map(j=>j.team).filter(Boolean))].sort();
     teamSel.innerHTML='<option value="">All teams</option>'+teams.map(t=>`<option value="${t}">${t}</option>`).join('');
     if(teams.includes(cur)) teamSel.value=cur; }
+  // Superadmin-only "🗑 Deleted" status option (soft-deleted loads still viewable here).
   const stSel=$('#histfStatus');
-  if(stSel && !stSel.dataset.wired){ stSel.dataset.wired='1'; stSel.onchange=renderHistoryRows; if(teamSel) teamSel.onchange=renderHistoryRows; }
+  if(stSel){
+    let delOpt=stSel.querySelector('option[value="deleted"]');
+    if(isSuper){ if(!delOpt){ delOpt=document.createElement('option'); delOpt.value='deleted'; stSel.appendChild(delOpt); } delOpt.textContent=`🗑 Deleted (${histDeleted.length})`; }
+    else if(delOpt){ if(stSel.value==='deleted') stSel.value=''; delOpt.remove(); }
+    if(!stSel.dataset.wired){ stSel.dataset.wired='1'; stSel.onchange=renderHistoryRows; if(teamSel) teamSel.onchange=renderHistoryRows; }
+  }
   renderHistoryRows();
 }
 // Render the weekly-load-log table from histJobs, applying the Status + Team filters.
@@ -1735,11 +1744,16 @@ function renderHistoryRows(){
   const body=$('#historyBody'); if(!body) return;
   const st=($('#histfStatus')&&$('#histfStatus').value)||'', tm=($('#histfTeam')&&$('#histfTeam').value)||'';
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
-  let rows=histJobs||[];
-  if(st) rows=rows.filter(j=>(j.status||'')===st);
+  let rows;
+  if(st==='deleted'){ rows=(histDeleted||[]); }                 // Superadmin: the soft-deleted loads
+  else { rows=(histJobs||[]); if(st) rows=rows.filter(j=>(j.status||'')===st); }
   if(tm) rows=rows.filter(j=>(j.team||'')===tm);
   if(!rows.length){ body.innerHTML=`<tr><td colspan="8" class="empty-cell">No loads match the filter.</td></tr>`; return; }
-  body.innerHTML=rows.map(j=>`<tr data-detail="${j.id}" style="cursor:pointer"><td>${dayOf(j)}</td><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status||'')}</span></td><td>⟳ ${j.dispatch_count||0}</td><td>${esc(j.area||j.city||'—')}</td></tr>`).join('');
+  body.innerHTML=rows.map(j=>{
+    const del=!!j.deleted_at;
+    const stCell=del?`<span class="status cancelled" title="Deleted by ${esc(j.deleted_by||'—')}">🗑 Deleted</span>`:`<span class="status ${j.status}">${statusLabel(j.status||'')}</span>`;
+    return `<tr data-detail="${j.id}" style="cursor:pointer${del?';opacity:.65':''}"><td>${dayOf(j)}</td><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${j.team||'—'}</td><td>${stCell}</td><td>⟳ ${j.dispatch_count||0}</td><td>${esc(j.area||j.city||'—')}</td></tr>`;
+  }).join('');
   $$('#historyBody [data-detail]').forEach(r=>r.onclick=()=>openJobDetail(r.dataset.detail));
 }
 async function exportHistoryExcel(){
@@ -2030,20 +2044,20 @@ function applyAccess(u){
 async function deleteAllLoads(){
   const u=window.dashUser;
   if(!hasDispatchAccess(u)){ showToast('No access to clear loads'); return; }
-  if(!confirm('⚠️ This will delete ALL loads/job orders on the dispatch board (including their photos and docs). This cannot be undone. Continue?')) return;
+  if(!confirm('⚠️ This will clear ALL active loads/job orders from the dispatch board.\n\nThey are SOFT-deleted — hidden from everyone, but kept in the records and still viewable by the Superadmin (Billing Validation → 🗑 Deleted). Continue?')) return;
   const t=(prompt('To confirm, type: DELETE ALL')||'').trim();
   if(t!=='DELETE ALL'){ showToast('Cancelled — the confirmation did not match.'); return; }
   if(!await confirmActorPassword()) return;   // extra safety vs. accidental clears
-  showToast('Deleting all loads…');
+  showToast('Clearing all loads…');
   try{
-    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'};
-    await fetch(`${SUPA_URL}/rest/v1/job_photos?id=not.is.null`,{method:'DELETE',headers:H});
-    await fetch(`${SUPA_URL}/rest/v1/job_docs?id=not.is.null`,{method:'DELETE',headers:H});
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=not.is.null`,{method:'DELETE',headers:H});
+    const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
+    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'};
+    // Soft-delete the active loads only. Photos + docs are kept (the rows remain, so nothing orphans).
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?deleted_at=is.null`,{method:'PATCH',headers:H,body:JSON.stringify({deleted_at:new Date().toISOString(), deleted_by:who})});
     if(!r.ok){ throw new Error('HTTP '+r.status+' '+(await r.text()).slice(0,120)); }
     jobs=[]; try{ localStorage.setItem('fieldflow_jobs','[]'); }catch(e){}
-    renderJobs(); renderOverview(); showToast('✓ All loads deleted.');
-  }catch(e){ showToast('Delete failed: '+e.message); }
+    renderJobs(); renderOverview(); showToast('✓ All loads cleared (kept for Superadmin).');
+  }catch(e){ showToast('Clear failed: '+e.message); }
 }
 function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
