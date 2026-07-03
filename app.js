@@ -1741,7 +1741,21 @@ async function exportHistoryExcel(){
 let remJobs=[];
 function currentOperator(){ const u=window.dashUser; const nm=u?(u.display_name||u.username):'Allec Zandre A. Halili'; const rl=u?(u.is_super?'Superadmin':(u.role_label||'')):''; return nm+(rl?(' ('+rl+')'):''); }
 async function renderRemittance(){
-  const dEl=$('#remDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderRemittance;}
+  const dEl=$('#remDate');
+  if(dEl && !dEl.dataset.wired){
+    dEl.dataset.wired='1';
+    if(!dEl.value) dEl.value=manilaToday();
+    dEl.dataset.cur=dEl.value;
+    dEl.onchange=()=>{
+      const picked=dEl.value, cur=dEl.dataset.cur||manilaToday();
+      if(picked===cur) return;
+      if(confirm(`Change remittance date to ${picked}?\n\nThe daily collection view will reload for that date.`)){
+        dEl.dataset.cur=picked; renderRemittance();   // confirmed → switch + reload immediately
+      } else {
+        dEl.value=cur;                                 // cancelled → keep the current date
+      }
+    };
+  }
   const date=dEl?dEl.value:manilaToday();
   const body=$('#remittanceBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="9" class="empty-cell">Loading…</td></tr>`;
