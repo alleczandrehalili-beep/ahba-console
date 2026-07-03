@@ -66,7 +66,7 @@ let mapFilter='all';
 let notifReadAt=Number(localStorage.getItem('ahba_notif_read')||0);
 
 function save(){localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs));localStorage.setItem('fieldflow_expenses',JSON.stringify(expenses))}
-function statusLabel(s){ if(s==='negative')return 'Incomplete'; return s.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
+function statusLabel(s){ if(!s)return '—'; if(s==='negative')return 'Incomplete'; return s.split('-').map(x=>x?(x[0].toUpperCase()+x.slice(1)):'').join(' ')}
 function todayTotal(){return expenses.reduce((a,b)=>a+Number(b.amount),0)}
 function showToast(msg){$('#toast span').textContent=msg;$('#toast').classList.add('show');clearTimeout(showToast._t);showToast._t=setTimeout(()=>$('#toast').classList.remove('show'),2600)}
 // Fire a phone push (Web Push) to a team or audience via the send-push Edge Function
@@ -455,7 +455,7 @@ function updatePriority(jobId,p){
 }
 function applyStatusUpdate(jobId,choice){
   const j=findJob(jobId); if(!j)return;
-  if(choice==='completed') j.status='completed';
+  if(choice==='completed'){ j.status='completed'; j.completed_at=new Date().toISOString(); }
   else if(choice==='cancelled') j.status='cancelled';
   else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
   else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); }  // re-dispatch → CURRENT For Dispatch (today)
@@ -1164,7 +1164,7 @@ function buildTeamDropdowns(){
   if($('#orderTeam')) $('#orderTeam').innerHTML='<option value="">— Unassigned —</option>'+teams.map(t=>`<option>${t.name}</option>`).join('');
 }
 async function openAssign(jobId){
-  const job=jobs.find(j=>j.id===jobId);$('#assignJobLabel').textContent=`${job.id} · ${job.subscriber} · ${job.area}`;$('#assignModal').dataset.job=jobId;
+  const job=jobs.find(j=>j.id===jobId); if(!job){showToast('Job no longer available');return;} $('#assignJobLabel').textContent=`${job.id} · ${job.subscriber} · ${job.area}`;$('#assignModal').dataset.job=jobId;
   const joEl=$('#assignJONum'); if(joEl){ joEl.value=job.job_order_no||''; joEl.readOnly=!!job.job_order_no; joEl.style.background=job.job_order_no?'#f1f3f1':''; if($('#joLock'))$('#joLock').textContent=job.job_order_no?'(locked)':''; }
   const remEl=$('#assignRemarks'); if(remEl) remEl.value=job.dispatched_remarks||'';
   openModal($('#assignModal'));
@@ -1194,7 +1194,7 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId);const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
@@ -1266,7 +1266,7 @@ async function renderValidation(){
   if(!valJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No job orders awaiting validation.</td></tr>`;refreshValBadge();return}
   body.innerHTML=valJobs.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${j.ref_no}</span>`:''}</td><td>${agentLabel(j.created_by)}</td><td><strong>${j.subscriber||'—'}</strong></td><td>${j.primary_no||'—'}</td><td>${j.area||j.city||'—'}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${agentLabel(j.created_by)}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
   }).join('');
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
   refreshValBadge();
@@ -1566,7 +1566,7 @@ async function renderCompleted(){
   body.innerHTML=compJobs.map(j=>{
     const n=(compPhotos[j.id]||[]).length;
     const vb=j.validated?'<span class="vbadge yes">Validated</span>':'<span class="vbadge no">Pending</span>';
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${j.subscriber||'—'}</strong></td><td>${j.area||'—'}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${j.validated?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${j.validated?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
@@ -1596,7 +1596,7 @@ async function exportZip(){
 
   // --- Excel with all subscriber info (matches the NEW LOADS layout) ---
   const rows=compJobs.map(j=>({
-    'DATE': j.load_date||(j.updated_at?j.updated_at.slice(0,10):''),
+    'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
     'DISPATCH STATUS': j.dispatch_status||'',
     'TEAM ASSIGNED': j.team||'',
     'DRIVER': j.driver||'',
@@ -1684,7 +1684,7 @@ async function clearCloud(){
 // ---------- Load History (weekly archive of all loads) ----------
 function jobToRow(j,nPhotos){
   return {
-    'DATE': j.load_date||(j.updated_at?String(j.updated_at).slice(0,10):''),
+    'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
     'DISPATCH STATUS': j.dispatch_status||'',
     'STATUS': statusLabel(j.status||''),
     'TEAM ASSIGNED': j.team||'',
@@ -1819,7 +1819,7 @@ function remDraw(){
       : `<button class="assign-btn" data-received="${j.id}">Mark received</button>`;
     // Editable mode of payment (corrects technician mistakes; logged in history)
     const modeSel=`<select class="rem-mode" data-mode="${j.id}" style="font-size:9px;padding:3px 5px;border:1px solid #dfe5df;border-radius:7px"><option ${j.payment_mode==='Gcash'?'selected':''}>Gcash</option><option ${j.payment_mode==='Cash Remittance'?'selected':''}>Cash Remittance</option></select>`;
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${j.team||'—'}</strong></td><td>${j.work_account||'—'}</td><td>${j.subscriber||'—'}</td><td>${modeSel}</td><td><strong>${amt}</strong></td><td>${j.ar_no||'—'}</td><td>${recd}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.job_order_no||'—'}</td><td><strong>${j.team||'—'}</strong></td><td>${esc(j.work_account||'—')}</td><td>${esc(j.subscriber||'—')}</td><td>${modeSel}</td><td><strong>${amt}</strong></td><td>${esc(j.ar_no||'—')}</td><td>${recd}</td></tr>`;
   }).join('');
   $$('#remittanceBody [data-received]').forEach(b=>b.onclick=()=>markReceived(b.dataset.received));
   $$('#remittanceBody [data-mode]').forEach(s=>s.onchange=()=>editPaymentMode(s.dataset.mode, s.value));
