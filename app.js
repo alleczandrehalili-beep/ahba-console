@@ -1704,7 +1704,7 @@ function jobToRow(j,nPhotos){
     'VALIDATED': j.validated?'YES':'NO', 'WO ID': j.id
   };
 }
-function findJob(id){ return jobs.find(x=>x.id===id)||histJobs.find(x=>x.id===id)||compJobs.find(x=>x.id===id)||valJobs.find(x=>x.id===id)||null; }
+function findJob(id){ return jobs.find(x=>x.id===id)||histJobs.find(x=>x.id===id)||compJobs.find(x=>x.id===id)||valJobs.find(x=>x.id===id)||(Array.isArray(dashHist)?dashHist.find(x=>x.id===id):null)||null; }
 let histJobs=[];
 async function renderHistory(){
   const fromEl=$('#histFrom'), toEl=$('#histTo'), body=$('#historyBody'); if(!body)return;
