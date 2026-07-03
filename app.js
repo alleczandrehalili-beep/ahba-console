@@ -2067,6 +2067,8 @@ function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is
 function applyAccessScope(){
   const lim=accessIsDispatcherOnly();
   ['acCreateDash','acCreateField','acDashUsers'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=lim?'none':''; });
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
+  const al=document.getElementById('acAuditLog'); if(al) al.style.display=isSuper?'':'none';   // reset history: superadmin only
   const sub=document.querySelector('#accessPage .page-toolbar p');
   if(sub) sub.textContent=lim?'Reset technician passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
 }
@@ -2094,6 +2096,19 @@ async function renderAccess(){
   $$('#accessWrap [data-renamedash]').forEach(b=>b.onclick=()=>renameDashUser(b.dataset.renamedash));
   $$('#accessWrap [data-deldash]').forEach(b=>b.onclick=()=>deleteDashUser(b.dataset.deldash));
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
+  if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
+}
+// Superadmin-only: account-action history (reset / create / rename / delete) from audit_log, for monitoring.
+async function renderAuditLog(){
+  const body=$('#auditBody'); if(!body)return;
+  body.innerHTML=`<tr><td colspan="5" class="empty-cell">Loading…</td></tr>`;
+  let rows=[];
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/audit_log?select=*&order=at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); rows=r.ok?await r.json():[]; }catch(e){}
+  const acct=rows.filter(x=>['technicians','dashboard_users'].includes(x.table_name));
+  if(!acct.length){ body.innerHTML=`<tr><td colspan="5" class="empty-cell">No account actions logged yet.</td></tr>`; return; }
+  const typeLabel=t=> t==='technicians'?'Mobile / Field':(t==='dashboard_users'?'Console':t);
+  const actBadge=a=>{ const c=a==='delete'?'negative':(a==='reset'?'assigned':'completed'); return `<span class="status ${c}">${esc(String(a||'').toUpperCase())}</span>`; };
+  body.innerHTML=acct.map(x=>`<tr><td>${fmtWhen(x.at)}</td><td><strong>${esc(x.actor||'—')}</strong></td><td>${actBadge(x.action)}</td><td>${esc(x.row_id||'—')}</td><td>${typeLabel(x.table_name)}</td></tr>`).join('');
 }
 async function saveAccess(username){
   const sels=$$(`#accessWrap select[data-u="${username}"]`);
