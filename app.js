@@ -66,13 +66,17 @@ let mapFilter='all';
 let notifReadAt=Number(localStorage.getItem('ahba_notif_read')||0);
 
 function save(){localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs));localStorage.setItem('fieldflow_expenses',JSON.stringify(expenses))}
-function statusLabel(s){return s.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
+function statusLabel(s){ if(s==='negative')return 'Incomplete'; return s.split('-').map(x=>x[0].toUpperCase()+x.slice(1)).join(' ')}
 function todayTotal(){return expenses.reduce((a,b)=>a+Number(b.amount),0)}
 function showToast(msg){$('#toast span').textContent=msg;$('#toast').classList.add('show');clearTimeout(showToast._t);showToast._t=setTimeout(()=>$('#toast').classList.remove('show'),2600)}
 // Fire a phone push (Web Push) to a team or audience via the send-push Edge Function
 function pushNotify(payload){ try{ fetch(`${SUPA_URL}/functions/v1/send-push`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()},body:JSON.stringify(payload)}).catch(()=>{}); }catch(e){} }
 
 function dayStr(d){return new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});}
+// Canonical Manila calendar-day a job was FINISHED. Uses the authoritative completion/negative
+// timestamp, falling back to updated_at only for older rows that predate those columns.
+// All "completed/cancelled/negative today" buckets must go through this — never raw updated_at.
+function finishedDay(j){ return dayStr(j.status==='completed' ? (j.completed_at||j.updatedAt) : j.status==='negative' ? (j.negative_at||j.updatedAt) : j.updatedAt); }
 function timeAgo(ts){ if(!ts)return''; const s=(Date.now()-new Date(ts))/1000; if(s<60)return Math.max(1,Math.round(s))+'s'; if(s<3600)return Math.round(s/60)+'m'; if(s<86400)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; }
 function renderLiveActivity(){
   const el=$('#activityList'); if(!el)return;
@@ -88,8 +92,8 @@ function renderOverview(){
   const isToday=d=>d && dayStr(d)===today;
   const loadToday=d=>!d||String(d).slice(0,10)===today;
   // Jobs completed today (resets to 0 each new day)
-  const doneJobs=jobs.filter(j=>j.status==='completed' && isToday(j.updatedAt));
-  const todaySet=jobs.filter(j=> (['completed','cancelled'].includes(j.status)? isToday(j.updatedAt) : loadToday(j.load_date)) );
+  const doneJobs=jobs.filter(j=>j.status==='completed' && finishedDay(j)===today);
+  const todaySet=jobs.filter(j=> (['completed','cancelled'].includes(j.status)? finishedDay(j)===today : loadToday(j.load_date)) );
   if($('#completedCount')) $('#completedCount').textContent=doneJobs.length;
   if($('#completedTarget')) $('#completedTarget').textContent=Math.max(todaySet.length,doneJobs.length);
   if($('#completedFoot')) $('#completedFoot').textContent=`${doneJobs.length} done`;
@@ -99,11 +103,11 @@ function renderOverview(){
   if($('#availableTeamText')) $('#availableTeamText').textContent=`${online.length} online now`;
   if($('#teamAvatars')) $('#teamAvatars').innerHTML=online.slice(0,6).map(([k])=>{const t=teams.find(x=>x.code===k);return `<span style="background:#18a57b">${t?t.short:k.slice(-3)}</span>`}).join('');
   // Avg completion time today (encode → completion, same-day)
-  const mins=[]; doneJobs.forEach(j=>{ if(j.created_at&&j.updatedAt){const d=(new Date(j.updatedAt)-new Date(j.created_at))/60000; if(d>0&&d<24*60) mins.push(d);} });
+  const mins=[]; doneJobs.forEach(j=>{ const done=j.completed_at||j.updatedAt; if(j.created_at&&done){const d=(new Date(done)-new Date(j.created_at))/60000; if(d>0&&d<24*60) mins.push(d);} });
   if(mins.length){ const avg=Math.round(mins.reduce((a,b)=>a+b,0)/mins.length); if($('#avgTime'))$('#avgTime').textContent=`${Math.floor(avg/60)}h ${String(avg%60).padStart(2,'0')}m`; if($('#avgSub'))$('#avgSub').textContent=`avg of ${mins.length} completed today`; }
   else { if($('#avgTime'))$('#avgTime').textContent='—'; if($('#avgSub'))$('#avgSub').textContent='no completed jobs yet today'; }
   // 7-day completed mini-bars (real)
-  const bars=[]; for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const ds=dayStr(d); bars.push(jobs.filter(j=>j.status==='completed'&&j.updatedAt&&dayStr(j.updatedAt)===ds).length); }
+  const bars=[]; for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const ds=dayStr(d); bars.push(jobs.filter(j=>j.status==='completed'&&finishedDay(j)===ds).length); }
   const mx=Math.max(...bars,1); if($('#completionBars')) $('#completionBars').innerHTML=bars.map(n=>`<span style="height:${6+Math.round(n/mx*34)}px"></span>`).join('');
   renderTeamLocations();
   renderLiveActivity();
@@ -287,7 +291,7 @@ function renderJobs(){
     let list;
     if(hist){ list=SRC.filter(j=>keys.split(',').includes(j.status)); }              // snapshot = that day's EOD set
     else if(keys==='negative'){ list=jobs.filter(j=>j.status==='negative'); }
-    else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&isToday(j.updatedAt)); }
+    else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&finishedDay(j)===today); }
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     // In a PREVIOUS-DATE view, allow carrying that day's Incomplete loads to today's For Dispatch.
@@ -755,7 +759,7 @@ function renderTimeline(){
   const tlDayStr2=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
   const inDayPool=SRC.filter(j=>{ const st=(j.status||'').toLowerCase();
     if(st==='pending'&&!j.scheduled_at) return loadToday(j.load_date);
-    if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return j.updatedAt&&tlDayStr2(j.updatedAt)===manilaToday(); return loadToday(j.load_date); }
+    if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday(); return loadToday(j.load_date); }
     return false; });
   tlBuildFilterOptions(inDayPool);
   // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
@@ -792,7 +796,7 @@ function renderTimeline(){
       const st=(j.status||'').toLowerCase();
       if(j.scheduled_at && tlDayStr(j.scheduled_at)===date) return true;        // scheduled for this day
       if(date!==manilaToday()) return false;                                    // past/future days: scheduled only
-      if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);    // finished today
+      if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday();    // finished today
       return loadToday(j.load_date);                                            // active / incomplete working set
     });
     shownJobs.push(...dayJobs);   // full set for the status-bar counts
@@ -931,8 +935,8 @@ function buildDailyMetrics(dateArg){
   const loadToday=d=>!d||String(d).slice(0,10)===today;
   const isTodayUpd=d=>d&&new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
   const set=jobs.filter(j=>{ const st=(j.status||'').toLowerCase();
-    if(st==='completed'||st==='cancelled') return isTodayUpd(j.updatedAt);
-    if(st==='negative') return loadToday(j.load_date)||isTodayUpd(j.updatedAt);
+    if(st==='completed'||st==='cancelled') return finishedDay(j)===today;
+    if(st==='negative') return loadToday(j.load_date)||finishedDay(j)===today;
     return loadToday(j.load_date); });
   const counts={fordispatch:0,acknowledged:0,travel:0,onsite:0,incomplete:0,completed:0,cancelled:0};
   set.forEach(j=>{ counts[tlBucket(j.status)]++; });
