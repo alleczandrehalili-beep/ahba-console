@@ -103,8 +103,10 @@ function renderOverview(){
   if($('#availableTeamText')) $('#availableTeamText').textContent=`${online.length} online now`;
   if($('#teamAvatars')) $('#teamAvatars').innerHTML=online.slice(0,6).map(([k])=>{const t=teams.find(x=>x.code===k);return `<span style="background:#18a57b">${t?t.short:k.slice(-3)}</span>`}).join('');
   // Avg completion time today (encode → completion, same-day)
-  const mins=[]; doneJobs.forEach(j=>{ const done=j.completed_at||j.updatedAt; if(j.created_at&&done){const d=(new Date(done)-new Date(j.created_at))/60000; if(d>0&&d<24*60) mins.push(d);} });
-  if(mins.length){ const avg=Math.round(mins.reduce((a,b)=>a+b,0)/mins.length); if($('#avgTime'))$('#avgTime').textContent=`${Math.floor(avg/60)}h ${String(avg%60).padStart(2,'0')}m`; if($('#avgSub'))$('#avgSub').textContent=`avg of ${mins.length} completed today`; }
+  // Avg completion time per JO = dispatch (scheduled_at) → completed_at, for field-team completions today.
+  // (created_at is the sales-encode time — often days earlier — so it's a fallback only.)
+  const mins=[]; doneJobs.forEach(j=>{ if(!j.team) return; const start=j.scheduled_at||j.created_at, done=j.completed_at||j.updatedAt; if(start&&done){ const d=(new Date(done)-new Date(start))/60000; if(d>0&&d<24*60) mins.push(d); } });
+  if(mins.length){ const avg=Math.round(mins.reduce((a,b)=>a+b,0)/mins.length); if($('#avgTime'))$('#avgTime').textContent=`${Math.floor(avg/60)}h ${String(avg%60).padStart(2,'0')}m`; if($('#avgSub'))$('#avgSub').textContent=`avg per JO · ${mins.length} completed today`; }
   else { if($('#avgTime'))$('#avgTime').textContent='—'; if($('#avgSub'))$('#avgSub').textContent='no completed jobs yet today'; }
   // 7-day completed mini-bars (real)
   const bars=[]; for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const ds=dayStr(d); bars.push(jobs.filter(j=>j.status==='completed'&&finishedDay(j)===ds).length); }
@@ -1453,9 +1455,13 @@ async function renderAttendance(){
     const acctFree=(!r.time_out && r.work_account)
       ? ` <span style="color:#647571">· ${r.work_account}</span> <button class="assign-btn" data-freeacct="${(r.work_account||'').replace(/"/g,'&quot;')}" style="margin-left:6px;color:#a4690f;border-color:#f0d9a8">Free account</button>`
       : '';
-    return `<tr><td><strong>${r.username}</strong></td><td>${r.work_date}</td><td>${fmtTime(r.time_in)}</td><td>${r.time_out?fmtTime(r.time_out):'—'}</td><td>${fmtDur(r.time_in,r.time_out)}</td><td>${status}${acctFree}</td></tr>`;
+    const signOff=(!r.time_out && window.dashUser && window.dashUser.is_super)
+      ? ` <button class="assign-btn" data-signoff="${(r.username||'').replace(/"/g,'&quot;')}" style="margin-left:6px;color:#c2503a;border-color:#f0c4b9">Sign off</button>`
+      : '';
+    return `<tr><td><strong>${esc(r.username)}</strong></td><td>${r.work_date}</td><td>${fmtTime(r.time_in)}</td><td>${r.time_out?fmtTime(r.time_out):'—'}</td><td>${fmtDur(r.time_in,r.time_out)}</td><td>${status}${acctFree}${signOff}</td></tr>`;
   }).join('');
   $$('#attendanceBody [data-freeacct]').forEach(b=>b.onclick=()=>freeWorkAccount(b.dataset.freeacct));
+  $$('#attendanceBody [data-signoff]').forEach(b=>b.onclick=()=>forceSignOff(b.dataset.signoff));
   // Locked work accounts panel — all accounts currently held by a timed-in team
   const locked=[...new Set(rows.filter(r=>!r.time_out && r.work_account).map(r=>r.work_account))];
   const lp=$('#lockedAcctsPanel'), lc=$('#lockedAccts');
@@ -1479,6 +1485,21 @@ async function freeWorkAccount(account){
     showToast(`Account "${account}" freed — pwede nang gamitin ng iba.`);
     renderAttendance();
   }catch(e){ showToast('Free failed: '+e.message); }
+}
+// Superadmin: force sign-off a technician who is still timed in (e.g. forgot to sign off).
+// Sets time-out NOW and frees their work account; the day's attendance record is closed.
+async function forceSignOff(username){
+  if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
+  if(!username) return;
+  if(!confirm(`Force sign-off ${username}?\n\nIto ay magta-time-out sa kanila NGAYON at magfi-free ng account nila. Gamitin kung nakalimutang mag-sign off ang technician.`)) return;
+  if(!await confirmActorPassword()) return;
+  try{
+    const now=new Date().toISOString();
+    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?username=eq.${encodeURIComponent(username)}&time_out=is.null`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({time_out:now, work_account:null})});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
+    showToast(`${username} signed off (by Superadmin) — account freed.`);
+    renderAttendance();
+  }catch(e){ showToast('Sign-off failed: '+e.message); }
 }
 // ---- Security gate-out / vehicle log (on the Attendance page) ----
 let attRows=[], gateRows=[];
