@@ -559,6 +559,20 @@ function openTeamDetail(code){
     vb.textContent=s.verified?'✓ Verified — tap to remove':'Verify as deployed';
     vb.onclick=()=>verifyTeamDeployed(code,!s.verified);
   }
+  const locEl=$('#tdLocEdit');
+  if(locEl){
+    const dOpt=cur=>[1,2,3,4,5,6].map(d=>`<option value="${d}" ${String(cur)===String(d)?'selected':''}>District ${d}</option>`).join('');
+    const pick=(cur,arr)=>arr.map(x=>`<option ${cur===x?'selected':''}>${x}</option>`).join('');
+    const fld=(id,label,opts)=>`<label class="field" style="margin:0"><span>${label}</span><select id="${id}">${opts}</select></label>`;
+    locEl.innerHTML=`<div class="form-grid" style="padding:0;grid-template-columns:1fr 1fr;gap:10px">
+      ${fld('tdLocCity','City','<option selected>Quezon City</option>')}
+      ${fld('tdLocDistrict','District','<option value="">—</option>'+dOpt(t.loc_district))}
+      ${fld('tdLocTeam','Team','<option value="">—</option>'+pick(t.loc_team,['SLI','SLR','OSP']))}
+      ${fld('tdLocUnit','Type','<option value="">—</option>'+pick(t.loc_unit,['SDU','MDU']))}
+    </div><button type="button" class="primary-btn" id="tdLocSave" style="width:auto;padding:0 18px;margin-top:8px;height:36px">Save location</button>`;
+    const cityEl=$('#tdLocCity'); if(cityEl) cityEl.disabled=true;   // Quezon City only
+    const sv=$('#tdLocSave'); if(sv) sv.onclick=()=>saveTeamLocation(code);
+  }
   loadTeamTrack(code); loadTeamChat(code); loadTeamGate(code);
   const sb=$('#tdChatSend'), inp=$('#tdChatInput');
   if(sb){ sb.onclick=()=>sendTeamChat(code); }
@@ -1147,19 +1161,23 @@ async function tlSchedule(jobId, team, date, hour, est){
 async function syncTeamsFromDb(){
   let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
   if(!rows||!rows.length) return 0;
-  const have=new Set(teams.map(t=>String(t.code).toUpperCase()));
-  let added=0;
+  const byCode=new Map(teams.map(t=>[String(t.code).toUpperCase(),t]));
+  let changed=0;
   rows.forEach(r=>{
     if((r.role||'technician')!=='technician') return;      // field technicians only (Sales/Security excluded here)
-    const code=String(r.username||'').toUpperCase(); if(!code||have.has(code)) return;
+    const code=String(r.username||'').toUpperCase(); if(!code) return;
+    const loc={loc_city:r.loc_city||'',loc_district:r.loc_district||'',loc_team:r.loc_team||'',loc_unit:r.loc_unit||''};
+    const existing=byCode.get(code);
+    if(existing){ Object.assign(existing,loc); if(r.area) existing.area=r.area; changed++; return; }  // merge DB location onto existing team
     const i=teams.length;
-    teams.push({id:i+1,name:code,code,short:((code.replace(/[^0-9]/g,'').slice(-3))||String(i+1)).padStart(3,'0'),
+    const nt={id:i+1,name:code,code,short:((code.replace(/[^0-9]/g,'').slice(-3))||String(i+1)).padStart(3,'0'),
       status:'offline',area:r.area||'',jobs:0,completed:0,rating:'—',
-      x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2});
-    have.add(code); added++;
+      x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2};
+    Object.assign(nt,loc);
+    teams.push(nt); byCode.set(code,nt); changed++;
   });
-  if(added) buildTeamDropdowns();
-  return added;
+  if(changed) buildTeamDropdowns();
+  return changed;
 }
 function buildTeamDropdowns(){
   if($('#expenseTeam')) $('#expenseTeam').innerHTML=teams.map(t=>`<option>${t.name}</option>`).join('');
@@ -1376,6 +1394,22 @@ async function renderAccounts(){
   $$('#accountsBody [data-areatech]').forEach(b=>b.onclick=()=>editTechArea(b.dataset.areatech, b.dataset.area));
 }
 // Edit the area of a MOBILE/field account (technicians.area) — allowed for console users via RLS.
+// Field team location — structured edit (City QC only · District 1-6 · Team SLI/SLR/OSP · Type SDU/MDU). Any console user.
+async function saveTeamLocation(code){
+  const city='Quezon City';
+  const district=$('#tdLocDistrict')?.value||'';
+  const team=$('#tdLocTeam')?.value||'';
+  const unit=$('#tdLocUnit')?.value||'';
+  const area=[city, district?('District '+district):'', team, unit].filter(Boolean).join(' · ');
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/technicians?username=eq.${encodeURIComponent(code)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({loc_city:city,loc_district:district||null,loc_team:team||null,loc_unit:unit||null,area,updated_at:new Date().toISOString()})});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,140);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
+    const t=teams.find(x=>x.code===code); if(t){ t.loc_city=city; t.loc_district=district; t.loc_team=team; t.loc_unit=unit; t.area=area; }
+    showToast(code+' location updated');
+    renderTeams($('#teamSearch')?.value||'');
+    openTeamDetail(code);   // refresh the modal with saved values
+  }catch(e){ showToast('Location update failed: '+e.message); }
+}
 async function editTechArea(username, current){
   const a=prompt(`Area for ${username}:`, current||'');
   if(a===null) return;
@@ -1798,21 +1832,7 @@ async function exportHistoryExcel(){
 let remJobs=[];
 function currentOperator(){ const u=window.dashUser; const nm=u?(u.display_name||u.username):'Allec Zandre A. Halili'; const rl=u?(u.is_super?'Superadmin':(u.role_label||'')):''; return nm+(rl?(' ('+rl+')'):''); }
 async function renderRemittance(){
-  const dEl=$('#remDate');
-  if(dEl && !dEl.dataset.wired){
-    dEl.dataset.wired='1';
-    if(!dEl.value) dEl.value=manilaToday();
-    dEl.dataset.cur=dEl.value;
-    dEl.onchange=()=>{
-      const picked=dEl.value, cur=dEl.dataset.cur||manilaToday();
-      if(picked===cur) return;
-      if(confirm(`Change remittance date to ${picked}?\n\nThe daily collection view will reload for that date.`)){
-        dEl.dataset.cur=picked; renderRemittance();   // confirmed → switch + reload immediately
-      } else {
-        dEl.value=cur;                                 // cancelled → keep the current date
-      }
-    };
-  }
+  const dEl=$('#remDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderRemittance;}
   const date=dEl?dEl.value:manilaToday();
   const body=$('#remittanceBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="9" class="empty-cell">Loading…</td></tr>`;
@@ -2759,4 +2779,16 @@ function init(){
   $('#cfCreate')?.addEventListener('click',createFieldUser);
   startDashAuth();
 }
+// One confirm for ALL date pickers — changing any date asks to confirm; on confirm it switches, on cancel it reverts.
+document.addEventListener('focus', function(e){ const el=e.target; if(el&&el.tagName==='INPUT'&&el.type==='date'&&!el.dataset.noconfirm) el.dataset.cur=el.value||''; }, true);
+document.addEventListener('change', function(e){
+  const el=e.target;
+  if(!el || el.tagName!=='INPUT' || el.type!=='date' || el.dataset.noconfirm) return;
+  if(el.dataset.skipconfirm==='1'){ el.dataset.skipconfirm=''; return; }
+  const cur=el.dataset.cur||'', picked=el.value||'';
+  if(picked===cur) return;
+  e.stopImmediatePropagation();
+  if(confirm('Change date to '+(picked||'—')+'?')){ el.dataset.cur=picked; el.dataset.skipconfirm='1'; el.dispatchEvent(new Event('change',{bubbles:true})); }
+  else { el.value=cur; }
+}, true);
 document.addEventListener('DOMContentLoaded',init);
