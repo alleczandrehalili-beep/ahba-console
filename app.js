@@ -238,7 +238,28 @@ async function populateMapHistTeams(){
   sel.dataset.filled='1';
   const d=$('#mapHistDate'); if(d&&!d.value) d.value=manilaToday();
 }
-// Draw a team's location trail for a given date as a connecting line + numbered stops.
+// Snap a raw GPS trace to the actual road network (OSRM map-matching).
+// Returns [[lat,lng],...] following the real roads, or null if unavailable
+// (caller falls back to a direct line). Free public service, best-effort.
+async function roadSnap(latlngs){
+  try{
+    if(!latlngs || latlngs.length<2) return null;
+    let pts=latlngs;
+    if(pts.length>95){ const step=Math.ceil(pts.length/95); pts=pts.filter((_,i)=>i%step===0 || i===latlngs.length-1); }
+    if(pts.length<2) return null;
+    const coords=pts.map(p=>`${(+p[1]).toFixed(6)},${(+p[0]).toFixed(6)}`).join(';');
+    const url=`https://router.project-osrm.org/match/v1/driving/${coords}?overview=full&geometries=geojson&tidy=true&gaps=ignore`;
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),8000);
+    const r=await fetch(url,{signal:ctrl.signal}); clearTimeout(to);
+    if(!r.ok) return null;
+    const j=await r.json();
+    if(j.code!=='Ok' || !Array.isArray(j.matchings) || !j.matchings.length) return null;
+    const out=[];
+    j.matchings.forEach(m=>{ const g=m&&m.geometry&&m.geometry.coordinates; if(Array.isArray(g)) g.forEach(c=>out.push([c[1],c[0]])); });
+    return out.length>1?out:null;
+  }catch(e){ return null; }
+}
+// Draw a team's location trail for a given date as a road-following line + numbered stops.
 // Works for ANY team and ANY date (including offline teams / past days).
 async function showTeamTrackOnMap(code, date){
   if(!leafMap) return;
@@ -260,7 +281,17 @@ async function showTeamTrackOnMap(code, date){
   const isToday=date===manilaToday();
   const latlngs=pts.map(p=>[+p.lat,+p.lng]);
   const grp=L.layerGroup();
-  if(latlngs.length>1) L.polyline(latlngs,{color:'#0e6b50',weight:3,opacity:.85}).addTo(grp);
+  let drawn=latlngs, snapped=false;
+  if(latlngs.length>1){
+    const road=await roadSnap(latlngs);
+    if(road && road.length>1){                                                         // real roads travelled
+      drawn=road; snapped=true;
+      L.polyline(road,{color:'#0e6b50',weight:5,opacity:.9}).addTo(grp);
+      L.polyline(road,{color:'#7fe0b8',weight:2,opacity:.9}).addTo(grp);                // subtle inner highlight
+    } else {
+      L.polyline(latlngs,{color:'#0e6b50',weight:3,opacity:.7,dashArray:'6,7'}).addTo(grp);  // fallback: direct line
+    }
+  }
   pts.forEach((p,i)=>{
     const isLast=i===pts.length-1;
     const label=(isLast&&isToday)?'NOW':String(i+1);
@@ -272,8 +303,8 @@ async function showTeamTrackOnMap(code, date){
     L.marker([+p.lat,+p.lng],{icon}).bindPopup(`<b>${code}</b> · stop ${label}<br>${place}<br>${time}${why}`).addTo(grp);
   });
   grp.addTo(leafMap); trackLayer=grp;
-  try{ leafMap.fitBounds(L.latLngBounds(latlngs).pad(0.25)); }catch(e){}
-  showToast(`Route history: ${code} · ${date} — ${pts.length} stop${pts.length===1?'':'s'} (tap empty map to clear)`);
+  try{ leafMap.fitBounds(L.latLngBounds(drawn).pad(0.25)); }catch(e){}
+  showToast(`Route: ${code} · ${date} — ${pts.length} stop${pts.length===1?'':'s'}${snapped?' · snapped to roads':' · direct line'} (tap empty map to clear)`);
 }
 function renderJobs(){
   const hist=!!dashHist, SRC=hist?dashHist:jobs;
