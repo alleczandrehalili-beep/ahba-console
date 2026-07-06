@@ -225,18 +225,23 @@ async function renderTeamLocations(){
   const withGps=rows.filter(t=>t.lat!=null).length;
   const onlineN=rows.filter(isOnline).length;
   const at=$('#availableTeamText'); if(at) at.textContent=`${onlineN} online · tap a pin for route`;
+  populateMapHistTeams();   // keep the team-history dropdown in sync with the map
 }
 // Remove any route currently drawn on the map.
 function clearTeamTrack(){ if(trackLayer&&leafMap){ try{ leafMap.removeLayer(trackLayer); }catch(e){} } trackLayer=null; }
 // Populate the map's route-history team dropdown from all field accounts.
-async function populateMapHistTeams(){
-  const sel=$('#mapHistTeam'); if(!sel||sel.dataset.filled) return;
-  let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
-  const opts=(rows||[]).filter(r=>r.username && (r.role||'technician')==='technician')   // field teams only
-    .sort((a,b)=>String(a.username).localeCompare(String(b.username)))
-    .map(r=>`<option value="${r.username}">${r.username}${r.area?(' · '+r.area):''}</option>`).join('');
+function populateMapHistTeams(){
+  const sel=$('#mapHistTeam'); if(!sel) return;
+  const cur=sel.value;
+  // Build from the field-team list already loaded on the map (reliable — no separate fetch/lock).
+  let list=(teams||[]).filter(t=>t&&t.code).map(t=>({code:t.code,name:t.name||t.code,area:t.area}));
+  if(!list.length) list=Object.values(techIndex||{}).map(t=>({code:t.username,name:t.username,area:t.area}));
+  // de-dup + sort by code
+  const seen={}; list=list.filter(t=>t.code&&!seen[t.code]&&(seen[t.code]=1));
+  list.sort((a,b)=>String(a.code).localeCompare(String(b.code)));
+  const opts=list.map(t=>`<option value="${t.code}">${t.name}${t.area?(' · '+t.area):''}</option>`).join('');
   sel.innerHTML='<option value="">🧭 Pumili ng team — travel history…</option>'+opts;
-  sel.dataset.filled='1';
+  if(cur) sel.value=cur;
   const d=$('#mapHistDate'); if(d&&!d.value) d.value=manilaToday();
 }
 // Snap a raw GPS trace to the actual road network (OSRM map-matching).
@@ -2726,6 +2731,7 @@ function init(){
   // Route history: pick any team + date (works for offline teams / past days)
   populateMapHistTeams();
   const mapHist=()=>{ const c=$('#mapHistTeam')?.value; const d=$('#mapHistDate')?.value||manilaToday(); if(c) showTeamTrackOnMap(c,d); else clearTeamTrack(); };
+  $('#mapHistTeam')?.addEventListener('focus',()=>{ if(($('#mapHistTeam')?.options.length||0)<=1) populateMapHistTeams(); });
   $('#mapHistTeam')?.addEventListener('change',mapHist);
   $('#mapHistDate')?.addEventListener('change',()=>{ if($('#mapHistTeam')?.value) mapHist(); });
   $('#mapHistClear')?.addEventListener('click',()=>{ clearTeamTrack(); const s=$('#mapHistTeam'); if(s)s.value=''; });
