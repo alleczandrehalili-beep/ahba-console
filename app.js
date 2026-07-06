@@ -2220,7 +2220,7 @@ async function scCreateConsole(){
   if(!await confirmActorPassword()) return;
   const btn=$('#scCuCreate'); btn.disabled=true; btn.textContent='Creating…';
   try{
-    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:'Subcontractor console',is_super:false,allowed_pages:SUBCON_CONSOLE_PAGES,org_id:subSelId});
+    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:'Subcontractor console',is_super:false,allowed_pages:SUBCON_CONSOLE_PAGES,edit_pages:SUBCON_CONSOLE_PAGES,org_id:subSelId});
     ['#scCuUser','#scCuName','#scCuPass'].forEach(id=>{const e=$(id);if(e)e.value='';});
     showToast(`${u} created for ${subSelCode}. Temp password must be changed on first login.`);
     renderSubAccounts(); renderSubcon();
@@ -2664,7 +2664,11 @@ function canRemoveAnn(a){
   const u=window.dashUser; if(!u) return false;
   if(u.is_super) return true;
   const role=String(u.role_label||'').toLowerCase();
-  return role.includes('admin') && !a.created_super;
+  if(role.includes('admin') && !a.created_super) return true;
+  // Anyone (incl. a subcontractor console user) may remove an announcement THEY posted.
+  const me=String(u.display_name||u.username||'').toLowerCase();
+  if(me && String(a.created_by||'').toLowerCase()===me && !a.created_super) return true;
+  return false;
 }
 // Fixed announcement bar on the console (mirrors the mobile bar). Stays until removed.
 async function renderAnnounceBar(){
