@@ -232,9 +232,10 @@ function clearTeamTrack(){ if(trackLayer&&leafMap){ try{ leafMap.removeLayer(tra
 async function populateMapHistTeams(){
   const sel=$('#mapHistTeam'); if(!sel||sel.dataset.filled) return;
   let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
-  const opts=(rows||[]).filter(r=>r.username).sort((a,b)=>String(a.username).localeCompare(String(b.username)))
+  const opts=(rows||[]).filter(r=>r.username && (r.role||'technician')==='technician')   // field teams only
+    .sort((a,b)=>String(a.username).localeCompare(String(b.username)))
     .map(r=>`<option value="${r.username}">${r.username}${r.area?(' · '+r.area):''}</option>`).join('');
-  sel.innerHTML='<option value="">Route history…</option>'+opts;
+  sel.innerHTML='<option value="">🧭 Pumili ng team — travel history…</option>'+opts;
   sel.dataset.filled='1';
   const d=$('#mapHistDate'); if(d&&!d.value) d.value=manilaToday();
 }
