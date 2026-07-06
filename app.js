@@ -1290,7 +1290,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={};
@@ -2113,7 +2113,7 @@ function applyAccess(u){
   // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
@@ -2147,6 +2147,154 @@ function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); windo
 let accessUsers=[];
 // Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
 function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && hasDispatchAccess(u)); }
+
+// ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
+// Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
+const SUBCON_CONSOLE_PAGES=['overview','timeline','teams','workorders','expenses','attendance','completed','remittance','history'];
+let subOrgs=[], subSelId=null, subSelCode='', subSelName='';
+async function scFetch(path){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/${path}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); return r.ok?await r.json():[]; }catch(e){ return []; } }
+function scWrite(path,method,body){ return fetch(`${SUPA_URL}/rest/v1/${path}`,{method,headers:DH(),body:body?JSON.stringify(body):undefined}); }
+
+async function renderSubcon(){
+  const body=$('#scOrgBody'); if(!body) return;
+  if(!(window.dashUser&&window.dashUser.is_super)){ body.innerHTML='<tr><td colspan="6" class="empty-row">Superadmin only.</td></tr>'; return; }
+  const [orgs,dash,techs]=await Promise.all([
+    scFetch('orgs?select=*&order=code.asc'),
+    scFetch('dashboard_users?select=username,org_id'),
+    scFetch('technicians?select=username,org_id')
+  ]);
+  subOrgs=orgs;
+  const cnt=(arr,id)=>arr.filter(x=>x.org_id===id).length;
+  body.innerHTML=orgs.map(o=>{
+    const isGC=o.code==='AHBA';
+    const status=o.active?'<span class="status en-route">● Active</span>':'<span class="status offline">Suspended</span>';
+    const acts=isGC?'<span style="color:#8a9894">Your org</span>'
+      :`<button class="assign-btn" data-scmanage="${o.id}">Manage</button> <button class="assign-btn" data-sctoggle="${o.id}">${o.active?'Suspend':'Activate'}</button>`;
+    return `<tr data-scrow="${o.id}"${isGC?'':' style="cursor:pointer"'}><td><strong>${esc(o.code)}</strong></td><td>${esc(o.name)}${isGC?' <span style="color:#11825f">(GC)</span>':''}</td><td>${status}</td><td>${cnt(dash,o.id)}</td><td>${cnt(techs,o.id)}</td><td><div class="row-actions">${acts}</div></td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="empty-row">No subcontractors yet. Add one above.</td></tr>';
+  $$('#scOrgBody [data-scmanage]').forEach(b=>b.onclick=e=>{e.stopPropagation();selectSubOrg(b.dataset.scmanage);});
+  $$('#scOrgBody [data-sctoggle]').forEach(b=>b.onclick=e=>{e.stopPropagation();toggleOrgActive(b.dataset.sctoggle);});
+  $$('#scOrgBody [data-scrow]').forEach(r=>r.onclick=()=>{ const o=subOrgs.find(x=>x.id===r.dataset.scrow); if(o&&o.code!=='AHBA') selectSubOrg(r.dataset.scrow); });
+  injectIcons();
+  if(subSelId && subOrgs.some(o=>o.id===subSelId)) renderSubAccounts();
+}
+
+async function createOrg(){
+  const code=($('#scCode').value||'').trim().toUpperCase(), name=($('#scName').value||'').trim();
+  if(!/^[A-Z0-9_-]{2,16}$/.test(code)){ showToast('Code: 2–16 chars, letters/numbers/_- only'); return; }
+  if(!name){ showToast('Enter a name'); return; }
+  if(code==='AHBA'){ showToast('AHBA is reserved for your GC org'); return; }
+  const btn=$('#scAddOrg'); btn.disabled=true; btn.textContent='Adding…';
+  try{
+    const r=await scWrite('orgs','POST',{code,name});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,140);}catch(e){} throw new Error(String(d).includes('duplicate')?'code already exists':(d||('HTTP '+r.status))); }
+    $('#scCode').value=''; $('#scName').value='';
+    showToast(`Subcontractor ${code} added`);
+    renderSubcon();
+  }catch(e){ showToast('Add failed: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='Add subcontractor'; }
+}
+
+async function toggleOrgActive(id){
+  const o=subOrgs.find(x=>x.id===id); if(!o) return;
+  if(!confirm(`${o.active?'Suspend':'Activate'} ${o.code}?`)) return;
+  try{ const r=await scWrite(`orgs?id=eq.${id}`,'PATCH',{active:!o.active}); if(!r.ok) throw new Error('HTTP '+r.status); renderSubcon(); }
+  catch(e){ showToast('Update failed: '+e.message); }
+}
+
+function selectSubOrg(id){
+  const o=subOrgs.find(x=>x.id===id); if(!o) return;
+  subSelId=id; subSelCode=o.code; subSelName=o.name;
+  $('#scSelName').textContent=`${o.code} · ${o.name}`;
+  $('#scManage').style.display='';
+  renderSubAccounts();
+  $('#scManage').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function renderSubAccounts(){
+  if(!subSelId) return;
+  const [dash,techs,was]=await Promise.all([
+    scFetch(`dashboard_users?select=*&org_id=eq.${subSelId}&order=username.asc`),
+    scFetch(`technicians?select=*&org_id=eq.${subSelId}&order=username.asc`),
+    scFetch(`work_accounts?select=*&org_id=eq.${subSelId}&order=name.asc`)
+  ]);
+  const roleLbl={technician:'Technician',sales_agent:'Sales agent',security:'Security'};
+  const rows=[
+    ...dash.map(u=>({u:u.username,type:'Console',role:(u.is_super?'Superadmin':(u.role_label||'Console user')),status:u.must_change?'Needs PW setup':'Active',target:'dash'})),
+    ...techs.map(t=>({u:t.username,type:'Mobile',role:(roleLbl[t.role]||t.role||'Technician')+(t.area?(' · '+t.area):''),status:t.must_change?'Needs PW setup':'Active',target:'tech'}))
+  ];
+  const ab=$('#scAcctBody');
+  ab.innerHTML=rows.length?rows.map(r=>`<tr><td><strong>${esc(r.u)}</strong></td><td>${r.type}</td><td>${esc(r.role)}</td><td>${esc(r.status)}</td><td><div class="row-actions"><button class="assign-btn" data-screset="${esc(r.u)}" data-sctarget="${r.target}">Reset PW</button><button class="assign-btn" data-scdel="${esc(r.u)}" data-sctarget="${r.target}">Remove</button></div></td></tr>`).join(''):'<tr><td colspan="5" class="empty-row">No accounts yet.</td></tr>';
+  $$('#scAcctBody [data-screset]').forEach(b=>b.onclick=()=>scResetAccount(b.dataset.screset,b.dataset.sctarget));
+  $$('#scAcctBody [data-scdel]').forEach(b=>b.onclick=()=>scDeleteAccount(b.dataset.scdel,b.dataset.sctarget));
+  const wb=$('#scWaBody');
+  wb.innerHTML=was.length?was.map(w=>`<tr><td><strong>${esc(w.name)}</strong></td><td>${w.active?'Active':'Off'}</td><td><div class="row-actions"><button class="assign-btn" data-scwadel="${w.id}">Remove</button></div></td></tr>`).join(''):'<tr><td colspan="3" class="empty-row">No work accounts yet.</td></tr>';
+  $$('#scWaBody [data-scwadel]').forEach(b=>b.onclick=()=>removeWorkAccount(b.dataset.scwadel));
+}
+
+async function scCreateConsole(){
+  if(!subSelId){ showToast('Select a subcontractor first'); return; }
+  const u=($('#scCuUser').value||'').trim().toUpperCase(), nm=($('#scCuName').value||'').trim(), pw=($('#scCuPass').value||'').trim();
+  if(!u){ showToast('Enter a username'); return; }
+  if(pw.length<8){ showToast('Temp password must be at least 8 characters'); return; }
+  if(!await confirmActorPassword()) return;
+  const btn=$('#scCuCreate'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:'Subcontractor console',is_super:false,allowed_pages:SUBCON_CONSOLE_PAGES,org_id:subSelId});
+    ['#scCuUser','#scCuName','#scCuPass'].forEach(id=>{const e=$(id);if(e)e.value='';});
+    showToast(`${u} created for ${subSelCode}. Temp password must be changed on first login.`);
+    renderSubAccounts(); renderSubcon();
+  }catch(e){ showToast('Create failed: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='Create console user'; }
+}
+
+async function scCreateMobile(){
+  if(!subSelId){ showToast('Select a subcontractor first'); return; }
+  const u=($('#scCfUser').value||'').trim().toUpperCase(), role=$('#scCfRole').value, area=($('#scCfArea').value||'').trim(), pw=($('#scCfPass').value||'').trim();
+  if(!u){ showToast('Enter a username'); return; }
+  if(pw.length<8){ showToast('Temp password must be at least 8 characters'); return; }
+  if(!await confirmActorPassword()) return;
+  const btn=$('#scCfCreate'); btn.disabled=true; btn.textContent='Creating…';
+  try{
+    await callAdminFn({action:'create',target:'tech',username:u,new_password:pw,role,area,org_id:subSelId});
+    ['#scCfUser','#scCfArea','#scCfPass'].forEach(id=>{const e=$(id);if(e)e.value='';});
+    showToast(`${u} (${role}) created for ${subSelCode}.`);
+    renderSubAccounts(); renderSubcon();
+  }catch(e){ showToast('Create failed: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent='Create mobile account'; }
+}
+
+async function scResetAccount(username,target){
+  const np=prompt(`New temp password for ${username} (min 8):`,''); if(np===null) return;
+  if(String(np).length<8){ showToast('Min 8 characters'); return; }
+  if(!await confirmActorPassword()) return;
+  try{ await callAdminFn({action:'reset',target,username,new_password:np}); showToast(`${username} password reset`); }
+  catch(e){ showToast('Reset failed: '+e.message); }
+}
+
+async function scDeleteAccount(username,target){
+  if(!confirm(`Remove account ${username}? This deletes their login.`)) return;
+  if(!await confirmActorPassword()) return;
+  try{ await callAdminFn({action:'delete',target,username}); showToast(`${username} removed`); renderSubAccounts(); renderSubcon(); }
+  catch(e){ showToast('Remove failed: '+e.message); }
+}
+
+async function addWorkAccount(){
+  if(!subSelId){ showToast('Select a subcontractor first'); return; }
+  const name=($('#scWaName').value||'').trim().toLowerCase();
+  if(!name){ showToast('Enter a work account name'); return; }
+  try{
+    const r=await scWrite('work_accounts','POST',{org_id:subSelId,name});
+    if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error(String(d).includes('duplicate')?'already exists':(d||('HTTP '+r.status))); }
+    $('#scWaName').value=''; renderSubAccounts();
+  }catch(e){ showToast('Add failed: '+e.message); }
+}
+
+async function removeWorkAccount(id){
+  if(!confirm('Remove this work account?')) return;
+  try{ const r=await scWrite(`work_accounts?id=eq.${id}`,'DELETE'); if(!r.ok) throw new Error('HTTP '+r.status); renderSubAccounts(); }
+  catch(e){ showToast('Remove failed: '+e.message); }
+}
 function applyAccessScope(){
   const lim=accessIsDispatcherOnly();
   ['acCreateDash','acCreateField','acDashUsers'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display=lim?'none':''; });
@@ -2815,6 +2963,12 @@ function init(){
   $('#dashChangeUser')?.addEventListener('click',()=>{ closePopovers&&closePopovers(); changeMyUsername(); });
   $('#cuCreate')?.addEventListener('click',createDashUser);
   $('#cfCreate')?.addEventListener('click',createFieldUser);
+  // Subcontractors panel
+  $('#scAddOrg')?.addEventListener('click',createOrg);
+  $('#scRefresh')?.addEventListener('click',renderSubcon);
+  $('#scCuCreate')?.addEventListener('click',scCreateConsole);
+  $('#scCfCreate')?.addEventListener('click',scCreateMobile);
+  $('#scWaAdd')?.addEventListener('click',addWorkAccount);
   startDashAuth();
 }
 // One confirm for ALL date pickers — changing any date asks to confirm; on confirm it switches, on cancel it reverts.
