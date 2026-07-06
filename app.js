@@ -21,7 +21,9 @@ const names=Array.from({length:20},(_,i)=>`AHBA_SLI${String(i+1).padStart(3,'0')
 const areas=['Quezon City','Manila','Makati','Pasig','Taguig','Caloocan','Parañaque','Mandaluyong','San Juan','Marikina'];
 const statuses=['on-site','en-route','on-site','available','en-route','on-site','en-route','available','on-site','en-route','on-site','offline','en-route','on-site','available','en-route','on-site','offline','available','en-route'];
 const colors=['#1a9d79','#4086e8','#9a6edb','#ee8564','#16a0ad','#e3a23c'];
-let teams=names.map((name,i)=>({id:i+1,name,code:name,short:String(i+1).padStart(3,'0'),status:statuses[i],area:areas[i%areas.length],jobs: i%4+1,completed: Math.max(0,(i*3)%7),rating:(4.6+(i%4)*.1).toFixed(1),x:8+((i*37)%84),y:12+((i*29)%72),color:colors[i%colors.length],members:2+(i%2)}));
+// Teams are loaded PURELY from the DB (org-scoped by RLS) via syncTeamsFromDb — no hardcoded seed,
+// so each org sees only its own field teams (subcon never sees GC's teams, and vice-versa).
+let teams=[];
 
 // Supabase (read-only here) for the Accounts panel
 const SUPA_URL='https://avjzkfxgzeyxtihkofed.supabase.co';
