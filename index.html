@@ -153,6 +153,7 @@
         <button class="nav-item" data-page="remittance"><i data-icon="wallet"></i><span>Remittance</span></button>
         <button class="nav-item" data-page="history"><i data-icon="clipboard"></i><span>Billing Validation</span></button>
         <button class="nav-item" data-page="access" style="display:none"><i data-icon="users"></i><span>Access Control</span></button>
+        <button class="nav-item" data-page="subcon" style="display:none"><i data-icon="users"></i><span>Subcontractors</span></button>
       </nav>
       <div class="sidebar-spacer"></div>
       <div class="shift-card">
@@ -456,6 +457,55 @@
         <article class="panel full-table" id="acAuditLog" style="margin-top:14px;display:none">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🔑 Password reset history</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Superadmin monitoring — who reset / created / renamed / deleted which account and when.</p></div><button class="secondary-btn" id="auditRefresh"><i data-icon="arrow"></i>Refresh</button></div>
           <div class="table-wrap"><table><thead><tr><th>When</th><th>By</th><th>Action</th><th>Account</th><th>Type</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="subconPage" class="page">
+        <div class="page-toolbar"><div><h2>Subcontractors</h2><p>Superadmin only. Add subcontractor organizations and provision their console + mobile accounts. Each account is isolated to its own subcontractor.</p></div></div>
+
+        <article class="panel full-table" style="margin-bottom:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Add subcontractor</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Creates a new organization (tenant). Use a short unique code (e.g. SUB01) and a display name.</p></div></div>
+          <div class="form-grid" style="padding:14px 20px;grid-template-columns:repeat(3,1fr);gap:10px 16px">
+            <label class="field"><span>Code * (e.g. SUB01)</span><input id="scCode" autocapitalize="characters" maxlength="16"></label>
+            <label class="field"><span>Name *</span><input id="scName"></label>
+            <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="scAddOrg" type="button">Add subcontractor</button></div>
+          </div>
+        </article>
+
+        <article class="panel full-table" style="margin-bottom:14px">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Subcontractors</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Tap a row to manage its accounts. GC is your own organization.</p></div><button class="secondary-btn" id="scRefresh"><i data-icon="arrow"></i>Refresh</button></div>
+          <div class="table-wrap"><table><thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Console</th><th>Mobile</th><th>Actions</th></tr></thead><tbody id="scOrgBody"></tbody></table></div>
+        </article>
+
+        <article class="panel full-table" id="scManage" style="margin-bottom:14px;display:none">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Manage · <span id="scSelName">—</span></h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Create and manage this subcontractor's accounts. Your own password is required as confirmation. New accounts must change their temp password on first login.</p></div></div>
+
+          <div class="filter-row" style="border-top:1px solid var(--line)"><div><h2 style="font:800 12px Manrope;margin:0">Create console (desktop) user</h2></div></div>
+          <div class="form-grid" style="padding:12px 20px;grid-template-columns:repeat(3,1fr);gap:10px 16px">
+            <label class="field"><span>Username *</span><input id="scCuUser" autocapitalize="characters"></label>
+            <label class="field"><span>Display name</span><input id="scCuName"></label>
+            <label class="field"><span>Temp password * (min 8)</span><input id="scCuPass"></label>
+            <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="scCuCreate" type="button">Create console user</button></div>
+          </div>
+
+          <div class="filter-row" style="border-top:1px solid var(--line)"><div><h2 style="font:800 12px Manrope;margin:0">Create mobile account (Technician / Sales / Security)</h2></div></div>
+          <div class="form-grid" style="padding:12px 20px;grid-template-columns:repeat(3,1fr);gap:10px 16px">
+            <label class="field"><span>Username * (e.g. SUB01_SLI01)</span><input id="scCfUser" autocapitalize="characters"></label>
+            <label class="field"><span>Role *</span><select id="scCfRole"><option value="technician">Technician</option><option value="sales_agent">Sales agent</option><option value="security">Security</option></select></label>
+            <label class="field"><span>Area / Note</span><input id="scCfArea"></label>
+            <label class="field"><span>Temp password * (min 8)</span><input id="scCfPass"></label>
+            <div style="display:flex;align-items:flex-end"><button class="primary-btn" id="scCfCreate" type="button">Create mobile account</button></div>
+          </div>
+
+          <div class="filter-row" style="border-top:1px solid var(--line)"><div><h2 style="font:800 12px Manrope;margin:0">Accounts in this subcontractor</h2></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Type</th><th>Role / Access</th><th>Status</th><th>Actions</th></tr></thead><tbody id="scAcctBody"></tbody></table></div>
+
+          <div class="filter-row" style="border-top:1px solid var(--line)"><div><h2 style="font:800 12px Manrope;margin:0">Work accounts (mobile shift pool)</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">The msp- accounts this subcontractor's technicians can pick when starting a shift.</p></div></div>
+          <div class="form-grid" style="padding:12px 20px;grid-template-columns:2fr 1fr;gap:10px 16px">
+            <label class="field"><span>Add work account (e.g. msp-juan.dela.cruz)</span><input id="scWaName"></label>
+            <div style="display:flex;align-items:flex-end"><button class="secondary-btn" id="scWaAdd" type="button">Add work account</button></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Work account</th><th>Status</th><th>Actions</th></tr></thead><tbody id="scWaBody"></tbody></table></div>
         </article>
       </section>
     </main>
