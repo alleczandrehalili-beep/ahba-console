@@ -1640,7 +1640,7 @@ async function renderCompleted(){
     const vb=j.validated
       ? `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`
       : '<span class="vbadge no">Pending</span>';
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${j.validated?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${(j.validated||!dashCanEdit('completed'))?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
@@ -1651,10 +1651,11 @@ function openGallery(jobId){
   $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
   $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
   $$('#photoGrid .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
-  const vb=$('#validateBtn'); vb.style.display=j.validated?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
+  const vb=$('#validateBtn'); vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
   openModal($('#photoModal'));
 }
 async function validateJob(jobId){
+  if(!dashCanEdit('completed')){ showToast('QA validation is GC-only'); return; }
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
   const now=new Date().toISOString();
   try{
@@ -2130,7 +2131,9 @@ function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is
 
 // ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
 // Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
-const SUBCON_CONSOLE_PAGES=['overview','timeline','teams','workorders','expenses','attendance','completed','remittance','history'];
+const SUBCON_CONSOLE_PAGES=['overview','timeline','teams','workorders','attendance','completed','remittance','history'];
+// Editable pages for a subcontractor console user. QA Validation ('completed') is VIEW-ONLY — only GC validates.
+const SUBCON_CONSOLE_EDIT=SUBCON_CONSOLE_PAGES.filter(p=>p!=='completed');
 let subOrgs=[], subSelId=null, subSelCode='', subSelName='';
 async function scFetch(path){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/${path}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 function scWrite(path,method,body){ return fetch(`${SUPA_URL}/rest/v1/${path}`,{method,headers:DH(),body:body?JSON.stringify(body):undefined}); }
@@ -2220,7 +2223,7 @@ async function scCreateConsole(){
   if(!await confirmActorPassword()) return;
   const btn=$('#scCuCreate'); btn.disabled=true; btn.textContent='Creating…';
   try{
-    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:'Subcontractor console',is_super:false,allowed_pages:SUBCON_CONSOLE_PAGES,edit_pages:SUBCON_CONSOLE_PAGES,org_id:subSelId});
+    await callAdminFn({action:'create',target:'dash',username:u,new_password:pw,display_name:nm||u,role_label:'Subcontractor console',is_super:false,allowed_pages:SUBCON_CONSOLE_PAGES,edit_pages:SUBCON_CONSOLE_EDIT,org_id:subSelId});
     ['#scCuUser','#scCuName','#scCuPass'].forEach(id=>{const e=$(id);if(e)e.value='';});
     showToast(`${u} created for ${subSelCode}. Temp password must be changed on first login.`);
     renderSubAccounts(); renderSubcon();
