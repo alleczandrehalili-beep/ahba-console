@@ -2098,6 +2098,9 @@ function applyAccess(u){
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
   $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
+  // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
+  const canExp=(u.is_super||allowed.includes('expenses'));
+  $$('[data-go="expenses"], .expense-panel').forEach(el=>{ if(el) el.style.display=canExp?'':'none'; });
   const nameEl=$('.user-card strong'); if(nameEl) nameEl.textContent=u.display_name||u.username;
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
