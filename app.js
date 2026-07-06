@@ -1374,7 +1374,9 @@ async function decideValidation(jobId,approve){
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
     if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
     if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
-    body={status:'pending', validated:true, validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+    // Intake approval assigns JO/IBAS + records approval time, but does NOT mark QA-validated.
+    // QA validation (proof-photo review on the QA Validation page) is a separate, manual step.
+    body={status:'pending', validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
     if(j.play_type==='2-PLAY'){
       const vs=$$('.valVas').map(i=>i.value.trim());
       if(!vs.length||vs.some(x=>!x)){ showToast('Enter all VAS Number(s) — required for 2-PLAY'); return; }
