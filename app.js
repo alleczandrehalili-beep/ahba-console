@@ -33,35 +33,11 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 
-let jobs=JSON.parse(localStorage.getItem('fieldflow_jobs')||'null')||[
- {id:'WO-2026-1048',subscriber:'Maria Santos',type:'Installation',plan:'Fiber Unli 400 Mbps',area:'Quezon City',address:'Project 4, Quezon City',status:'pending',wait:'42 min',priority:'Urgent',schedule:'Today, 10:00 AM',team:null},
- {id:'WO-2026-1047',subscriber:'Carlo Reyes',type:'Repair',plan:'Service Repair',area:'Makati',address:'Poblacion, Makati',status:'pending',wait:'35 min',priority:'Normal',schedule:'Today, 10:30 AM',team:null},
- {id:'WO-2026-1046',subscriber:'Anne Lim',type:'Installation',plan:'Fiber Unli 200 Mbps',area:'Manila',address:'Sampaloc, Manila',status:'assigned',wait:'28 min',priority:'Normal',schedule:'Today, 11:00 AM',team:'AHBA_SLI001'},
- {id:'WO-2026-1045',subscriber:'Roberto Cruz',type:'Repair',plan:'Service Repair',area:'Pasig',address:'Kapitolyo, Pasig',status:'en-route',wait:'18 min',priority:'VIP',schedule:'Today, 9:45 AM',team:'AHBA_SLI002'},
- {id:'WO-2026-1044',subscriber:'Liza Mendoza',type:'Installation',plan:'Cable + Internet Bundle',area:'Taguig',address:'Pinagsama, Taguig',status:'on-site',wait:'12 min',priority:'Normal',schedule:'Today, 9:00 AM',team:'AHBA_SLI003'},
- {id:'WO-2026-1043',subscriber:'David Ong',type:'Installation',plan:'Fiber Unli 600 Mbps',area:'Caloocan',address:'Grace Park, Caloocan',status:'completed',wait:'—',priority:'Normal',schedule:'Today, 8:00 AM',team:'AHBA_SLI006'},
- {id:'WO-2026-1042',subscriber:'Grace Tan',type:'Repair',plan:'Service Repair',area:'Marikina',address:'Concepcion, Marikina',status:'in-progress',wait:'—',priority:'Urgent',schedule:'Today, 8:30 AM',team:'AHBA_SLI007'},
- {id:'WO-2026-1041',subscriber:'Marco Diaz',type:'Installation',plan:'Fiber Unli 400 Mbps',area:'Parañaque',address:'BF Homes, Parañaque',status:'completed',wait:'—',priority:'Normal',schedule:'Today, 7:30 AM',team:'AHBA_SLI008'}
-];
-let expenses=JSON.parse(localStorage.getItem('fieldflow_expenses')||'null')||[
- {time:'9:42 AM',team:'AHBA_SLI001',category:'Fuel',description:'Diesel refill',workOrder:'—',amount:1850,status:'Approved'},
- {time:'9:18 AM',team:'AHBA_SLI003',category:'Materials',description:'Fiber drop cable, 150m',workOrder:'WO-2026-1044',amount:3200,status:'Approved'},
- {time:'8:55 AM',team:'AHBA_SLI002',category:'Toll & Parking',description:'Skyway toll',workOrder:'WO-2026-1045',amount:520,status:'Approved'},
- {time:'8:30 AM',team:'AHBA_SLI007',category:'Materials',description:'Connectors and splitter',workOrder:'WO-2026-1042',amount:1480,status:'Pending'},
- {time:'8:05 AM',team:'AHBA_SLI006',category:'Fuel',description:'Gasoline refill',workOrder:'—',amount:2100,status:'Approved'},
- {time:'7:50 AM',team:'AHBA_SLI008',category:'Meals',description:'Team breakfast allowance',workOrder:'—',amount:600,status:'Approved'},
- {time:'7:32 AM',team:'AHBA_SLI005',category:'Fuel',description:'Diesel refill',workOrder:'—',amount:1750,status:'Approved'},
- {time:'7:18 AM',team:'AHBA_SLI010',category:'Other',description:'Emergency tool replacement',workOrder:'—',amount:2950,status:'Pending'},
- {time:'7:05 AM',team:'AHBA_SLI011',category:'Materials',description:'Modem replacement stock',workOrder:'WO-2026-1039',amount:4000,status:'Approved'}
-];
-const activity=[
- {icon:'check',tone:'',title:'Installation completed',text:'<b>AHBA_SLI006</b> completed WO-2026-1043',time:'2m'},
- {icon:'truck',tone:'blue',title:'Team is en route',text:'<b>AHBA_SLI002</b> heading to Poblacion, Makati',time:'6m'},
- {icon:'wallet',tone:'coral',title:'Expense submitted',text:'<b>AHBA_SLI003</b> logged ₱3,200 materials',time:'12m'},
- {icon:'pin',tone:'',title:'Team arrived on site',text:'<b>AHBA_SLI007</b> checked in at Marikina',time:'18m'},
- {icon:'wrench',tone:'blue',title:'Repair started',text:'<b>AHBA_SLI001</b> began line diagnostics',time:'24m'},
- {icon:'info',tone:'coral',title:'Job needs attention',text:'WO-2026-1048 has been waiting 42 min',time:'31m'}
-];
+// Data comes PURELY from the DB (org-scoped by RLS) — no hardcoded/demo seed and no cross-user
+// localStorage cache, so a subcontractor never sees GC (or any other org's) jobs/expenses/activity.
+let jobs=[];
+let expenses=[];
+const activity=[];
 
 // UI state
 let mapFilter='all';
