@@ -1623,6 +1623,7 @@ async function fetchPhotosFor(ids){
 }
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
+  const _cb=$('#clearBtn'); if(_cb) _cb.style.display=dashCanEdit('completed')?'':'none';   // Clear photos = GC-only
   const date=dEl?dEl.value:manilaToday();
   const body=$('#completedBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
@@ -1743,6 +1744,7 @@ async function exportZip(){
   showToast('Archive downloaded (Excel + photos)');
 }
 async function clearCloud(){
+  if(!dashCanEdit('completed')){ showToast('Clearing QA photos is GC-only'); return; }
   const date=$('#compDate').value||manilaToday();
   if(!compJobs.length){showToast('Nothing to clear for this day');return}
   const allPaths=compJobs.flatMap(j=>(compPhotos[j.id]||[]).map(p=>p.path));
