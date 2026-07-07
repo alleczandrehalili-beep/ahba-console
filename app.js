@@ -760,13 +760,33 @@ let tlStatusFilter='';
 function setTlStatusFilter(b){ tlStatusFilter=(tlStatusFilter===b)?'':b; renderTimeline(); }
 // Dashboard filters (For Dispatch + Teams Timeline): Load Type · District · Barangay.
 function tlPassFilter(j){
+  const og=($('#tlfOrg')&&$('#tlfOrg').value)||'';
   const ty=($('#tlfType')&&$('#tlfType').value)||'';
   const di=($('#tlfDistrict')&&$('#tlfDistrict').value)||'';
   const br=($('#tlfBrgy')&&$('#tlfBrgy').value)||'';
+  if(og && String(j.org_id||'')!==og) return false;
   if(ty && (j.load_type||'SLI')!==ty) return false;
   if(di && String(j.district||'')!==di) return false;
   if(br && (j.brgy||'')!==br) return false;
   return true;
+}
+// org id → display name (GC labelled distinctly). Loaded once; RLS returns only the orgs the user can see.
+let orgNameById={};
+async function loadOrgMap(){
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    (r.ok?await r.json():[]).forEach(o=>{ orgNameById[o.id]=(o.code==='AHBA')?('GC · '+o.name):o.name; });
+  }catch(e){}
+}
+// GC-only "For Dispatch" org picker — shown ONLY when the user sees >1 org (i.e. the GC dispatcher).
+function tlBuildOrgFilter(pool){
+  const sel=$('#tlfOrg'); if(!sel) return;
+  const ids=[...new Set((pool||[]).map(j=>j.org_id).filter(Boolean))];
+  if(ids.length<2){ sel.style.display='none'; sel.value=''; return; }
+  const cur=sel.value;
+  ids.sort((a,b)=>String(orgNameById[a]||a).localeCompare(String(orgNameById[b]||b)));
+  sel.innerHTML='<option value="">All orgs (GC + subcons)</option>'+ids.map(id=>`<option value="${id}">${esc(orgNameById[id]||id)}</option>`).join('');
+  if(cur && ids.includes(cur)) sel.value=cur;
+  sel.style.display='';
 }
 function tlBuildFilterOptions(pool){
   const dsel=$('#tlfDistrict'), bsel=$('#tlfBrgy');
@@ -793,6 +813,7 @@ function renderTimeline(){
     if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday(); return loadToday(j.load_date); }
     return false; });
   tlBuildFilterOptions(inDayPool);
+  tlBuildOrgFilter(SRC);
   // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
   // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
@@ -2836,7 +2857,8 @@ function init(){
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
   // Dashboard filters (Load Type · District · Brgy) → re-render the timeline
   $$('#tlFilters select').forEach(s=>s.onchange=()=>renderTimeline());
-  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
+  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
+  loadOrgMap();
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
