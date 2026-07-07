@@ -1363,9 +1363,15 @@ function openValidate(jobId){
   $('#valReason').value='';
   $('#valApprove').onclick=()=>decideValidation(jobId,true);
   $('#valReject').onclick=()=>decideValidation(jobId,false);
+  // View-only (subcontractor): show the JO detail + status, but hide the validate/reject controls.
+  const canVal=dashCanEdit('validation');
+  ['#valApprove','#valReject'].forEach(s=>{ const b=$(s); if(b) b.style.display=canVal?'':'none'; });
+  ['#valJONum','#valIbas','#valReason'].forEach(s=>{ const e=$(s); if(e) e.readOnly=!canVal; });
+  $$('#valVasInputs .valVas').forEach(e=>e.readOnly=!canVal);
   openModal($('#valModal'));
 }
 async function decideValidation(jobId,approve){
+  if(!dashCanEdit('validation')){ showToast('Validation is GC-only'); return; }
   const j=valJobs.find(x=>x.id===jobId)||{};
   let body;
   if(approve){
@@ -2157,9 +2163,10 @@ function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is
 
 // ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
 // Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
-const SUBCON_CONSOLE_PAGES=['overview','timeline','teams','workorders','attendance','completed','remittance','history'];
-// Editable pages for a subcontractor console user. QA Validation ('completed') is VIEW-ONLY — only GC validates.
-const SUBCON_CONSOLE_EDIT=SUBCON_CONSOLE_PAGES.filter(p=>p!=='completed');
+const SUBCON_CONSOLE_PAGES=['overview','validation','timeline','teams','workorders','attendance','completed','remittance','history'];
+// Editable pages for a subcontractor console user. Validator ('validation') + QA Validation ('completed')
+// are VIEW-ONLY — subcon can see the status of their JOs, but only GC validates/approves/rejects.
+const SUBCON_CONSOLE_EDIT=SUBCON_CONSOLE_PAGES.filter(p=>p!=='completed'&&p!=='validation');
 let subOrgs=[], subSelId=null, subSelCode='', subSelName='';
 async function scFetch(path){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/${path}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 function scWrite(path,method,body){ return fetch(`${SUPA_URL}/rest/v1/${path}`,{method,headers:DH(),body:body?JSON.stringify(body):undefined}); }
