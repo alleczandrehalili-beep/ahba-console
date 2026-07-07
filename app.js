@@ -773,14 +773,16 @@ function tlPassFilter(j){
 // org id → display name (GC labelled distinctly). Loaded once; RLS returns only the orgs the user can see.
 let orgNameById={};
 async function loadOrgMap(){
-  try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name&order=code.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     (r.ok?await r.json():[]).forEach(o=>{ orgNameById[o.id]=(o.code==='AHBA')?('GC · '+o.name):o.name; });
   }catch(e){}
+  try{ tlBuildOrgFilter(); }catch(e){}
 }
-// GC-only "For Dispatch" org picker — shown ONLY when the user sees >1 org (i.e. the GC dispatcher).
-function tlBuildOrgFilter(pool){
+// GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
+// Sourced from the orgs list (not the day's jobs), so the GC can pick a subcon even with no loads yet.
+function tlBuildOrgFilter(){
   const sel=$('#tlfOrg'); if(!sel) return;
-  const ids=[...new Set((pool||[]).map(j=>j.org_id).filter(Boolean))];
+  const ids=Object.keys(orgNameById);
   if(ids.length<2){ sel.style.display='none'; sel.value=''; return; }
   const cur=sel.value;
   ids.sort((a,b)=>String(orgNameById[a]||a).localeCompare(String(orgNameById[b]||b)));
@@ -813,7 +815,7 @@ function renderTimeline(){
     if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday(); return loadToday(j.load_date); }
     return false; });
   tlBuildFilterOptions(inDayPool);
-  tlBuildOrgFilter(SRC);
+  tlBuildOrgFilter();
   // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
   // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
