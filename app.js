@@ -2110,7 +2110,7 @@ async function onDashLogin(email){
   window.dashUser=u;
   fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(u.username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({last_login:new Date().toISOString()})}).catch(()=>{});
   if(u.must_change){ showDashGate('#dashPwGate'); return; }
-  hideDashGates(); applyAccess(u);
+  hideDashGates(); applyAccess(u); loadOrgMap();   // load orgs AFTER auth so the GC org filter can populate
 }
 // Can the logged-in user EDIT this page? Superadmin = always; others need the page in edit_pages.
 function dashCanEdit(page){ const u=window.dashUser; if(!u) return false; if(u.is_super) return true; return Array.isArray(u.edit_pages)&&u.edit_pages.includes(page); }
