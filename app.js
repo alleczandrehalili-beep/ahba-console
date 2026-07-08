@@ -2122,15 +2122,21 @@ const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':
 function dgErr(id,msg){const e=$(id); if(!e)return; e.textContent=msg||''; e.classList.toggle('show',!!msg);}
 function startDashAuth(){
   if(!window.supabase?.createClient){ console.warn('supabase-js not loaded'); return; }
-  dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:true}});   // no auto-login / don't remember device
+  dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
   dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
     window.__ahbaTok = data.session?.access_token || null;
-    if(data.session&&data.session.user) onDashLogin(data.session.user.email);
-    else showDashGate('#dashGate');
+    const _last=Number(localStorage.getItem('ahba_dash_active')||0);
+    const _idle=_last>0 && (Date.now()-_last > 48*3600*1000);   // auto-logout after 48h of NOT opening the console
+    if(data.session&&data.session.user&&!_idle){ _dashTouch(); onDashLogin(data.session.user.email); }
+    else { if(data.session&&_idle){ try{ dashAuth.auth.signOut(); }catch(_){} } showDashGate('#dashGate'); }
   });
 }
+// Keep the console "last opened" timestamp fresh (auto-logout counts 48h of not opening; refresh/reopen stays logged in).
+function _dashTouch(){ try{ localStorage.setItem('ahba_dash_active', String(Date.now())); }catch(_){} }
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) _dashTouch(); });
+setInterval(_dashTouch, 5*60*1000);
 // Apply the user token to realtime clients so live updates work under authenticated-only RLS
 function setRealtimeAuth(tok){
   try{ if(window.AHBACloud&&AHBACloud.realtime) AHBACloud.realtime.realtime.setAuth(tok||SUPA_KEY); }catch(e){}
@@ -3005,7 +3011,7 @@ function init(){
     const {data,error}=await dashAuth.auth.signInWithPassword({email:dashEmailFor(u),password:p});
     btn.disabled=false; btn.textContent='Sign in';
     if(error){ dgErr('#dlErr',/invalid/i.test(error.message||'')?'Wrong username or password.':(error.message||'Sign-in failed.')); return; }
-    try{ await dashAuth.auth.signOut({scope:'others'}); }catch(e){}   // single active session — sign out any other device using this account
+    _dashTouch();
     onDashLogin(data.user.email);
   });
   $('#dashPwForm')?.addEventListener('submit',async e=>{
