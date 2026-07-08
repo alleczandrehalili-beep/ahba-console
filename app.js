@@ -764,30 +764,36 @@ function tlPassFilter(j){
   const ty=($('#tlfType')&&$('#tlfType').value)||'';
   const di=($('#tlfDistrict')&&$('#tlfDistrict').value)||'';
   const br=($('#tlfBrgy')&&$('#tlfBrgy').value)||'';
-  if(og && String(j.org_id||'')!==og) return false;
+  if(og==='__subcons__'){ if(!j.org_id || j.org_id===gcOrgId) return false; }   // MSA-SLI = all subcons only
+  else if(og && String(j.org_id||'')!==og) return false;
   if(ty && (j.load_type||'SLI')!==ty) return false;
   if(di && String(j.district||'')!==di) return false;
   if(br && (j.brgy||'')!==br) return false;
   return true;
 }
-// org id → display name (GC labelled distinctly). Loaded once; RLS returns only the orgs the user can see.
-let orgNameById={};
+// Org directory + which one is the GC. Loaded once after login; RLS returns only the orgs the user sees.
+let orgById={}, gcOrgId='';
 async function loadOrgMap(){
   try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name&order=code.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    (r.ok?await r.json():[]).forEach(o=>{ orgNameById[o.id]=(o.code==='AHBA')?('GC · '+o.name):o.name; });
+    (r.ok?await r.json():[]).forEach(o=>{ orgById[o.id]={code:o.code,name:o.name}; if(o.code==='AHBA') gcOrgId=o.id; });
   }catch(e){}
   try{ tlBuildOrgFilter(); }catch(e){}
 }
 // GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
-// Sourced from the orgs list (not the day's jobs), so the GC can pick a subcon even with no loads yet.
+// Options: "AHBA + MSA-SLI" (all) · "AHBA" (GC only) · "MSA - SLI" (all subcons only) · each subcon by name.
 function tlBuildOrgFilter(){
   const sel=$('#tlfOrg'); if(!sel) return;
-  const ids=Object.keys(orgNameById);
+  const ids=Object.keys(orgById);
   if(ids.length<2){ sel.style.display='none'; sel.value=''; return; }
   const cur=sel.value;
-  ids.sort((a,b)=>String(orgNameById[a]||a).localeCompare(String(orgNameById[b]||b)));
-  sel.innerHTML='<option value="">All orgs (GC + subcons)</option>'+ids.map(id=>`<option value="${id}">${esc(orgNameById[id]||id)}</option>`).join('');
-  if(cur && ids.includes(cur)) sel.value=cur;
+  const subs=ids.filter(id=>id!==gcOrgId).sort((a,b)=>String(orgById[a].name||'').localeCompare(String(orgById[b].name||'')));
+  let opts='<option value="">AHBA + MSA-SLI</option>';
+  if(gcOrgId) opts+=`<option value="${gcOrgId}">AHBA</option>`;
+  if(subs.length) opts+='<option value="__subcons__">MSA - SLI</option>';
+  opts+=subs.map(id=>`<option value="${id}">${esc(orgById[id].name||orgById[id].code)}</option>`).join('');
+  sel.innerHTML=opts;
+  const valid=['','__subcons__',gcOrgId].concat(subs);
+  sel.value=valid.includes(cur)?cur:'';
   sel.style.display='';
 }
 function tlBuildFilterOptions(pool){
@@ -2084,7 +2090,7 @@ const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':
 function dgErr(id,msg){const e=$(id); if(!e)return; e.textContent=msg||''; e.classList.toggle('show',!!msg);}
 function startDashAuth(){
   if(!window.supabase?.createClient){ console.warn('supabase-js not loaded'); return; }
-  dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+  dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:true}});   // no auto-login / don't remember device
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
   dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
@@ -2967,6 +2973,7 @@ function init(){
     const {data,error}=await dashAuth.auth.signInWithPassword({email:dashEmailFor(u),password:p});
     btn.disabled=false; btn.textContent='Sign in';
     if(error){ dgErr('#dlErr',/invalid/i.test(error.message||'')?'Wrong username or password.':(error.message||'Sign-in failed.')); return; }
+    try{ await dashAuth.auth.signOut({scope:'others'}); }catch(e){}   // single active session — sign out any other device using this account
     onDashLogin(data.user.email);
   });
   $('#dashPwForm')?.addEventListener('submit',async e=>{
