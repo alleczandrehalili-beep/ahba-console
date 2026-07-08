@@ -896,7 +896,9 @@ function renderTimeline(){
     if(j.team){ if(hist) return true; if(j.scheduled_at&&tlDayStr2(j.scheduled_at)===date) return true; if(date!==manilaToday()) return false; if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday(); return loadToday(j.load_date); }
     return false; });
   tlBuildFilterOptions(inDayPool);
-  tlBuildOrgFilter();
+  // NOTE: the org picker is built ONCE by loadOrgMap() after login — NOT on every render.
+  // Rebuilding it here clobbered the user's selection (it snapped back to "AHBA + MSA-SLI"
+  // whenever the 15s auto-refresh re-rendered the timeline mid-interaction).
   // Backlog: ALL for-dispatch loads in the day's working set, not yet placed on the timeline —
   // PRIORITIZED by how many times dispatched (most-redispatched first), then High priority, then JO id.
   const prio=p=>p==='High'?0:p==='Low'?2:1;
