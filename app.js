@@ -961,10 +961,8 @@ function renderTimelineCounts(list){
   const total=todayLoads.length;
   el.innerHTML=defs.map(([k,label,bg,fg,bd])=>
     `<span class="tl-count${tlStatusFilter===k?' tl-count-on':''}" data-tlstatus="${k}" style="background:${bg};color:${fg};border:1px solid ${bd};cursor:pointer"><b>${cnt[k]}</b>${label}</span>`
-  ).join('')+`<span class="tl-count tl-count-total${tlStatusFilter===''?' tl-count-on':''}" data-tlstatus="" style="cursor:pointer"><b>${total}</b>Total</span>`
-    +`<button class="tl-count" id="tlExportBtn" title="Export these loads to Excel" style="cursor:pointer;background:#0e6b50;color:#fff;border:1px solid #0e6b50;font-weight:700;margin-left:6px">⤓ Excel</button>`;
+  ).join('')+`<span class="tl-count tl-count-total${tlStatusFilter===''?' tl-count-on':''}" data-tlstatus="" style="cursor:pointer"><b>${total}</b>Total</span>`;
   $$('#tlCounts [data-tlstatus]').forEach(c=>c.onclick=()=>setTlStatusFilter(c.dataset.tlstatus));
-  const _eb=$('#tlExportBtn'); if(_eb) _eb.onclick=exportDispatchXlsx;
 }
 // Export the loads reflected in the status counts (all statuses, respecting org/type/district filters) to Excel.
 let tlCountLoads=[];
@@ -2911,6 +2909,7 @@ function init(){
   // Dashboard filters (Load Type · District · Brgy) → re-render the timeline
   $$('#tlFilters select').forEach(s=>s.onchange=()=>renderTimeline());
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
+  $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
