@@ -85,10 +85,22 @@
     return out;
   }
 
+  // Reliability & Scale — Part A1: the live dashboard loads only the working set
+  // (active jobs of any date + anything touched/dated in the last LIVE_WINDOW_DAYS).
+  // FULL history stays in the DB and is served on demand by Billing Validation /
+  // Load History (their own date-scoped fetches). Nothing is deleted.
+  const LIVE_WINDOW_DAYS = 14;
   async function getJobs() {
-    // Soft-deleted rows are excluded server-side (smaller payload as the table grows);
-    // the client filter below stays as a backstop in case a row slips through.
-    const rows = await request('jobs?select=*&deleted_at=is.null&order=updated_at.desc&limit=10000');
+    const cutoff = new Date(Date.now() - LIVE_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+    const cutoffDate = cutoff.slice(0, 10);
+    const orExpr = 'or=(' +
+      'status.not.in.(completed,cancelled,negative),' +
+      'updated_at.gte.' + cutoff + ',' +
+      'load_date.gte.' + cutoffDate + ',' +
+      'scheduled_at.gte.' + cutoff +
+      ')';
+    const path = 'jobs?select=*&deleted_at=is.null&' + orExpr + '&order=updated_at.desc&limit=5000';
+    const rows = await request(path);
     return rows ? rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob) : [];
   }
 

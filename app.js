@@ -32,6 +32,81 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 // Once RLS is locked to authenticated-only, all data calls must carry this user token.
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
+// ---- Reliability & Scale: superadmin health widget (read-only) ----
+const HEALTH_THRESHOLDS = {
+  dbAmber: 0.70, dbRed: 0.90,      // fraction of db_size_cap_bytes
+  connAmber: 0.80, connRed: 0.95,  // fraction of max_connections
+  longAmber: 1, longRed: 3         // long-running query count
+};
+let _healthTimer = null;
+async function fetchSystemHealth(){
+  try{
+    const r = await fetch(`${SUPA_URL}/rest/v1/rpc/system_health`, {
+      method:'POST',
+      headers:{ apikey:SUPA_KEY, Authorization:'Bearer '+dashTok(), 'Content-Type':'application/json' },
+      body:'{}'
+    });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+function _healthStatus(h){
+  // returns {level:'green'|'amber'|'red', msgs:[...]}
+  const msgs=[]; let level='green';
+  const bump=l=>{ if(l==='red') level='red'; else if(l==='amber'&&level!=='red') level='amber'; };
+  const cap=Number(h.db_size_cap_bytes)||8589934592;
+  const dbFrac=Number(h.db_size_bytes)/cap;
+  if(dbFrac>=HEALTH_THRESHOLDS.dbRed){ bump('red'); msgs.push('Database is near its size limit.'); }
+  else if(dbFrac>=HEALTH_THRESHOLDS.dbAmber){ bump('amber'); msgs.push('Database size is growing — monitor capacity.'); }
+  const maxc=Number(h.max_connections)||0, conn=Number(h.connections)||0;
+  const cFrac=maxc? conn/maxc : 0;
+  if(cFrac>=HEALTH_THRESHOLDS.connRed){ bump('red'); msgs.push('Connections near the limit.'); }
+  else if(cFrac>=HEALTH_THRESHOLDS.connAmber){ bump('amber'); msgs.push('Connection usage is high.'); }
+  const lr=Number(h.long_running)||0;
+  if(lr>=HEALTH_THRESHOLDS.longRed){ bump('red'); msgs.push(lr+' slow queries running (>30s).'); }
+  else if(lr>=HEALTH_THRESHOLDS.longAmber){ bump('amber'); msgs.push(lr+' slow query running (>30s).'); }
+  return {level, msgs};
+}
+async function renderHealthWidget(){
+  const box=document.getElementById('healthWidget');
+  if(!box) return;
+  const u=window.dashUser;
+  if(!(u&&u.is_super)){ box.style.display='none'; return; }
+  box.style.display='';
+  const dot=document.getElementById('healthDot');
+  const sum=document.getElementById('healthSummary');
+  const ban=document.getElementById('healthBanner');
+  const h=await fetchSystemHealth();
+  if(!h || h.ok===false){
+    if(dot) dot.style.background='#9aa6a2';
+    if(sum) sum.textContent='health unavailable';
+    if(ban) ban.style.display='none';
+    return;
+  }
+  const st=_healthStatus(h);
+  const colors={green:'#11825f',amber:'#c98a00',red:'#c0392b'};
+  if(dot) dot.style.background=colors[st.level];
+  const dbGB=(Number(h.db_size_bytes)/1073741824).toFixed(2);
+  const capGB=(Number(h.db_size_cap_bytes)/1073741824).toFixed(0);
+  if(sum) sum.textContent=`DB ${dbGB}/${capGB} GB · ${h.connections}/${h.max_connections} conn · ${h.long_running} slow`;
+  if(ban){
+    if(st.level==='green'||!st.msgs.length){ ban.style.display='none'; }
+    else{
+      ban.style.display='';
+      ban.textContent=st.msgs.join(' ');
+      ban.style.background = st.level==='red' ? '#fdecea' : '#fff6e0';
+      ban.style.color = colors[st.level];
+    }
+  }
+}
+function startHealthWidget(){
+  if(_healthTimer){ clearInterval(_healthTimer); _healthTimer=null; }
+  const u=window.dashUser;
+  if(!(u&&u.is_super)) return;
+  renderHealthWidget();
+  _healthTimer=setInterval(()=>{ if(document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
+  const rb=document.getElementById('healthRefresh'); if(rb) rb.onclick=renderHealthWidget;
+}
 
 // Data comes PURELY from the DB (org-scoped by RLS) — no hardcoded/demo seed and no cross-user
 // localStorage cache, so a subcontractor never sees GC (or any other org's) jobs/expenses/activity.
@@ -2179,6 +2254,7 @@ function applyAccess(u){
   let first=(allowed[0]||'overview'); if(first==='dispatch')first='timeline';
   switchPage(first);
   renderAnnounceBar();
+  startHealthWidget();
 }
 // Any dispatcher (dispatch access OR superadmin): wipe ALL loads/job orders from the board.
 async function deleteAllLoads(){
