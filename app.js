@@ -955,13 +955,45 @@ function renderTimelineCounts(list){
   // Count EXACTLY the loads currently shown on the timeline (passed in), de-duped by id —
   // so the banner always matches the teams' actual statuses (incl. completed-today).
   const todayLoads=[...new Map((list||[]).map(j=>[j.id,j])).values()];
+  tlCountLoads=todayLoads;   // stored for the Excel export button (respects the active org/type/district filters)
   const cnt={}; defs.forEach(d=>cnt[d[0]]=0);
   todayLoads.forEach(j=>{ cnt[tlBucket(j.status)]++; });
   const total=todayLoads.length;
   el.innerHTML=defs.map(([k,label,bg,fg,bd])=>
     `<span class="tl-count${tlStatusFilter===k?' tl-count-on':''}" data-tlstatus="${k}" style="background:${bg};color:${fg};border:1px solid ${bd};cursor:pointer"><b>${cnt[k]}</b>${label}</span>`
-  ).join('')+`<span class="tl-count tl-count-total${tlStatusFilter===''?' tl-count-on':''}" data-tlstatus="" style="cursor:pointer"><b>${total}</b>Total</span>`;
+  ).join('')+`<span class="tl-count tl-count-total${tlStatusFilter===''?' tl-count-on':''}" data-tlstatus="" style="cursor:pointer"><b>${total}</b>Total</span>`
+    +`<button class="tl-count" id="tlExportBtn" title="Export these loads to Excel" style="cursor:pointer;background:#0e6b50;color:#fff;border:1px solid #0e6b50;font-weight:700;margin-left:6px">⤓ Excel</button>`;
   $$('#tlCounts [data-tlstatus]').forEach(c=>c.onclick=()=>setTlStatusFilter(c.dataset.tlstatus));
+  const _eb=$('#tlExportBtn'); if(_eb) _eb.onclick=exportDispatchXlsx;
+}
+// Export the loads reflected in the status counts (all statuses, respecting org/type/district filters) to Excel.
+let tlCountLoads=[];
+async function exportDispatchXlsx(){
+  const rows=tlCountLoads||[];
+  if(!rows.length){ showToast('No loads to export'); return; }
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  const stLabel={fordispatch:'For Dispatch',acknowledged:'Acknowledged',travel:'Travel',onsite:'On-site',incomplete:'Incomplete',completed:'Completed',cancelled:'Cancelled'};
+  const orgName=id=>{ const o=orgById[id]; return o?(o.code==='AHBA'?'AHBA (GC)':o.code):''; };
+  const out=rows.map(j=>({
+    'JO NUMBER': j.job_order_no||'',
+    'SUBSCRIBER': j.subscriber||'',
+    'STATUS': stLabel[tlBucket(j.status)]||j.status||'',
+    'TEAM': j.team||'',
+    'AGENT': tlBy(j)||'',
+    'ORG': orgName(j.org_id),
+    'DISTRICT': j.district?('District '+j.district):'',
+    'BARANGAY': j.brgy||'',
+    'PRIORITY': j.priority||'',
+    'PLAN': j.plan||'',
+    'ADDRESS': j.address||j.area||'',
+    'AMOUNT TO COLLECT': (j.amount_to_collect!=null?j.amount_to_collect:''),
+    'JO DATE': j.load_date||'',
+    'WO ID': j.id
+  }));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(out), 'Dispatch');
+  const date=($('#tlDate')&&$('#tlDate').value)||manilaToday();
+  XLSX.writeFile(wb, `AHBA_dispatch_${date}.xlsx`);
+  showToast(`Exported ${out.length} load(s) to Excel`);
 }
 // Clicksoft-style monitoring: a feed of today's loads with their full status progression.
 function renderTimelineHistory(){
