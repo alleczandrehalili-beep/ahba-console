@@ -1067,6 +1067,7 @@ async function exportDispatchXlsx(){
     'JO NUMBER': j.job_order_no||'',
     'SUBSCRIBER': j.subscriber||'',
     'STATUS': stLabel[tlBucket(j.status)]||j.status||'',
+    'TECH REMARKS': j.negative_remark||'',
     'TEAM': j.team||'',
     'AGENT': tlBy(j)||'',
     'ORG': orgName(j.org_id),
@@ -2380,8 +2381,19 @@ async function renderSubAccounts(){
   $$('#scAcctBody [data-screset]').forEach(b=>b.onclick=()=>scResetAccount(b.dataset.screset,b.dataset.sctarget));
   $$('#scAcctBody [data-scdel]').forEach(b=>b.onclick=()=>scDeleteAccount(b.dataset.scdel,b.dataset.sctarget));
   const wb=$('#scWaBody');
-  wb.innerHTML=was.length?was.map(w=>`<tr><td><strong>${esc(w.name)}</strong></td><td>${w.active?'Active':'Off'}</td><td><div class="row-actions"><button class="assign-btn" data-scwadel="${w.id}">Remove</button></div></td></tr>`).join(''):'<tr><td colspan="3" class="empty-row">No work accounts yet.</td></tr>';
+  wb.innerHTML=was.length?was.map(w=>{
+    const on=!!w.shared;
+    const shareBtn=`<button class="assign-btn" data-scwashare="${w.id}" data-scwaval="${on?'0':'1'}" style="${on?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':''}">${on?'✓ Shared':'Make shared'}</button>`;
+    return `<tr><td><strong>${esc(w.name)}</strong></td><td>${w.active?'Active':'Off'}</td><td>${on?'<span style="color:#11825f;font-weight:700">Multi-device</span>':'<span style="color:#8a9894">Exclusive</span>'}</td><td><div class="row-actions">${shareBtn}<button class="assign-btn" data-scwadel="${w.id}">Remove</button></div></td></tr>`;
+  }).join(''):'<tr><td colspan="4" class="empty-row">No work accounts yet.</td></tr>';
   $$('#scWaBody [data-scwadel]').forEach(b=>b.onclick=()=>removeWorkAccount(b.dataset.scwadel));
+  $$('#scWaBody [data-scwashare]').forEach(b=>b.onclick=()=>toggleWorkAccountShared(b.dataset.scwashare, b.dataset.scwaval==='1'));
+}
+// Toggle whether a work account can be used by multiple devices at once (shared) or stays exclusive.
+async function toggleWorkAccountShared(id, val){
+  try{ const r=await scWrite(`work_accounts?id=eq.${id}`,'PATCH',{shared:val}); if(!r.ok) throw new Error('HTTP '+r.status);
+    showToast(val?'Work account is now shared (multi-device)':'Work account set to exclusive'); renderSubAccounts();
+  }catch(e){ showToast('Could not update sharing'); }
 }
 
 async function scCreateConsole(){
