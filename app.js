@@ -385,14 +385,15 @@ function renderJobs(){
     else if(keys==='negative'){ list=jobs.filter(j=>j.status==='negative'); }
     else if(keys==='completed'||keys==='cancelled'){ list=jobs.filter(j=>keys.split(',').includes(j.status)&&finishedDay(j)===today); }
     else { list=jobs.filter(j=>keys.split(',').includes(j.status)&&loadToday(j.load_date)); }
+    list=list.filter(tlPassOrg);   // org scope applies to the loads board too
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     // In a PREVIOUS-DATE view, allow carrying that day's Incomplete loads to today's For Dispatch.
     const carryBtn=(hist && keys==='negative' && list.length)?`<button class="assign-btn" data-carryneg="1" style="width:100%;margin:0 0 8px;background:#fff4e1;border-color:#f0d9a8;color:#a4690f">↩ Carry all to For Dispatch (today)</button>`:'';
     return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
   const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
-  const todayLoads=hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
-                        : [...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()];
+  const todayLoads=(hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
+                         : [...new Map(jobs.filter(j=>encDate(j)===today).map(j=>[j.id,j])).values()]).filter(tlPassOrg);
   const cntBy=s=>todayLoads.filter(j=>j.status===s).length;
   const stats=[
     ['Total Turn-Ins', todayLoads.length, '#4285f4'],
@@ -834,13 +835,23 @@ function setDashView(view){
 let tlStatusFilter='';
 function setTlStatusFilter(b){ tlStatusFilter=(tlStatusFilter===b)?'':b; renderTimeline(); }
 // Dashboard filters (For Dispatch + Teams Timeline): Load Type · District · Barangay.
-function tlPassFilter(j){
+// Org scope (who ENCODED the load, via org_id). Reused by every Dashboard surface so the
+// picker scopes the whole view, not just the For-Dispatch backlog.
+//   ""            → AHBA + MSA-SLI (all)
+//   gcOrgId       → AHBA (GC only)
+//   "__subcons__" → all subcontractor-encoded loads
+//   <orgId>       → one subcontractor
+function tlPassOrg(j){
   const og=($('#tlfOrg')&&$('#tlfOrg').value)||'';
+  if(!og) return true;
+  if(og==='__subcons__') return !!(j.org_id && j.org_id!==gcOrgId);
+  return String(j.org_id||'')===og;
+}
+function tlPassFilter(j){
+  if(!tlPassOrg(j)) return false;   // org scope (backlog also honors Type/District/Brgy below)
   const ty=($('#tlfType')&&$('#tlfType').value)||'';
   const di=($('#tlfDistrict')&&$('#tlfDistrict').value)||'';
   const br=($('#tlfBrgy')&&$('#tlfBrgy').value)||'';
-  if(og==='__subcons__'){ if(!j.org_id || j.org_id===gcOrgId) return false; }   // MSA-SLI = all subcons only
-  else if(og && String(j.org_id||'')!==og) return false;
   if(ty && (j.load_type||'SLI')!==ty) return false;
   if(di && String(j.district||'')!==di) return false;
   if(br && (j.brgy||'')!==br) return false;
@@ -935,7 +946,10 @@ function renderTimeline(){
       if(date!==manilaToday()) return false;                                    // past/future days: scheduled only
       if(st==='completed'||st==='cancelled') return finishedDay(j)===manilaToday();    // finished today
       return loadToday(j.load_date);                                            // active / incomplete working set
-    });
+    }).filter(tlPassOrg);   // org scope applies to team rows too (org only — not Type/District/Brgy)
+    // When a specific org is selected, hide team rows that have no matching load (clean scoped view).
+    const ogActive=!!(($('#tlfOrg')||{}).value);
+    if(ogActive && !dayJobs.length) return;
     shownJobs.push(...dayJobs);   // full set for the status-bar counts
     // Status-bar filter: 'fordispatch' shows no team blocks; another status shows only that bucket.
     const drawJobs = !tlStatusFilter ? dayJobs : (tlStatusFilter==='fordispatch' ? [] : dayJobs.filter(j=>tlBucket(j.status)===tlStatusFilter));
@@ -963,7 +977,7 @@ function renderTimeline(){
   });
   const g=$('#tlGrid'); if(g){ g.innerHTML=html; injectIcons(); if(hist){ $$('#tlGrid [data-tlblock]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openJobDetail(b.dataset.tlblock); }); } else { wireTimelineDnD(date); } }
   // Status tally banner — full day's counts (stable), clickable to filter the Gantt by status.
-  renderTimelineCounts(inDayPool);
+  renderTimelineCounts(inDayPool.filter(tlPassOrg));   // counts + Excel export follow the org scope
   // Search box: highlight matching job orders (backlog + scheduled blocks)
   const sb=$('#tlSearch'); if(sb && !sb._wired){ sb._wired=true; sb.oninput=tlApplySearch; }
   tlApplySearch();
