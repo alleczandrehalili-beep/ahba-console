@@ -2494,7 +2494,53 @@ async function renderAccess(){
   $$('#accessWrap [data-renamedash]').forEach(b=>b.onclick=()=>renameDashUser(b.dataset.renamedash));
   $$('#accessWrap [data-deldash]').forEach(b=>b.onclick=()=>deleteDashUser(b.dataset.deldash));
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
+  renderGcWorkAccounts();   // GC's own work-account pool manager (superadmin only)
   if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
+}
+// ---- GC work-account pool manager (Access Control tab) — manages work_accounts where org_id = gcOrgId. ----
+async function renderGcWorkAccounts(){
+  const panel=$('#acGcWa'), body=$('#gcWaBody');
+  if(!panel||!body) return;
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
+  panel.style.display=isSuper?'':'none';
+  if(!isSuper) return;
+  if(!gcOrgId){ body.innerHTML='<tr><td colspan="4" class="empty-row">Loading organization…</td></tr>'; return; }
+  const was=await scFetch(`work_accounts?select=*&org_id=eq.${gcOrgId}&order=name.asc`);
+  body.innerHTML=was.length?was.map(w=>{
+    const active=w.active!==false, shared=!!w.shared;
+    const actBtn=`<button class="assign-btn" data-gcwaact="${w.id}" data-gcwaval="${active?'0':'1'}" style="${active?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':'color:#a4690f;border-color:#f0d9a8'}">${active?'Active':'Off'}</button>`;
+    const shareBtn=`<button class="assign-btn" data-gcwashare="${w.id}" data-gcwaval="${shared?'0':'1'}" style="${shared?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':''}">${shared?'✓ Shared':'Make shared'}</button>`;
+    const shareTag=shared?' <span style="color:#11825f;font-weight:700;font-size:10px">Multi-device</span>':'';
+    return `<tr><td><strong>${esc(w.name)}</strong></td><td>${actBtn}</td><td>${shareBtn}${shareTag}</td><td><div class="row-actions"><button class="assign-btn" data-gcwaren="${w.id}" data-gcwaname="${esc(w.name)}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-gcwadel="${w.id}">Remove</button></div></td></tr>`;
+  }).join(''):'<tr><td colspan="4" class="empty-row">No GC work accounts yet. Add one below.</td></tr>';
+  $$('#gcWaBody [data-gcwaact]').forEach(b=>b.onclick=()=>gcSetWorkAccount(b.dataset.gcwaact,{active:b.dataset.gcwaval==='1'}));
+  $$('#gcWaBody [data-gcwashare]').forEach(b=>b.onclick=()=>gcSetWorkAccount(b.dataset.gcwashare,{shared:b.dataset.gcwaval==='1'}));
+  $$('#gcWaBody [data-gcwaren]').forEach(b=>b.onclick=()=>gcRenameWorkAccount(b.dataset.gcwaren,b.dataset.gcwaname));
+  $$('#gcWaBody [data-gcwadel]').forEach(b=>b.onclick=()=>gcRemoveWorkAccount(b.dataset.gcwadel));
+}
+async function gcAddWorkAccount(){
+  if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
+  if(!gcOrgId){ showToast('Organization not loaded yet — try again in a moment'); return; }
+  const el=$('#gcWaName'), name=((el&&el.value)||'').trim();
+  if(!name){ showToast('Enter a work account name'); return; }
+  try{ const r=await scWrite('work_accounts','POST',{org_id:gcOrgId,name,active:true,shared:false}); if(!r.ok) throw new Error('HTTP '+r.status);
+    if(el) el.value=''; showToast('Work account added'); renderGcWorkAccounts();
+  }catch(e){ showToast('Could not add work account'); }
+}
+async function gcSetWorkAccount(id,patch){
+  try{ const r=await scWrite(`work_accounts?id=eq.${id}`,'PATCH',patch); if(!r.ok) throw new Error('HTTP '+r.status);
+    showToast('Work account updated'); renderGcWorkAccounts();
+  }catch(e){ showToast('Update failed'); }
+}
+function gcRenameWorkAccount(id,cur){
+  const name=((prompt('Rename work account:',cur||'')||'').trim());
+  if(!name || name===cur) return;
+  gcSetWorkAccount(id,{name});
+}
+async function gcRemoveWorkAccount(id){
+  if(!confirm('Remove this work account from the GC pool?\n\nIt disappears from the mobile shift picker. Attendance history is KEPT (it stores the account name as text — nothing is lost).')) return;
+  try{ const r=await scWrite(`work_accounts?id=eq.${id}`,'DELETE'); if(!r.ok) throw new Error('HTTP '+r.status); showToast('Work account removed'); renderGcWorkAccounts(); }
+  catch(e){ showToast('Remove failed'); }
 }
 // Superadmin-only: account-action history (reset / create / rename / delete) from audit_log, for monitoring.
 async function renderAuditLog(){
@@ -3143,6 +3189,7 @@ function init(){
   $('#scCuCreate')?.addEventListener('click',scCreateConsole);
   $('#scCfCreate')?.addEventListener('click',scCreateMobile);
   $('#scWaAdd')?.addEventListener('click',addWorkAccount);
+  $('#gcWaAdd')?.addEventListener('click',gcAddWorkAccount);
   startDashAuth();
 }
 // One confirm for ALL date pickers — changing any date asks to confirm; on confirm it switches, on cancel it reverts.
