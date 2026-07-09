@@ -1649,7 +1649,10 @@ async function fetchAttendance(date){
 }
 async function renderAttendance(){
   const body=$('#attendanceBody'); if(!body)return;
-  const dateEl=$('#attDate'); if(dateEl && !dateEl.value){dateEl.value=manilaToday(); dateEl.onchange=renderAttendance;}
+  // Always (re)wire the date change so BOTH the daily log and the security gate-out log
+  // follow the selected date. (Previously onchange was wired only when the field was empty,
+  // so after a refresh — when the date already had a value — changing it did nothing.)
+  const dateEl=$('#attDate'); if(dateEl){ if(!dateEl.value) dateEl.value=manilaToday(); dateEl.onchange=renderAttendance; }
   const date=dateEl?dateEl.value:manilaToday();
   body.innerHTML=`<tr><td colspan="6" class="empty-cell">Loading…</td></tr>`;
   const rows=await fetchAttendance(date);
