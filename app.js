@@ -32,6 +32,27 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 // Once RLS is locked to authenticated-only, all data calls must carry this user token.
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
+// ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
+const APP_VERSION='2026-07-09.1';
+function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
+function _showVerNudge(){
+  if(document.getElementById('verNudge')) return;
+  const b=document.createElement('div');
+  b.id='verNudge';
+  b.textContent='🔄 Bagong bersyon ng console — i-tap para i-refresh';
+  b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#0d3b34;color:#fff;font:600 12px Manrope,sans-serif;padding:9px 16px;border-radius:0 0 12px 12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.28)';
+  b.onclick=()=>location.reload();
+  document.body.appendChild(b);
+}
+async function checkAppVersion(){
+  try{
+    const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const j=await r.json();
+    const dep=j&&j.version;
+    if(dep && dep!==APP_VERSION) _showVerNudge();
+  }catch(e){}
+}
 // ---- Reliability & Scale: superadmin health widget (read-only) ----
 const HEALTH_THRESHOLDS = {
   dbAmber: 0.70, dbRed: 0.90,      // fraction of db_size_cap_bytes
@@ -3038,6 +3059,7 @@ async function importJobsFromRows(rows){
 }
 
 function init(){
+  _stampVersion(); checkAppVersion(); setInterval(checkAppVersion, 5*60*1000);   // version stamp + auto refresh-nudge
   injectIcons();const d=new Date();$('#todayLabel').textContent=d.toLocaleDateString('en-PH',{timeZone:TZ,weekday:'short',month:'short',day:'numeric'});$$('input[type=date]').forEach(i=>i.value=manilaToday());
   buildTeamDropdowns();
   renderOverview();renderTeams();renderNotifPop();
