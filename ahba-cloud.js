@@ -169,16 +169,26 @@
       }
     };
     refresh();
+    // Coalesce refreshes: realtime bursts (unfiltered — GC sees all teams) + the poll funnel
+    // through one call, max ~1 DB refetch per REFRESH_MIN_MS, so many rapid job changes don't
+    // hammer the DB. Live behavior is preserved (still triggered by realtime), just debounced.
+    var _rt = null, _rlast = 0; var REFRESH_MIN_MS = 4000;
+    var refreshCoalesced = function () {
+      var now = Date.now(), gap = now - _rlast;
+      if (gap >= REFRESH_MIN_MS) { _rlast = now; refresh(); return; }
+      if (_rt) return;
+      _rt = setTimeout(function () { _rt = null; _rlast = Date.now(); refresh(); }, REFRESH_MIN_MS - gap);
+    };
     if (window.supabase?.createClient) {
       const realtime = window.supabase.createClient(config.url, config.anonKey);
       window.AHBACloud.realtime = realtime;
       try { realtime.realtime.setAuth(window.__ahbaTok || config.anonKey); } catch (e) {}
       realtime
         .channel('ahba-dashboard-jobs')
-        .on('postgres_changes', {event: '*', schema: 'public', table: 'jobs'}, refresh)
+        .on('postgres_changes', {event: '*', schema: 'public', table: 'jobs'}, refreshCoalesced)
         .subscribe();
     }
-    setInterval(refresh, 15000);
+    setInterval(refreshCoalesced, 30000);   // was 15000 — realtime already covers live changes
   }
 
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus, realtime: null};

@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-10.1';
+const APP_VERSION='2026-07-10.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2769,8 +2769,37 @@ function enableFabDrag(){
   fab.addEventListener('pointerup',e=>{ if(!dragging)return; dragging=false; if(moved){ fab._dragged=true; setTimeout(()=>{fab._dragged=false;},60); const r=fab.getBoundingClientRect(); localStorage.setItem('ahba_fab_pos',JSON.stringify({left:Math.round(r.left),top:Math.round(r.top)})); } });
   window.addEventListener('resize',clamp);
 }
+// Superadmin (GC): start a brand-new DM with a chosen console or field/mobile user.
+async function cwNewMessage(){
+  const el=$('#dcTeams'); if(!el) return;
+  $('#dcThread').classList.add('hidden'); $('#dcTeams').classList.remove('hidden'); $('#dcBack').classList.add('hidden');
+  const nb=$('#dcNewBtn'); if(nb) nb.style.display='none';
+  $('#dcTitle').textContent='New message'; if($('#dcHeadAv'))$('#dcHeadAv').textContent='✏️'; if($('#dcSub'))$('#dcSub').textContent='Pick a person to message';
+  el.innerHTML='<div style="padding:20px;text-align:center;color:#9aa6a2;font-size:12px">Loading…</div>';
+  const me=(window.dashUser&&window.dashUser.username)||'';
+  const org=gcOrgId?`&org_id=eq.${gcOrgId}`:'';   // GC only
+  let cons=[], techs=[];
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/dashboard_users?select=username,display_name,role_label,is_super${org}&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); cons=r.ok?await r.json():[]; }catch(e){}
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,area,role${org}&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); techs=r.ok?await r.json():[]; }catch(e){}
+  cons=cons.filter(u=>u.username!==me);
+  const secH=t=>`<div style="padding:10px 14px 4px;font:800 9px Manrope;letter-spacing:.06em;text-transform:uppercase;color:#8a9894">${t}</div>`;
+  const rowC=u=>`<div class="dc-team" data-newcode="C:${esc(u.username)}" data-newteam=""><div class="dc-av">${esc(String(u.display_name||u.username).slice(0,2).toUpperCase())}</div><div class="dc-tmeta"><strong>${esc(u.display_name||u.username)}</strong><p>${esc(u.is_super?'Superadmin':(u.role_label||'Console user'))}</p></div></div>`;
+  const rowT=t=>`<div class="dc-team" data-newcode="T:${esc(t.username)}" data-newteam="${esc(t.username)}"><div class="dc-av">${esc(String(t.username).slice(-3))}</div><div class="dc-tmeta"><strong>${esc(t.username)}</strong><p>${esc(String((t.role||'Technician'))+(t.area?(' · '+t.area):''))}</p></div></div>`;
+  let html=`<div class="dc-team" data-newback="1" style="color:#107b5e"><div class="dc-av">←</div><div class="dc-tmeta"><strong>Back to conversations</strong></div></div>`;
+  html+=secH('Console users')+(cons.length?cons.map(rowC).join(''):'<div style="padding:8px 14px;color:#9aa6a2;font-size:11px">No console users.</div>');
+  html+=secH('Field / mobile users')+(techs.length?techs.map(rowT).join(''):'<div style="padding:8px 14px;color:#9aa6a2;font-size:11px">No field accounts.</div>');
+  el.innerHTML=html;
+  $$('#dcTeams [data-newback]').forEach(d=>d.onclick=()=>showCwTeams());
+  $$('#dcTeams [data-newcode]').forEach(d=>d.onclick=()=>cwStartDm(d.dataset.newcode, d.dataset.newteam));
+}
+function cwStartDm(code, team){
+  if(!code) return;
+  const me=myCwCode(); const [a,b]=[me,code].sort();   // sorted pair — matches mobile dmPair() so threads line up
+  openCwDm(a,b,team||'');
+}
 async function showCwTeams(){
   cwCur=null; $('#dcThread').classList.add('hidden'); $('#dcTeams').classList.remove('hidden'); $('#dcBack').classList.add('hidden');
+  const nb=$('#dcNewBtn'); if(nb) nb.style.display=(window.dashUser&&window.dashUser.is_super)?'':'none';   // superadmin-only "New message"
   $('#dcTitle').textContent='Messages'; if($('#dcHeadAv'))$('#dcHeadAv').textContent='💬'; if($('#dcSub'))$('#dcSub').textContent='Team threads + direct messages';
   const el=$('#dcTeams'); el.innerHTML='<div style="padding:20px;text-align:center;color:#9aa6a2;font-size:12px">Loading…</div>';
   try{
@@ -2807,6 +2836,7 @@ function openCwByKey(k){
   openCwDm(a,b,m.team||'');
 }
 function dcThreadShell(title,av,sub){
+  const nb=$('#dcNewBtn'); if(nb) nb.style.display='none';
   $('#dcTeams').classList.add('hidden'); $('#dcThread').classList.remove('hidden'); $('#dcBack').classList.remove('hidden');
   $('#dcTitle').textContent=title; if($('#dcHeadAv'))$('#dcHeadAv').textContent=av; if($('#dcSub'))$('#dcSub').textContent=sub;
   $('#dcMsgs').innerHTML='<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">Loading…</div>';
@@ -3075,7 +3105,7 @@ function init(){
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
   const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
-  refreshShifts(); setInterval(refreshShifts, 20000);
+  refreshShifts(); setInterval(refreshShifts, 40000);   // was 20000 — lighter DB load; shifts change slowly
 
   // Metric cards → clickable shortcuts
   $$('[data-go]').forEach(b=>b.onclick=()=>switchPage(b.dataset.go));
@@ -3154,6 +3184,7 @@ function init(){
   $('#announceBtn')?.addEventListener('click',openAnnounce);
   $('#annPost')?.addEventListener('click',postAnnounce);
   $('#dashChatFab')?.addEventListener('click',()=>{ const f=$('#dashChatFab'); if(f&&f._dragged) return; chatWidgetOpen()?closeChatWidget():openChatWidget(); });
+  $('#dcNewBtn')?.addEventListener('click',cwNewMessage);
   enableFabDrag();
   window.addEventListener('resize',()=>{ if(chatWidgetOpen()) positionChatToFab(); });
   document.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{ const inp=$('#'+b.dataset.eye); if(!inp)return; const reveal=inp.type==='password'; inp.type=reveal?'text':'password'; b.textContent=reveal?'Hide':'Show'; });
