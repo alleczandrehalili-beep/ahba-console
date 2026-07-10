@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-09.1';
+const APP_VERSION='2026-07-10.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2518,22 +2518,29 @@ async function renderAccess(){
   renderGcWorkAccounts();   // GC's own work-account pool manager (superadmin only)
   if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
 }
-// ---- GC work-account pool manager (Access Control tab) — manages work_accounts where org_id = gcOrgId. ----
+// ---- Work-account manager (Access Control tab) — ALL orgs; superadmin assigns each account to GC or a subcon. ----
 async function renderGcWorkAccounts(){
   const panel=$('#acGcWa'), body=$('#gcWaBody');
   if(!panel||!body) return;
   const isSuper=!!(window.dashUser&&window.dashUser.is_super);
   panel.style.display=isSuper?'':'none';
   if(!isSuper) return;
-  if(!gcOrgId){ body.innerHTML='<tr><td colspan="4" class="empty-row">Loading organization…</td></tr>'; return; }
-  const was=await scFetch(`work_accounts?select=*&org_id=eq.${gcOrgId}&order=name.asc`);
+  if(!gcOrgId || !Object.keys(orgById).length){ body.innerHTML='<tr><td colspan="5" class="empty-row">Loading organizations…</td></tr>'; return; }
+  // Superadmin (platform admin) sees every org's work accounts — assign each to GC or a specific subcon.
+  const was=await scFetch(`work_accounts?select=*&order=name.asc`);
+  // Org dropdown options: GC first, then subcons A→Z.
+  const oids=Object.keys(orgById).sort((a,b)=> a===gcOrgId?-1 : b===gcOrgId?1 : String(orgById[a].name||orgById[a].code||'').localeCompare(String(orgById[b].name||orgById[b].code||'')));
+  const orgLabel=oid=>{ const o=orgById[oid]||{}; return oid===gcOrgId?'AHBA (GC)':(o.name||o.code||oid); };
   body.innerHTML=was.length?was.map(w=>{
     const active=w.active!==false, shared=!!w.shared;
+    const orgOpts=oids.map(oid=>`<option value="${oid}" ${String(w.org_id)===String(oid)?'selected':''}>${esc(orgLabel(oid))}</option>`).join('');
+    const orgSel=`<select class="perm-sel" data-gcwaorg="${w.id}" style="padding:5px 8px;max-width:180px">${orgOpts}</select>`;
     const actBtn=`<button class="assign-btn" data-gcwaact="${w.id}" data-gcwaval="${active?'0':'1'}" style="${active?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':'color:#a4690f;border-color:#f0d9a8'}">${active?'Active':'Off'}</button>`;
     const shareBtn=`<button class="assign-btn" data-gcwashare="${w.id}" data-gcwaval="${shared?'0':'1'}" style="${shared?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':''}">${shared?'✓ Shared':'Make shared'}</button>`;
     const shareTag=shared?' <span style="color:#11825f;font-weight:700;font-size:10px">Multi-device</span>':'';
-    return `<tr><td><strong>${esc(w.name)}</strong></td><td>${actBtn}</td><td>${shareBtn}${shareTag}</td><td><div class="row-actions"><button class="assign-btn" data-gcwaren="${w.id}" data-gcwaname="${esc(w.name)}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-gcwadel="${w.id}">Remove</button></div></td></tr>`;
-  }).join(''):'<tr><td colspan="4" class="empty-row">No GC work accounts yet. Add one below.</td></tr>';
+    return `<tr><td><strong>${esc(w.name)}</strong></td><td>${orgSel}</td><td>${actBtn}</td><td>${shareBtn}${shareTag}</td><td><div class="row-actions"><button class="assign-btn" data-gcwaren="${w.id}" data-gcwaname="${esc(w.name)}">Rename</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-gcwadel="${w.id}">Remove</button></div></td></tr>`;
+  }).join(''):'<tr><td colspan="5" class="empty-row">No work accounts yet. Add one below.</td></tr>';
+  $$('#gcWaBody [data-gcwaorg]').forEach(s=>s.onchange=()=>gcSetWorkAccount(s.dataset.gcwaorg,{org_id:s.value}));
   $$('#gcWaBody [data-gcwaact]').forEach(b=>b.onclick=()=>gcSetWorkAccount(b.dataset.gcwaact,{active:b.dataset.gcwaval==='1'}));
   $$('#gcWaBody [data-gcwashare]').forEach(b=>b.onclick=()=>gcSetWorkAccount(b.dataset.gcwashare,{shared:b.dataset.gcwaval==='1'}));
   $$('#gcWaBody [data-gcwaren]').forEach(b=>b.onclick=()=>gcRenameWorkAccount(b.dataset.gcwaren,b.dataset.gcwaname));

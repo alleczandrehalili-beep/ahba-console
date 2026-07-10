@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-07-09.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-07-10.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -466,12 +466,12 @@
           <div class="table-wrap"><table><thead><tr><th>Username</th><th>Login email</th><th>Area</th><th>Status</th><th>Last sign-in</th><th>Password changed</th><th>Actions</th></tr></thead><tbody id="accountsBody"></tbody></table></div>
         </article>
         <article class="panel full-table" id="acGcWa" style="margin-top:14px;display:none">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🧰 Work accounts (GC field teams)</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">The msp- accounts your GC technicians can pick when starting a shift. Off = hidden from the pool (kept, not deleted). Shared = usable by multiple devices at once.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🧰 Work accounts (all teams)</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">The msp- accounts technicians can pick when starting a shift. <b>Assigned to</b> = which org (GC or a subcontractor) can use it. Off = hidden from the pool (kept, not deleted). Shared = usable by multiple devices at once. New accounts start under AHBA (GC) — reassign with the dropdown.</p></div></div>
           <div class="form-grid" style="padding:12px 20px;grid-template-columns:2fr 1fr;gap:10px 16px">
             <label class="field"><span>Add work account (e.g. msp-juan.dela.cruz)</span><input id="gcWaName"></label>
             <div style="display:flex;align-items:flex-end"><button class="secondary-btn" id="gcWaAdd" type="button">Add work account</button></div>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>Work account</th><th>Active</th><th>Sharing</th><th>Actions</th></tr></thead><tbody id="gcWaBody"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>Work account</th><th>Assigned to</th><th>Active</th><th>Sharing</th><th>Actions</th></tr></thead><tbody id="gcWaBody"></tbody></table></div>
         </article>
         <article class="panel full-table" id="acAuditLog" style="margin-top:14px;display:none">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🔑 Password reset history</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Superadmin monitoring — who reset / created / renamed / deleted which account and when.</p></div><button class="secondary-btn" id="auditRefresh"><i data-icon="arrow"></i>Refresh</button></div>
@@ -699,8 +699,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-07-09.1"></script>
+  <script src="app.js?v=2026-07-10.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-07-09.1"></script>
+  <script src="ahba-cloud.js?v=2026-07-10.1"></script>
 </body>
 </html>
