@@ -33,16 +33,24 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-10.3';
+const APP_VERSION='2026-07-13.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
   const b=document.createElement('div');
   b.id='verNudge';
-  b.textContent='🔄 Bagong bersyon ng console — i-tap para i-refresh';
+  b.textContent='🔄 New console version — tap to refresh';
   b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#0d3b34;color:#fff;font:600 12px Manrope,sans-serif;padding:9px 16px;border-radius:0 0 12px 12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.28)';
   b.onclick=()=>location.reload();
   document.body.appendChild(b);
+}
+// True only if `dep` is a STRICTLY NEWER version than `cur` (YYYY-MM-DD.N).
+// Guards against a stale/CDN-cached version.json (older value) causing a false "new version" nudge.
+function _verNewer(dep,cur){
+  if(!dep||!cur) return false;
+  const a=String(dep).split('.'), b=String(cur).split('.');
+  if(a[0]!==b[0]) return a[0]>b[0];                         // date part — lexicographic is correct
+  return (parseInt(a[1]||'0',10) > parseInt(b[1]||'0',10)); // numeric suffix (.3 vs .10 handled)
 }
 async function checkAppVersion(){
   try{
@@ -50,7 +58,7 @@ async function checkAppVersion(){
     if(!r.ok) return;
     const j=await r.json();
     const dep=j&&j.version;
-    if(dep && dep!==APP_VERSION) _showVerNudge();
+    if(dep && _verNewer(dep,APP_VERSION)) _showVerNudge();   // only when deployed is genuinely newer
   }catch(e){}
 }
 // ---- Reliability & Scale: superadmin health widget (read-only) ----
@@ -314,7 +322,7 @@ function populateMapHistTeams(){
   const seen={}; list=list.filter(t=>t.code&&!seen[t.code]&&(seen[t.code]=1));
   list.sort((a,b)=>String(a.code).localeCompare(String(b.code)));
   const opts=list.map(t=>`<option value="${t.code}">${t.name}${t.area?(' · '+t.area):''}</option>`).join('');
-  sel.innerHTML='<option value="">🧭 Pumili ng team — travel history…</option>'+opts;
+  sel.innerHTML='<option value="">🧭 Select a team — travel history…</option>'+opts;
   if(cur) sel.value=cur;
   const d=$('#mapHistDate'); if(d&&!d.value) d.value=manilaToday();
 }
@@ -1714,7 +1722,7 @@ async function freeWorkAccount(account){
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/attendance?work_account=eq.${encodeURIComponent(account)}&time_out=is.null`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({work_account:null})});
     if(!r.ok){ let d=''; try{d=(await r.text()).slice(0,120);}catch(e){} throw new Error('HTTP '+r.status+(d?' — '+d:'')); }
-    showToast(`Account "${account}" freed — pwede nang gamitin ng iba.`);
+    showToast(`Account "${account}" freed — now available for another team.`);
     renderAttendance();
   }catch(e){ showToast('Free failed: '+e.message); }
 }
@@ -1723,7 +1731,7 @@ async function freeWorkAccount(account){
 async function forceSignOff(username){
   if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
   if(!username) return;
-  if(!confirm(`Force sign-off ${username}?\n\nIto ay magta-time-out sa kanila NGAYON at magfi-free ng account nila. Gamitin kung nakalimutang mag-sign off ang technician.`)) return;
+  if(!confirm(`Force sign-off ${username}?\n\nThis will time them out NOW and free their work account. Use this if the technician forgot to sign off.`)) return;
   if(!await confirmActorPassword()) return;
   try{
     const now=new Date().toISOString();

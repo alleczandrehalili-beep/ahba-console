@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-07-10.3" />
+  <link rel="stylesheet" href="styles.css?v=2026-07-13.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -236,7 +236,7 @@
           <article class="panel map-panel">
             <div class="panel-head">
               <div><h2>Live team map</h2><p>Real-time field visibility · Metro Manila</p></div>
-              <div class="map-actions"><button class="seg active" data-seg="all">All teams</button><button class="seg" data-seg="active">Active only</button><select id="mapHistTeam" class="seg" style="padding:6px 8px;max-width:190px"><option value="">🧭 Pumili ng team — travel history…</option></select><input id="mapHistDate" type="date" class="seg" style="padding:5px 7px"><button class="seg" id="mapHistClear">Clear</button><button class="icon-btn" id="mapExpandBtn" aria-label="Toggle fullscreen map"><i data-icon="expand"></i></button></div>
+              <div class="map-actions"><button class="seg active" data-seg="all">All teams</button><button class="seg" data-seg="active">Active only</button><select id="mapHistTeam" class="seg" style="padding:6px 8px;max-width:190px"><option value="">🧭 Select a team — travel history…</option></select><input id="mapHistDate" type="date" class="seg" style="padding:5px 7px"><button class="seg" id="mapHistClear">Clear</button><button class="icon-btn" id="mapExpandBtn" aria-label="Toggle fullscreen map"><i data-icon="expand"></i></button></div>
             </div>
             <div class="map-canvas" id="mapCanvas">
               <div id="leafletMap"></div>
@@ -325,7 +325,7 @@
           <div class="small-stat"><span>Total hours logged</span><strong id="attHours">0h</strong></div>
         </div>
         <article class="panel full-table" id="lockedAcctsPanel" style="margin-bottom:14px;display:none">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🔒 Locked work accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Mga account na kasalukuyang gamit (naka-time-in). I-click ang Free para mapalaya at magamit ng ibang team.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🔒 Locked work accounts</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Accounts currently in use (timed-in). Click Free to release one so another team can use it.</p></div></div>
           <div id="lockedAccts" style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px"></div>
         </article>
         <article class="panel full-table" style="margin-bottom:14px">
@@ -699,8 +699,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-07-10.3"></script>
+  <script src="app.js?v=2026-07-13.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-07-10.3"></script>
+  <script src="ahba-cloud.js?v=2026-07-13.1"></script>
 </body>
 </html>
