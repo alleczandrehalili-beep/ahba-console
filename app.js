@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-13.1';
+const APP_VERSION='2026-07-13.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2515,16 +2515,35 @@ async function renderAccess(){
       return `<td class="perm"><select class="perm-sel" data-u="${u.username}" data-pg="${k}"><option value=""${lvl===''?' selected':''}>—</option><option value="view"${lvl==='view'?' selected':''}>View</option><option value="edit"${lvl==='edit'?' selected':''}>Edit</option></select></td>`;}).join('');
     const canDel = (window.dashUser&&window.dashUser.is_super) && u.username!==(window.dashUser&&window.dashUser.username);
     const delBtn = canDel ? `<button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-deldash="${u.username}">Delete</button>` : '';
-    return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td><div class="row-actions"><button class="assign-btn" data-saveaccess="${u.username}">Save</button><button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button>${delBtn}</div></td></tr>`;
+    // Cross-org dashboard toggle — GC (AHBA) accounts only. Grants superadmin-like SEE+EDIT of ALL orgs' loads on the Dashboard.
+    const isGc = !!(gcOrgId && u.org_id && u.org_id===gcOrgId);
+    const xoOn = !!u.gc_all_loads;
+    const xoBtn = isGc ? `<button class="assign-btn" data-xorg="${u.username}" data-xon="${xoOn?1:0}" title="Cross-org Dashboard: see & edit every subcontractor's loads" style="${xoOn?'color:#11825f;border-color:#9fd9c4;font-weight:700':''}">🌐 Cross-org: ${xoOn?'ON':'OFF'}</button>` : '';
+    return `<tr><td><strong>${u.display_name||u.username}</strong><span>${u.username}</span></td><td>${u.role_label||''}</td>${cells}<td><div class="row-actions"><button class="assign-btn" data-saveaccess="${u.username}">Save</button>${xoBtn}<button class="assign-btn" data-renamedash="${u.username}">Rename</button><button class="assign-btn" data-resetdash="${u.username}">Reset PW</button>${delBtn}</div></td></tr>`;
   }).join('');
   wrap.innerHTML=`<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
   $$('#accessWrap [data-saveaccess]').forEach(b=>b.onclick=()=>saveAccess(b.dataset.saveaccess));
   $$('#accessWrap [data-resetdash]').forEach(b=>b.onclick=()=>resetDashUser(b.dataset.resetdash));
   $$('#accessWrap [data-renamedash]').forEach(b=>b.onclick=()=>renameDashUser(b.dataset.renamedash));
   $$('#accessWrap [data-deldash]').forEach(b=>b.onclick=()=>deleteDashUser(b.dataset.deldash));
+  $$('#accessWrap [data-xorg]').forEach(b=>b.onclick=()=>toggleCrossOrg(b.dataset.xorg, b.dataset.xon!=='1'));
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
   renderGcWorkAccounts();   // GC's own work-account pool manager (superadmin only)
   if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
+}
+// Grant/revoke SUPERADMIN-like cross-org Dashboard access for a GC dispatcher account.
+// Backed by the superadmin-guarded set_gc_all_loads() RPC (refuses non-GC accounts — no leak).
+async function toggleCrossOrg(username, on){
+  if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
+  if(on && !confirm(`Give "${username}" SUPERADMIN-like access on the Dashboard?\n\nThey will be able to SEE and EDIT every subcontractor's loads (and teams) on the Dashboard.\nOnly do this for a GC dispatcher you trust.`)) return;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/set_gc_all_loads`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_username:username,p_on:on})});
+    if(!r.ok){ let m='HTTP '+r.status; try{ const j=await r.json(); m=j.message||j.error||m; }catch(_){}
+      throw new Error(m); }
+    let msg=''; try{ msg=await r.json(); }catch(_){}
+    showToast(typeof msg==='string'&&msg?msg:(on?'Cross-org enabled':'Cross-org disabled'));
+    renderAccess();
+  }catch(e){ showToast('Failed: '+(e.message||e)); }
 }
 // ---- Work-account manager (Access Control tab) — ALL orgs; superadmin assigns each account to GC or a subcon. ----
 async function renderGcWorkAccounts(){
