@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.2';
+const APP_VERSION='2026-07-14.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1483,7 +1483,7 @@ async function renderValidation(){
   if(!valJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No job orders awaiting validation.</td></tr>`;refreshValBadge();return}
   body.innerHTML=valJobs.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${agentLabel(j.created_by)}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
   }).join('');
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
   refreshValBadge();
@@ -1499,7 +1499,7 @@ async function fetchDocsFor(ids){
 function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
   $('#valTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#valSub').textContent=`Submitted by ${agentLabel(j.created_by)} · ${fmtWhen(j.updated_at)}`;
+  $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.updated_at)}`;
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
@@ -1567,6 +1567,13 @@ async function fetchTechnicians(){
 let agentNames={};
 async function loadAgentNames(){ try{ const ts=await fetchTechnicians(); agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); }catch(e){} return agentNames; }
 const agentLabel=u=>u?(u+(agentNames[u]?(' · '+agentNames[u]):'')):'—';
+// Who submitted this order: for a SUBCON-encoded load show the subcontractor (🏢 name);
+// for AHBA/GC loads keep the sales agent. Falls back to the sales agent if the org isn't resolved.
+function encoderLabel(j){
+  const oid=j&&j.org_id;
+  if(oid && gcOrgId && oid!==gcOrgId && orgById[oid]){ const o=orgById[oid]; return '🏢 '+(o.name||o.code||'Subcon'); }
+  return agentLabel(j&&j.created_by);
+}
 const TZ='Asia/Manila';
 const manilaToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:TZ});
 function fmtWhen(s){if(!s)return'—';return new Date(s).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
