@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-07-14.3" />
+  <link rel="stylesheet" href="styles.css?v=2026-07-14.4" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -378,6 +378,10 @@
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For validation</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Check the ID, Proof of Billing, and Premise photos before approving.</p></div></div>
           <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>Area</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
         </article>
+        <article class="panel full-table" id="valRejectedPanel" style="margin-top:14px;display:none">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">⚠ Rejected — needs fixing</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Orders the Validator rejected. Click “Edit &amp; resubmit” to fix the details and send it back for validation.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Encoded by</th><th>Subscriber</th><th>Rejection reason</th><th>Rejected</th><th>Action</th></tr></thead><tbody id="valRejectedBody"></tbody></table></div>
+        </article>
       </section>
 
       <section id="remittancePage" class="page">
@@ -699,8 +703,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-07-14.3"></script>
+  <script src="app.js?v=2026-07-14.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-07-14.3"></script>
+  <script src="ahba-cloud.js?v=2026-07-14.4"></script>
 </body>
 </html>

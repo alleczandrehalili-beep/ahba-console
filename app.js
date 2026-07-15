@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.3';
+const APP_VERSION='2026-07-14.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -536,7 +536,8 @@ function openJobDetail(jobId){
     F('Account',j.work_account||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].account:'')),
     F('Crew (Driver / T1 / T2)',[j.crew_driver||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].driver:''),j.crew_tech1||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].tech1:''),j.crew_tech2||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].tech2:'')].filter(Boolean).join(' · ')),
     F('Payment',[j.payment_mode, j.payment_amount!=null?('₱'+j.payment_amount):null, j.ar_no?('AR '+j.ar_no):null].filter(Boolean).join(' · ')),
-    F('Schedule',j.schedule),F('Negative remark',j.negative_remark)
+    F('Schedule',j.schedule),F('Negative remark',j.negative_remark),
+    (j.status==='rejected'?F('Rejection reason',rejectionReason(j)):'')
   ].join('');
   $('#jdHistory').textContent=j.history||'No history yet.';
   // Technician uploaded photos — para ma-validate kung tama ang status na in-update
@@ -1453,7 +1454,7 @@ function renderNotifPop(){
 function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
-let valJobs=[], valDocs={};
+let valJobs=[], valDocs={}, valRejected=[];
 async function refreshValBadge(){
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
@@ -1486,7 +1487,24 @@ async function renderValidation(){
     return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
   }).join('');
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
+  renderValRejected();
   refreshValBadge();
+}
+// Rejected orders the viewer can see (subcon = own via RLS, GC = all). Shows the rejection
+// reason + an "Edit & resubmit" action so the owner can fix and send it back for validation.
+async function renderValRejected(){
+  const panel=$('#valRejectedPanel'), rb=$('#valRejectedBody'); if(!rb) return;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&select=*&order=updated_at.desc&limit=500`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    valRejected=r.ok?await r.json():[];
+  }catch(e){ valRejected=[]; }
+  if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }
+  if(panel) panel.style.display='';
+  rb.innerHTML=valRejected.map(j=>{
+    const reason=rejectionReason(j);
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button></td></tr>`;
+  }).join('');
+  rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
 }
 async function fetchDocsFor(ids){
   if(!ids.length)return{};
@@ -1574,6 +1592,10 @@ function encoderLabel(j){
   if(oid && gcOrgId && oid!==gcOrgId && orgById[oid]){ const o=orgById[oid]; return '🏢 '+(o.name||o.code||'Subcon'); }
   return agentLabel(j&&j.created_by);
 }
+// The GC Validator stores the rejection reason in special_note as "REJECTED: <reason>".
+function rejectionReason(j){ const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given'; return s; }
+// Current user's own org (from the JWT app_metadata) — used to scope own-org-only views (e.g. Remittance).
+function myOrgId(){ try{ return (JSON.parse(atob(dashTok().split('.')[1])).app_metadata||{}).org_id||''; }catch(_){ return ''; } }
 const TZ='Asia/Manila';
 const manilaToday=()=>new Date().toLocaleDateString('en-CA',{timeZone:TZ});
 function fmtWhen(s){if(!s)return'—';return new Date(s).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}
@@ -2060,8 +2082,11 @@ async function renderRemittance(){
   const body=$('#remittanceBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="9" class="empty-cell">Loading…</td></tr>`;
   const all=await fetchCompleted(date);
-  // only loads with a declared collection (amount or payment mode)
-  remJobs=all.filter(j=>(j.payment_amount!=null&&Number(j.payment_amount)>0)||j.payment_mode);
+  // Remittance is per-org (collections follow the owner org). Show only YOUR OWN org's loads —
+  // AHBA sees AHBA only; each subcon sees its own (RLS already scopes subcons, this scopes the GC's cross-org view).
+  const myOrg=myOrgId();
+  remJobs=all.filter(j=>(j.payment_amount!=null&&Number(j.payment_amount)>0)||j.payment_mode)
+             .filter(j=> !myOrg || String(j.org_id||'')===myOrg );
   const sb=$('#remSearch'); if(sb&&!sb._wired){ sb._wired=true; sb.oninput=remDraw; }
   remRefresh();
 }
@@ -2191,6 +2216,32 @@ function compressImage(file,maxDim=1000,targetKB=90){
     img.src=url;
   });
 }
+let ordEditId=null;   // when set, submitOrder UPDATES this rejected order (resubmit) instead of inserting a new one
+// Open the New Work Order form PRE-FILLED from a rejected order, in resubmit mode.
+function editRejectedOrder(jobId){
+  const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId); if(!j){ showToast('Order not found — refresh and try again'); return; }
+  ordEditId=jobId; ordDocs={id:[],billing:[],premise:[]};
+  openModal($('#orderModal'));
+  const type=j.load_type||'SLI'; setOrderType(type);
+  const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
+  const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
+  const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
+  ['first_name','middle_name','last_name','primary_no','other_contact_no','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
+  if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||''); if($('#ord_brgy')) $('#ord_brgy').value=j.brgy||'';
+  const note=/^REJECTED/i.test((j.special_note||''))?'':(j.special_note||'');   // drop the rejection text from the editable note
+  if(type==='SLI'){
+    if($('#ord_dwelling')) $('#ord_dwelling').value=j.dwelling_type||'SDU'; ordPopulatePlans();
+    if($('#ord_plan')) $('#ord_plan').value=j.plan||''; if($('#ord_addon')) $('#ord_addon').value=j.add_on||'';
+    setv('ref_no',j.ref_no); if($('#ord_play')) $('#ord_play').value=j.play_type||'1-PLAY'; ordToggleAddonCount();
+    if($('#ord_addon_count')) $('#ord_addon_count').value=j.addon_count||'';
+    setv('install_fee_type',j.install_fee_type); setv('amount_to_collect',j.amount_to_collect!=null?j.amount_to_collect:'');
+    setv('source_of_sales',j.source_of_sales); setv('referral_name',j.referral_name); setv('special_note',note);
+  } else if(type==='Migration'){
+    setv('current_plan',j.current_plan); setv('mig_plan',j.plan); setv('mig_amount',j.amount_to_collect!=null?j.amount_to_collect:''); setv('mig_ref',j.ref_no); setv('mig_note',note);
+  } else { setv('ticket_no',j.ticket_no); setv('slr_note',note); }
+  $$('#orderModal [data-cnt]').forEach(b=>b.textContent='keeping existing');
+}
 async function submitOrder(e){
   e.preventDefault();
   const f=Object.fromEntries(new FormData($('#orderForm')));
@@ -2204,7 +2255,7 @@ async function submitOrder(e){
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
   if(ordType==='SLI'){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
-    if(!ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
+    if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
   if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
@@ -2232,20 +2283,33 @@ async function submitOrder(e){
     Object.assign(job,{ticket_no:t(f.ticket_no),special_note:t(f.slr_note)});
   }
   try{
-    const {error}=await client.from('jobs').insert(job); if(error) throw error;
+    const targetId = ordEditId || jobId;
+    if(ordEditId){
+      // Resubmit an edited REJECTED order — UPDATE (keep id/created_by/org), back to for_validation.
+      const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
+      const existing=(valRejected||[]).find(x=>x.id===ordEditId)||findJob(ordEditId)||{};
+      const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time;
+      patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
+      patch.history=appendHistory(existing.history||'', `Edited & resubmitted for validation by ${who}`);
+      const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
+    } else {
+      const {error}=await client.from('jobs').insert(job); if(error) throw error;
+    }
     if(ordType==='SLI') for(const cat of ['id','billing','premise']){
       for(let i=0;i<ordDocs[cat].length;i++){
         const blob=await compressImage(ordDocs[cat][i]);
-        const path=`${jobId}/docs/${cat}_${Date.now()}_${i}.jpg`;
+        const path=`${targetId}/docs/${cat}_${Date.now()}_${i}.jpg`;
         const {error:e2}=await client.storage.from('job-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false}); if(e2) throw e2;
-        await client.from('job_docs').insert({job_id:jobId,category:cat,path});
+        await client.from('job_docs').insert({job_id:targetId,category:cat,path});
       }
     }
+    const wasEdit=!!ordEditId; ordEditId=null;
     ordDocs={id:[],billing:[],premise:[]};
+    const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
-    closeModals(); showToast(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`);
+    closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
-    if(!toValidate){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
+    if(!toValidate && !wasEdit){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
   }catch(e2){ err('Submit failed: '+(e2.message||e2)); }
   btn.disabled=false; btn.textContent=(($('#orderForm').dataset.ordtype)==='SLI'?'Submit for validation':'Dispatch Load');
 }
@@ -3164,7 +3228,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));

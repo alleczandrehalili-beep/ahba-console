@@ -73,7 +73,7 @@ html,body{overflow-x:hidden;max-width:100%}
 /* View-only access: disable action controls on the page (viewers can still see everything) */
 .page.view-only .primary-btn,.page.view-only .assign-btn,.page.view-only .danger-btn,.page.view-only .job-actions button,.page.view-only [data-action],.page.view-only .filter-chips button,.page.view-only [data-received],.page.view-only [data-mode]{pointer-events:none!important;opacity:.5}
 /* View-only: keep pure-view actions clickable (open proof photos, job/detail popups) + allow data extract (Billing Validation → Download Excel, scoped to the user's own org by RLS) */
-.page.view-only [data-gallery],.page.view-only [data-info],.page.view-only [data-tlblock],.page.view-only #histExport{pointer-events:auto!important;opacity:1!important}
+.page.view-only [data-gallery],.page.view-only [data-info],.page.view-only [data-tlblock],.page.view-only #histExport,.page.view-only [data-editrej]{pointer-events:auto!important;opacity:1!important}
 /* keep the User name visible while scrolling sideways */
 .access-table th:first-child,.access-table td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:1px 0 0 var(--line)}
 .access-table thead th:first-child{z-index:4;background:#f8f9f7}
