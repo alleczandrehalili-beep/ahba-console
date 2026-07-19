@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.5';
+const APP_VERSION='2026-07-14.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -553,7 +553,32 @@ function openJobDetail(jobId){
   $('#jdStatus').value='';
   $('#jdApply').onclick=()=>{const c=$('#jdStatus').value; if(!c){showToast('Select a status to apply');return;} applyStatusUpdate(jobId,c);};
   if($('#jdDelete')) $('#jdDelete').onclick=()=>deleteJobOrder(jobId);
+  // Dispatcher bypass of the technician's serial lock — lets the tech open/start THIS job order
+  // even while another load is still active. Toggle (unlock ⇄ re-lock).
+  if($('#jdDelete') && $('#jdDelete').parentNode){
+    const host=$('#jdDelete').parentNode;
+    let ub=$('#jdUnlock');
+    if(!ub){ ub=document.createElement('button'); ub.id='jdUnlock'; ub.className='assign-btn'; host.insertBefore(ub,$('#jdDelete')); }
+    const on=!!j.lock_bypass;
+    ub.textContent = on ? '🔓 Unlocked — tap to re-lock' : '🔓 Unlock for technician';
+    ub.style.cssText = on ? 'color:#0e7a59;border-color:#9fd9c4;font-weight:700' : '';
+    ub.style.display = hasDispatchAccess(window.dashUser) ? '' : 'none';
+    ub.onclick=()=>toggleJobLockBypass(jobId,!on);
+  }
   openModal($('#jobDetailModal'));
+}
+// Let the technician see/start this job order even while another load is active (serial-lock bypass).
+async function toggleJobLockBypass(jobId,on){
+  const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
+  const j=findJob(jobId)||{};
+  try{
+    const hist=appendHistory(j.history||'', (on?'🔓 Unlocked for technician (serial-lock bypass) by ':'🔒 Re-locked (serial lock) by ')+who);
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({lock_bypass:on,history:hist,updated_at:new Date().toISOString()})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(j&&j.id){ j.lock_bypass=on; j.history=hist; }
+    showToast(on?'Unlocked — the technician can now open this job order':'Re-locked');
+    closeModals();
+  }catch(e){ showToast('Failed: '+(e.message||e)); }
 }
 // Soft-delete a job order: hide it from all views but keep the record (with a history entry)
 // for audit. Console users only.
