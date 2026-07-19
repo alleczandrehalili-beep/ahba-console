@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.6';
+const APP_VERSION='2026-07-14.7';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -562,7 +562,9 @@ function openJobDetail(jobId){
     const on=!!j.lock_bypass;
     ub.textContent = on ? '🔓 Unlocked — tap to re-lock' : '🔓 Unlock for technician';
     ub.style.cssText = on ? 'color:#0e7a59;border-color:#9fd9c4;font-weight:700' : '';
-    ub.style.display = hasDispatchAccess(window.dashUser) ? '' : 'none';
+    // GC dispatchers use 'dispatch'; subcontractor consoles use 'timeline' (with edit) — both may
+    // unlock their OWN org's job orders (RLS keeps each org to its own).
+    ub.style.display = (hasDispatchAccess(window.dashUser) || dashCanEdit('timeline')) ? '' : 'none';
     ub.onclick=()=>toggleJobLockBypass(jobId,!on);
   }
   openModal($('#jobDetailModal'));
