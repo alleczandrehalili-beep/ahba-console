@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.8';
+const APP_VERSION='2026-07-14.9';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -448,7 +448,7 @@ async function carryNegativesToDispatch(ids){
     const j=jobs.find(x=>x.id===id);
     if(!j || j.status!=='negative') continue;     // only still-incomplete loads
     j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=today; j.priority='1st Load';
-    j.history=appendHistory(j.history, `Carried to For Dispatch from ${dashViewDate||'previous day'} (not a new turn-in)`);
+    histLog(j.id, `Carried to For Dispatch from ${dashViewDate||'previous day'} (not a new turn-in)`);
     if(window.AHBASync) window.AHBASync(j);
     n++;
   }
@@ -471,6 +471,14 @@ function applyDispatchSearch(){
   });
 }
 function appendHistory(h,line){const t=new Date().toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});return ((h||'')+`\n[${t}] ${line}`).trim();}
+// Record ONE history line on the server. The client never sends the accumulated text,
+// so it can never overwrite what is already stored — the DB appends atomically and a
+// trigger rejects any write that would shorten history. Fire-and-forget on purpose:
+// a missing log line must never block or fail the actual field update.
+function histLog(id,line){
+  try{ if(id&&line&&window.AHBACloud&&window.AHBACloud.appendJobHistory) window.AHBACloud.appendJobHistory(id,line); }
+  catch(e){ console.warn('history:',e&&e.message); }
+}
 // A negative job is released back to dispatch at 5:00 AM (Manila) the NEXT day.
 function negReleased(negAt){
   if(!negAt) return false;
@@ -504,8 +512,8 @@ function maybePromptRollover(){
   rolloverChecking=false;
   if(!ok){ showToast('Left the incomplete loads for now.'); return; }
   cands.forEach(j=>{
-    if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
-    else { j.priority='1st Load'; j.load_date=today; j.history=appendHistory(j.history,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; histLog(j.id,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    else { j.priority='1st Load'; j.load_date=today; histLog(j.id,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
     if(window.AHBASync) window.AHBASync(j);
   });
   showToast(`${cands.length} load(s) returned to For Dispatch.`);
@@ -515,7 +523,7 @@ function unassignJob(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j||!['assigned','en-route','negative'].includes(j.status))return;
   const wasNeg=j.status==='negative';
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
-  j.history=appendHistory(j.history, wasNeg?'Manually returned → For Dispatch (1st Load)':'Moved back to For Dispatch');
+  histLog(j.id, wasNeg?'Manually returned → For Dispatch (1st Load)':'Moved back to For Dispatch');
   save(); showToast(`${jobId} → For Dispatch${wasNeg?' (High priority)':''}`);
   if(window.AHBASync) window.AHBASync(j);
   if(dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
@@ -539,7 +547,17 @@ function openJobDetail(jobId){
     F('Schedule',j.schedule),F('Negative remark',j.negative_remark),
     (j.status==='rejected'?F('Rejection reason',rejectionReason(j)):'')
   ].join('');
-  $('#jdHistory').textContent=j.history||'No history yet.';
+  // History is no longer carried in the live dashboard payload (it was ~half of it).
+  // Rows that still carry it — e.g. the Validation tab, which keeps its own select=* —
+  // render instantly; everything else pulls just this one job's history on demand.
+  if(j.history!=null && j.history!==''){ $('#jdHistory').textContent=j.history; }
+  else {
+    $('#jdHistory').textContent='Loading history…';
+    const _hid=j.id;
+    (window.AHBACloud&&window.AHBACloud.getJobHistory ? window.AHBACloud.getJobHistory(_hid) : Promise.resolve(''))
+      .then(h=>{ if($('#jdTitle').textContent.startsWith(_hid)) $('#jdHistory').textContent=h||'No history yet.'; })
+      .catch(()=>{ $('#jdHistory').textContent='Could not load history — reopen to retry.'; });
+  }
   // Technician uploaded photos — para ma-validate kung tama ang status na in-update
   const pg=$('#jdPhotos');
   if(pg){
@@ -574,10 +592,10 @@ async function toggleJobLockBypass(jobId,on){
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
   const j=findJob(jobId)||{};
   try{
-    const hist=appendHistory(j.history||'', (on?'🔓 Unlocked for technician (serial-lock bypass) by ':'🔒 Re-locked (serial lock) by ')+who);
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({lock_bypass:on,history:hist,updated_at:new Date().toISOString()})});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({lock_bypass:on,updated_at:new Date().toISOString()})});
     if(!r.ok) throw new Error('HTTP '+r.status);
-    if(j&&j.id){ j.lock_bypass=on; j.history=hist; }
+    histLog(jobId, (on?'🔓 Unlocked for technician (serial-lock bypass) by ':'🔒 Re-locked (serial lock) by ')+who);
+    if(j&&j.id){ j.lock_bypass=on; }
     showToast(on?'Unlocked — the technician can now open this job order':'Re-locked');
     closeModals();
   }catch(e){ showToast('Failed: '+(e.message||e)); }
@@ -588,7 +606,7 @@ function deleteJobOrder(jobId){
   const j=findJob(jobId); if(!j) return;
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
   if(!confirm(`Delete job order ${jobId} (${j.subscriber||''})?\n\nIt will be hidden from the Dispatch Board and Timeline. The history stays in the records.\n\nOK = Delete   ·   Cancel = Keep`)) return;
-  j.history=appendHistory(j.history,`🗑 Deleted by ${who} (status was: ${statusLabel(j.status||'')})`);
+  histLog(j.id,`🗑 Deleted by ${who} (status was: ${statusLabel(j.status||'')})`);
   j.deleted_at=new Date().toISOString(); j.deleted_by=who;
   if(window.AHBASync) window.AHBASync(j);            // persist the soft-delete + history to cloud
   jobs=jobs.filter(x=>x.id!==jobId);                  // remove from the in-memory working set now
@@ -599,7 +617,7 @@ function deleteJobOrder(jobId){
 }
 function updatePriority(jobId,p){
   const j=findJob(jobId); if(!j||!p||j.priority===p)return;
-  j.priority=p; j.history=appendHistory(j.history,`Priority → ${p} (by Dispatcher)`);
+  j.priority=p; histLog(j.id,`Priority → ${p} (by Dispatcher)`);
   save(); renderJobs(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId} priority → ${p}`);
   if(window.AHBASync) window.AHBASync(j);
 }
@@ -610,7 +628,7 @@ function applyStatusUpdate(jobId,choice){
   else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
   else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); }  // re-dispatch → CURRENT For Dispatch (today)
   const label={completed:'Completed',incomplete:'Incomplete',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
-  j.history=appendHistory(j.history, `Status → ${label} (by Dispatcher)`);
+  histLog(j.id, `Status → ${label} (by Dispatcher)`);
   j.updatedAt=new Date().toISOString();
   save(); closeModals(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
   if(window.AHBASync) window.AHBASync(j);
@@ -1144,6 +1162,22 @@ async function exportDispatchXlsx(){
   XLSX.writeFile(wb, `AHBA_dispatch_${date}.xlsx`);
   showToast(`Exported ${out.length} load(s) to Excel`);
 }
+// This feed is the ONLY place that shows history for many jobs at once. The live
+// dashboard payload no longer carries history (it was ~half of it), so we pull just
+// today's loads and cache per updated_at — a refresh re-fetches only rows that changed.
+let tlHistCache={};
+async function tlFillHistory(loads){
+  const need=loads.filter(j=>{ const c=tlHistCache[j.id]; return !c || c.upd!==(j.updatedAt||''); });
+  if(!need.length) return false;
+  const ids=need.slice(0,300).map(j=>'"'+String(j.id).replace(/"/g,'')+'"').join(',');
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id,history,updated_at&id=in.(${encodeURIComponent(ids)})`,
+      {headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) return false;
+    (await r.json()).forEach(row=>{ tlHistCache[row.id]={upd:row.updated_at||'',history:row.history||''}; });
+    return true;
+  }catch(e){ return false; }
+}
 // Clicksoft-style monitoring: a feed of today's loads with their full status progression.
 function renderTimelineHistory(){
   const el=$('#tlHistory'); if(!el) return;
@@ -1152,9 +1186,13 @@ function renderTimelineHistory(){
   const loads=jobs.filter(encToday)
     .sort((a,b)=>new Date(b.updatedAt||b.created_at||0)-new Date(a.updatedAt||a.created_at||0));
   if(!loads.length){ el.innerHTML='<div class="empty-row">No loads encoded today yet.</div>'; return; }
+  // Re-render once the fetched history lands; the cache check then short-circuits, so
+  // this settles after exactly one extra pass and never loops.
+  tlFillHistory(loads).then(changed=>{ if(changed) renderTimelineHistory(); });
   el.innerHTML=loads.map(j=>{
     const cls=(j.status||'pending'); const lbl=statusLabel(j.status||'pending');
-    const lines=(j.history||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const hist=(tlHistCache[j.id]&&tlHistCache[j.id].history)||j.history||'';
+    const lines=hist.split('\n').map(s=>s.trim()).filter(Boolean);
     const log=lines.length?lines.map(l=>{ const m=l.match(/^\[(.+?)\]\s*(.*)$/);
       return m?`<div class="tl-hist-line"><span class="tl-hist-time">${m[1].replace(/</g,'&lt;')}</span><span>${m[2].replace(/</g,'&lt;')}</span></div>`
               :`<div class="tl-hist-line"><span class="tl-hist-time"></span><span>${l.replace(/</g,'&lt;')}</span></div>`;
@@ -1311,7 +1349,7 @@ function tlReturnToDispatch(jobId){
   if(j.status==='pending' && !j.scheduled_at) return;      // already in For Dispatch
   const wasNeg=j.status==='negative';
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
-  j.history=appendHistory(j.history, wasNeg?'Returned → For Dispatch (1st Load)':'Returned → For Dispatch');
+  histLog(j.id, wasNeg?'Returned → For Dispatch (1st Load)':'Returned → For Dispatch');
   save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
   showToast(`${jobId} → For Dispatch${wasNeg?' (1st Load)':''}`);
 }
@@ -1372,10 +1410,10 @@ async function tlSchedule(jobId, team, date, hour, est){
     let jo=j.job_order_no;
     if(!jo){ jo=(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||'').trim(); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }
     j.team=team; if(j.status==='pending') j.status='assigned'; j.load_date=manilaToday(); j.dispatch_count=(j.dispatch_count||0)+1;
-    j.history=appendHistory(j.history,`Scheduled to ${team} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
+    histLog(j.id,`Scheduled to ${team} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
     pushNotify&&pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)});
   } else {
-    j.history=appendHistory(j.history,`Rescheduled @ ${tlFmtHour(hour)}`);
+    histLog(j.id,`Rescheduled @ ${tlFmtHour(hour)}`);
   }
   j.scheduled_at=iso; j.est_minutes=est||j.est_minutes||TL_DEFMIN;
   save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
@@ -1439,7 +1477,7 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}j.history=appendHistory(j.history,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
@@ -2156,19 +2194,19 @@ function remDraw(){
 async function editPaymentMode(jobId, mode){
   const j=remJobs.find(x=>x.id===jobId); if(!j||j.payment_mode===mode) return;
   const who=currentOperator(), now=new Date().toISOString(), prev=j.payment_mode||'—';
-  const hist=appendHistory(j.history, `Mode of payment corrected: ${prev} → ${mode} (by ${who})`);
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({payment_mode:mode,history:hist,updated_at:now})});
-    j.payment_mode=mode; j.history=hist; remRefresh(); showToast(`${jobId}: mode → ${mode}`);
+    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({payment_mode:mode,updated_at:now})});
+    histLog(jobId, `Mode of payment corrected: ${prev} → ${mode} (by ${who})`);
+    j.payment_mode=mode; remRefresh(); showToast(`${jobId}: mode → ${mode}`);
   }catch(e){ showToast('Update failed: '+(e.message||e)); }
 }
 async function markReceived(jobId){
   const j=remJobs.find(x=>x.id===jobId); if(!j)return;
   const who=currentOperator(), now=new Date().toISOString();
-  const hist=appendHistory(j.history, `Remittance received (${j.payment_mode||''} ${j.payment_amount!=null?money(j.payment_amount):''}${j.ar_no?' · AR '+j.ar_no:''}) by ${who}`);
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({remittance_received:true,remittance_received_by:who,remittance_received_at:now,history:hist,updated_at:now})});
-    j.remittance_received=true; j.remittance_received_by=who; j.remittance_received_at=now; j.history=hist;
+    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({remittance_received:true,remittance_received_by:who,remittance_received_at:now,updated_at:now})});
+    histLog(jobId, `Remittance received (${j.payment_mode||''} ${j.payment_amount!=null?money(j.payment_amount):''}${j.ar_no?' · AR '+j.ar_no:''}) by ${who}`);
+    j.remittance_received=true; j.remittance_received_by=who; j.remittance_received_at=now;
     renderRemittance(); showToast(`${jobId}: remittance received`);
   }catch(e){ showToast('Could not mark received'); }
 }
@@ -2322,11 +2360,10 @@ async function submitOrder(e){
     if(ordEditId){
       // Resubmit an edited REJECTED order — UPDATE (keep id/created_by/org), back to for_validation.
       const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
-      const existing=(valRejected||[]).find(x=>x.id===ordEditId)||findJob(ordEditId)||{};
-      const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time;
+      const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time; delete patch.history;
       patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
-      patch.history=appendHistory(existing.history||'', `Edited & resubmitted for validation by ${who}`);
       const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
+      histLog(ordEditId, `Edited & resubmitted for validation by ${who}`);
     } else {
       const {error}=await client.from('jobs').insert(job); if(error) throw error;
     }

@@ -42,7 +42,9 @@
     'remittance_received','remittance_received_by','remittance_received_at',
     'dwelling_type','install_fee_type','amount_to_collect','completed_at','add_on','addon_count',
     'scheduled_at','est_minutes','district','deleted_at','deleted_by','load_type','current_plan','ticket_no','created_by',
-    'org_id','assigned_org_id','validated_by'];
+    'org_id','assigned_org_id','validated_by','lock_bypass'];
+    // NOTE: `lock_bypass` was missing here, so openJobDetail's unlock toggle always read
+    // undefined and showed "locked" even for an already-unlocked job order. Fixed 2026-07-20.
 
   function normalizeJob(row) {
     var j = {
@@ -80,8 +82,14 @@
       team: job.team || null,
       updated_at: new Date().toISOString()
     };
-    // pass through any subscriber fields that are set (never touch `validated` here)
-    EXTRA.forEach(function (k) { if (job[k] !== undefined && job[k] !== '') out[k] = job[k]; });
+    // pass through any subscriber fields that are set (never touch `validated` here).
+    // `history` is deliberately NEVER sent from here: it is append-only and is written
+    // solely by append_job_history() on the server. Omitting it leaves the stored value
+    // untouched (verified 2026-07-20), which is exactly what we want.
+    EXTRA.forEach(function (k) {
+      if (k === 'history') return;
+      if (job[k] !== undefined && job[k] !== '') out[k] = job[k];
+    });
     return out;
   }
 
@@ -90,6 +98,42 @@
   // FULL history stays in the DB and is served on demand by Billing Validation /
   // Load History (their own date-scoped fetches). Nothing is deleted.
   const LIVE_WINDOW_DAYS = 14;
+
+  // The `history` column is roughly HALF the live payload (measured 2026-07-20:
+  // 1,795 KB with it, 909 KB without, across the same 830 rows). Nothing on the
+  // dashboard renders it in bulk, so it is fetched on demand instead — see
+  // loadJobHistory() below. The list is derived from EXTRA so a newly added
+  // column is picked up automatically and can never be silently dropped.
+  const BASE_COLS = ['id','subscriber','service_type','plan','area','address','status',
+    'wait_time','priority','schedule','team','updated_at','validated','validated_at'];
+  function liveSelect() {
+    var cols = BASE_COLS.concat(EXTRA.filter(function (k) { return k !== 'history'; }));
+    return cols.filter(function (c, i) { return cols.indexOf(c) === i; }).join(',');
+  }
+
+  // Fetch the full history for ONE job, on demand (job detail modal, monitoring feed).
+  async function getJobHistory(id) {
+    const rows = await request('jobs?select=history&id=eq.' + encodeURIComponent(id));
+    return (rows && rows[0] && rows[0].history) || '';
+  }
+
+  // Append one line to a job's history WITHOUT ever sending the accumulated text.
+  // The database does the concatenation atomically (append_job_history), and a
+  // BEFORE UPDATE trigger refuses any write that would shorten history, so a stale
+  // client can no longer overwrite it. See supabase-history-append-only.sql.
+  async function appendJobHistory(id, line) {
+    if (!id || !line) return;
+    try {
+      await request('rpc/append_job_history', {
+        method: 'POST',
+        body: JSON.stringify({p_job_id: id, p_line: line})
+      });
+    } catch (e) {
+      // A missing history line must never block the actual field update.
+      console.warn('AHBA history append:', e.message);
+    }
+  }
+
   async function getJobs() {
     const cutoff = new Date(Date.now() - LIVE_WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
     const cutoffDate = cutoff.slice(0, 10);
@@ -99,7 +143,7 @@
       'load_date.gte.' + cutoffDate + ',' +
       'scheduled_at.gte.' + cutoff +
       ')';
-    const path = 'jobs?select=*&deleted_at=is.null&' + orExpr + '&order=updated_at.desc&limit=5000';
+    const path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc&limit=5000';
     const rows = await request(path);
     return rows ? rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob) : [];
   }
@@ -193,7 +237,8 @@
     setInterval(refreshCoalesced, 60000);   // safety-net poll only — realtime already covers live changes
   }
 
-  window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus, realtime: null};
+  window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus,
+    getJobHistory, appendJobHistory, realtime: null};
 
   document.addEventListener('DOMContentLoaded', () => {
     if (!configured || typeof jobs === 'undefined') {
