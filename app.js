@@ -621,8 +621,22 @@ function updatePriority(jobId,p){
   save(); renderJobs(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId} priority → ${p}`);
   if(window.AHBASync) window.AHBASync(j);
 }
+// A REJECTED order never passed validation, so it must never be pushed straight into
+// For Dispatch — it has to be corrected and sent back to the Validator first.
+// This is exactly how WO-2026-445057 reached the Dispatch Board on 2026-07-20 while
+// still carrying "REJECTED: EMCP CONTACT ALREADY USED". Two routes allowed it:
+// applyStatusUpdate (Re-dispatch) and tlReturnToDispatch (Dashboard). Both call this.
+function blockRejectedToDispatch(j){
+  if(j && j.status==='rejected'){
+    showToast('Rejected order — correct it and resubmit to the Validator first. It cannot go straight to For Dispatch.');
+    return true;
+  }
+  return false;
+}
 function applyStatusUpdate(jobId,choice){
   const j=findJob(jobId); if(!j)return;
+  // anything that is not completed/cancelled/incomplete is the re-dispatch branch below
+  if(!['completed','cancelled','incomplete'].includes(choice) && blockRejectedToDispatch(j)) return;
   if(choice==='completed'){ j.status='completed'; j.completed_at=new Date().toISOString(); }
   else if(choice==='cancelled') j.status='cancelled';
   else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
@@ -1346,6 +1360,7 @@ function tlSearchOtherDays(q,hasLocalHit){
 // ↩ For Dispatch bounce. Negative/incomplete loads come back as 1st Load priority.
 function tlReturnToDispatch(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  if(blockRejectedToDispatch(j)) return;
   if(j.status==='pending' && !j.scheduled_at) return;      // already in For Dispatch
   const wasNeg=j.status==='negative';
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
@@ -1403,6 +1418,7 @@ function tlPickTime(jobId, team, date, defHour){
 }
 async function tlSchedule(jobId, team, date, hour, est){
   const j=jobs.find(x=>x.id===jobId); if(!j) return;
+  if(blockRejectedToDispatch(j)) return;
   const hh=Math.floor(hour), mm=Math.round((hour-hh)*60);
   const iso=new Date(`${date}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+08:00`).toISOString();
   if(j.team!==team){
@@ -1477,7 +1493,7 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} if(blockRejectedToDispatch(j))return; const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
