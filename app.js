@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.7';
+const APP_VERSION='2026-07-14.8';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1528,7 +1528,9 @@ async function renderValidation(){
 async function renderValRejected(){
   const panel=$('#valRejectedPanel'), rb=$('#valRejectedBody'); if(!rb) return;
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&select=*&order=updated_at.desc&limit=500`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    // Bound to the recent window — this used to pull every rejected order ever (all orgs).
+    const rjCut=new Date(Date.now()-60*24*3600*1000).toISOString();
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=*&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     valRejected=r.ok?await r.json():[];
   }catch(e){ valRejected=[]; }
   if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }

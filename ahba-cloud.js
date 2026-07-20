@@ -172,7 +172,9 @@
     // Coalesce refreshes: realtime bursts (unfiltered — GC sees all teams) + the poll funnel
     // through one call, max ~1 DB refetch per REFRESH_MIN_MS, so many rapid job changes don't
     // hammer the DB. Live behavior is preserved (still triggered by realtime), just debounced.
-    var _rt = null, _rlast = 0; var REFRESH_MIN_MS = 4000;
+    // Cross-org GC now receives realtime events for EVERY org, and each refresh refetches the
+    // whole live window (~1k rows). Coalesce harder so a busy field day can't cause a refetch storm.
+    var _rt = null, _rlast = 0; var REFRESH_MIN_MS = 10000;
     var refreshCoalesced = function () {
       var now = Date.now(), gap = now - _rlast;
       if (gap >= REFRESH_MIN_MS) { _rlast = now; refresh(); return; }
@@ -188,7 +190,7 @@
         .on('postgres_changes', {event: '*', schema: 'public', table: 'jobs'}, refreshCoalesced)
         .subscribe();
     }
-    setInterval(refreshCoalesced, 30000);   // was 15000 — realtime already covers live changes
+    setInterval(refreshCoalesced, 60000);   // safety-net poll only — realtime already covers live changes
   }
 
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus, realtime: null};
