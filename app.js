@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.11';
+const APP_VERSION='2026-07-14.12';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -569,7 +569,29 @@ function openJobDetail(jobId){
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
   $('#jdStatus').value='';
-  $('#jdApply').onclick=()=>{const c=$('#jdStatus').value; if(!c){showToast('Select a status to apply');return;} applyStatusUpdate(jobId,c);};
+  // Ang pag-cancel mula sa console ay dating walang hinihinging dahilan, kaya walang
+  // maipakita sa Billing Validation. Kailangan na ito ngayon — gaya ng sa mobile,
+  // at pareho ang listahan ng dahilan para magkatugma ang datos.
+  const cw=$('#jdCancelWrap'), cr=$('#jdCancelReason'), co=$('#jdCancelOther'), cow=$('#jdCancelOtherWrap'), ce=$('#jdCancelErr');
+  const resetCancelUI=()=>{ if(!cw)return; cw.style.display='none'; if(cr)cr.value=''; if(co)co.value=''; if(cow)cow.style.display='none'; if(ce)ce.textContent=''; };
+  resetCancelUI();
+  $('#jdStatus').onchange=()=>{ if(!cw)return;
+    const isCancel=$('#jdStatus').value==='cancelled';
+    cw.style.display=isCancel?'':'none'; if(!isCancel) resetCancelUI();
+  };
+  if(cr) cr.onchange=()=>{ if(cow) cow.style.display=(cr.value==='OTHERS')?'':'none'; if(ce) ce.textContent=''; };
+  $('#jdApply').onclick=()=>{
+    const c=$('#jdStatus').value; if(!c){showToast('Select a status to apply');return;}
+    let reason='';
+    if(c==='cancelled'){
+      const sel=cr?cr.value:'', other=co?co.value.trim():'';
+      if(!sel){ if(ce)ce.textContent='Select a cancellation reason first.'; return; }
+      if(sel==='OTHERS' && !other){ if(ce)ce.textContent='Please specify the reason.'; return; }
+      reason=(sel==='OTHERS'?('OTHERS: '+other):sel).toUpperCase();
+    }
+    applyStatusUpdate(jobId,c,reason);
+    resetCancelUI();
+  };
   if($('#jdDelete')) $('#jdDelete').onclick=()=>deleteJobOrder(jobId);
   // Dispatcher bypass of the technician's serial lock — lets the tech open/start THIS job order
   // even while another load is still active. Toggle (unlock ⇄ re-lock).
@@ -633,16 +655,16 @@ function blockRejectedToDispatch(j){
   }
   return false;
 }
-function applyStatusUpdate(jobId,choice){
+function applyStatusUpdate(jobId,choice,reason){
   const j=findJob(jobId); if(!j)return;
   // anything that is not completed/cancelled/incomplete is the re-dispatch branch below
   if(!['completed','cancelled','incomplete'].includes(choice) && blockRejectedToDispatch(j)) return;
   if(choice==='completed'){ j.status='completed'; j.completed_at=new Date().toISOString(); }
-  else if(choice==='cancelled') j.status='cancelled';
+  else if(choice==='cancelled'){ j.status='cancelled'; if(reason) j.cancel_remark=reason; }
   else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
   else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); }  // re-dispatch → CURRENT For Dispatch (today)
   const label={completed:'Completed',incomplete:'Incomplete',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
-  histLog(j.id, `Status → ${label} (by Dispatcher)`);
+  histLog(j.id, `Status → ${label}${(choice==='cancelled'&&reason)?': '+reason:''} (by Dispatcher)`);
   j.updatedAt=new Date().toISOString();
   save(); closeModals(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
   if(window.AHBASync) window.AHBASync(j);
@@ -2294,9 +2316,14 @@ const QC_BRGYS={
 };
 function populateOrdBrgys(dist){
   const sel=$('#ord_brgy'); if(!sel) return; const cur=sel.value;
-  const list=QC_BRGYS[String(dist)]||[];
+  // Ang mga pangalan ng barangay ay nakasulat na Title Case ("Bagong Pag-asa"), pero
+  // ALL CAPS na ang sinasave ng form. Kung hindi pareho, hindi na mapipili ang naka-save
+  // na barangay kapag nag-Edit & resubmit — mababakante ito at babagsak ang validation.
+  // Kaya ALL CAPS na rin ang mga option, at case-insensitive ang paghahanap.
+  const list=(QC_BRGYS[String(dist)]||[]).map(b=>String(b).toUpperCase());
   sel.innerHTML=list.length?'<option value="">— Select barangay —</option>'+list.map(b=>`<option>${b}</option>`).join(''):'<option value="">— Select district first —</option>';
-  if(list.includes(cur)) sel.value=cur;
+  const want=String(cur||'').toUpperCase();
+  if(list.includes(want)) sel.value=want;
 }
 function ordPopulatePlans(){
   const dw=($('#ord_dwelling')&&$('#ord_dwelling').value)||'SDU';
@@ -2351,7 +2378,9 @@ function editRejectedOrder(jobId){
   const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
   ['first_name','middle_name','last_name','primary_no','other_contact_no','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
   if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
-  if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||''); if($('#ord_brgy')) $('#ord_brgy').value=j.brgy||'';
+  if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||'');
+  // ALL CAPS ang options ngayon — itugma anuman ang pagkakasulat ng lumang record
+  if($('#ord_brgy')) $('#ord_brgy').value=String(j.brgy||'').toUpperCase();
   const note=/^REJECTED/i.test((j.special_note||''))?'':(j.special_note||'');   // drop the rejection text from the editable note
   if(type==='SLI'){
     if($('#ord_dwelling')) $('#ord_dwelling').value=j.dwelling_type||'SDU'; ordPopulatePlans();
