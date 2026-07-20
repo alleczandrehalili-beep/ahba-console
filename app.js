@@ -2071,6 +2071,39 @@ async function clearCloud(){
 }
 
 // ---------- Load History (weekly archive of all loads) ----------
+// Ang remarks ng team sa isang HANAY, anuman ang kinahinatnan ng load:
+//   Completed  → "COMPLETED"
+//   Incomplete → ang dahilang pinili ng team (negative_remark)
+//   Cancelled  → ang dahilang pinili ng team (cancel_remark)
+// Ang mga cancelled BAGO idagdag ang cancel_remark ay may dahilan lang sa history,
+// kaya binabawi natin ito roon: "[petsa] Cancelled: <dahilan> (2 photos) (by ...)".
+function teamRemarks(j){
+  const st=(j.status||'').toLowerCase();
+  if(st==='completed') return 'COMPLETED';
+  if(st==='negative')  return j.negative_remark||'';
+  if(st==='cancelled'){
+    if(j.cancel_remark) return j.cancel_remark;
+    const h=j.history||'';
+    // 1) dahilang ibinigay mismo sa pag-cancel (bagong format)
+    let m=h.match(/\]\s*Cancelled:\s*([\s\S]*?)\s*\(\d+\s*photos?\)/i);
+    if(m) return m[1].trim();
+    // 1b) mas lumang format: "Cancelled (by AHBA_SLI009): change plan"
+    m=h.match(/\]\s*Cancelled\s*\(by [^)]*\):\s*([^\n]+)/i);
+    if(m) return m[1].trim();
+    // 2) marami ang na-Incomplete muna bago na-cancel — ang huling paliwanag ng team
+    //    ay nasa Negative na linya. Iyon pa rin ang remarks ng team.
+    if(j.negative_remark) return j.negative_remark;
+    const negs=h.match(/\]\s*Negative:\s*([\s\S]*?)\s*\(\d+\s*photos?\)/gi);
+    if(negs&&negs.length){
+      const last=negs[negs.length-1].match(/\]\s*Negative:\s*([\s\S]*?)\s*\(\d+\s*photos?\)/i);
+      if(last) return last[1].trim();
+    }
+    // 3) kinancel ng dispatcher sa console — walang hinihinging dahilan doon
+    if(/Status → Cancelled \(by Dispatcher\)/i.test(h)) return 'CANCELLED BY DISPATCHER (NO REASON RECORDED)';
+    return '';
+  }
+  return '';
+}
 function jobToRow(j,nPhotos){
   return {
     'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
@@ -2089,7 +2122,8 @@ function jobToRow(j,nPhotos){
     'PLAN': j.plan||'', 'PRIORITY': j.priority||'', 'DISPATCH COUNT': j.dispatch_count||0,
     'ACCOUNT': j.work_account||'', 'DRIVER (CREW)': j.crew_driver||'', 'TECH 1 (CREW)': j.crew_tech1||'', 'TECH 2 (CREW)': j.crew_tech2||'',
     'MODE OF PAYMENT': j.payment_mode||'', 'AMOUNT': (j.payment_amount!=null?j.payment_amount:''), 'AR NO.': j.ar_no||'',
-    'NEGATIVE REMARK': j.negative_remark||'', 'LAST UPDATE': j.updated_at?fmtWhen(j.updated_at):'',
+    'NEGATIVE REMARK': j.negative_remark||'', 'TEAM REMARKS': teamRemarks(j),
+    'LAST UPDATE': j.updated_at?fmtWhen(j.updated_at):'',
     'VALIDATED': j.validated?'YES':'NO', 'WO ID': j.id
   };
 }
@@ -2336,7 +2370,9 @@ async function submitOrder(e){
   const f=Object.fromEntries(new FormData($('#orderForm')));
   const err=m=>{const el=$('#orderErr'); if(el)el.textContent=m||'';};
   err('');
-  const t=v=>(v||'').trim();
+  // Lahat ng ini-encode ay ALL CAPS — pantay ang hitsura ng datos sa buong sistema
+  // at sa extraction. Ang mga numero ay hindi naaapektuhan ng pagpapalaki ng letra.
+  const t=v=>(v||'').trim().toUpperCase();
   const ordType=($('#orderForm').dataset.ordtype)||'SLI';   // SLI · Migration · SLR
   const fn=t(f.first_name), ln=t(f.last_name), dist=t(f.district), brgy=t(f.brgy), city=t(f.city)||'QUEZON CITY', pno=t(f.primary_no), ono=t(f.other_contact_no);
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
