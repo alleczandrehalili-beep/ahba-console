@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.12';
+const APP_VERSION='2026-07-14.13';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -173,11 +173,20 @@ function renderOverview(){
   const today=manilaToday();
   const isToday=d=>d && dayStr(d)===today;
   const loadToday=d=>!d||String(d).slice(0,10)===today;
-  // Jobs completed today (resets to 0 each new day)
+  // Jobs completed today (resets to 0 each new day).
+  //   Numerator  = completed by the WHOLE org today (GC + Subcon — `jobs` is already
+  //                cross-org for a GC user, own-org for a subcon).
+  //   Denominator= job orders actually DISPATCHED for the day (sent to a team), NOT the
+  //                whole For-Dispatch pool. A JO counts as dispatched if it has a team,
+  //                has been dispatched at least once, or already reached a post-dispatch
+  //                status (assigned … completed / incomplete / cancelled).
   const doneJobs=jobs.filter(j=>j.status==='completed' && finishedDay(j)===today);
   const todaySet=jobs.filter(j=> (['completed','cancelled'].includes(j.status)? finishedDay(j)===today : loadToday(j.load_date)) );
+  const POST_DISPATCH=['assigned','en-route','on-site','in-progress','completed','negative','cancelled'];
+  const wasDispatched=j=> (Number(j.dispatch_count)||0)>0 || !!j.team || POST_DISPATCH.includes(j.status);
+  const dispatchedToday=todaySet.filter(wasDispatched);
   if($('#completedCount')) $('#completedCount').textContent=doneJobs.length;
-  if($('#completedTarget')) $('#completedTarget').textContent=Math.max(todaySet.length,doneJobs.length);
+  if($('#completedTarget')) $('#completedTarget').textContent=Math.max(dispatchedToday.length,doneJobs.length);
   if($('#completedFoot')) $('#completedFoot').textContent=`${doneJobs.length} done`;
   // Teams on the road = online (timed-in) teams only
   const online=Object.entries(shiftByTeam).filter(([k,s])=>s.online);
@@ -1611,11 +1620,36 @@ async function renderValRejected(){
   }catch(e){ valRejected=[]; }
   if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }
   if(panel) panel.style.display='';
+  // Only the GC Validator (edit access on Validation) — and superadmin — may delete a
+  // rejected order. Subcons can VIEW Validation but have no edit access, so they only get
+  // Edit & resubmit; they can never delete.
+  const canDelRej=dashCanEdit('validation');
   rb.innerHTML=valRejected.map(j=>{
     const reason=rejectionReason(j);
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button></td></tr>`;
+    const delBtn=canDelRej?` <button class="assign-btn" data-delrej="${j.id}" style="color:#c2503a;border-color:#f0c3ba" title="Soft-delete this rejected order (kept in records)">🗑 Delete</button>`:'';
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
   }).join('');
   rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
+  rb.querySelectorAll('[data-delrej]').forEach(b=>b.onclick=()=>softDeleteRejectedOrder(b.dataset.delrej));
+}
+// GC Validator (or superadmin) soft-deletes a rejected order that will never be resubmitted
+// (e.g. a true duplicate / cancelled account). SOFT delete only — sets deleted_at/deleted_by,
+// the row and its full history stay in the records. Never a hard delete.
+async function softDeleteRejectedOrder(jobId){
+  if(!dashCanEdit('validation')){ showToast('Only the GC Validator can delete rejected orders'); return; }
+  const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId)||{id:jobId};
+  const u=window.dashUser||{}; const who=u.display_name||u.username||'GC Validator';
+  if(!confirm(`Delete rejected order ${jobId} (${j.subscriber||''})?\n\nIt will be removed from the Rejected list. The record and its history are KEPT.\n\nOK = Delete   ·   Cancel = Keep`)) return;
+  try{
+    const now=new Date().toISOString();
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({deleted_at:now,deleted_by:who,updated_at:now})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    histLog(jobId,`🗑 Rejected order deleted by ${who} (GC Validator) — soft delete, record kept`);
+    valRejected=(valRejected||[]).filter(x=>x.id!==jobId);
+    jobs=jobs.filter(x=>x.id!==jobId);
+    renderValRejected();
+    showToast(`${jobId} deleted (kept in records)`);
+  }catch(e){ showToast('Delete failed: '+(e.message||e)); }
 }
 async function fetchDocsFor(ids){
   if(!ids.length)return{};
