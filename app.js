@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.13';
+const APP_VERSION='2026-07-14.14';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2198,7 +2198,20 @@ async function renderHistory(){
   // Same rows as before, but only the chosen week — fast even as history grows / GC sees all orgs.
   const fs=(from+'T00:00:00+08:00').replace('+','%2B'), es=(to+'T23:59:59.999+08:00').replace('+','%2B');
   const rangeQ=`or=(and(load_date.gte.${from},load_date.lte.${to}),and(load_date.is.null,updated_at.gte.${fs},updated_at.lte.${es}))`;
-  let all=[]; try{ const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&${rangeQ}&order=updated_at.desc&limit=5000`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); all=r.ok?await r.json():[]; }catch(e){}
+  // PostgREST caps EVERY response at 1000 rows no matter the requested limit, so a wide range
+  // (or a busy week) silently dropped the OLDEST days of the export — the reported "hindi
+  // nakukuha yung buong selected date." Page through 1000 at a time until the whole range is
+  // drained, so every load in the period is included in the table, the stats, and the export.
+  let all=[];
+  try{
+    for(let offset=0; offset<50000; offset+=1000){
+      const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&${rangeQ}&order=updated_at.desc&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      if(!r.ok) break;
+      const page=await r.json();
+      all=all.concat(page);
+      if(page.length<1000) break;   // huling page — wala nang natira
+    }
+  }catch(e){}
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
   const isSuper=!!(window.dashUser&&window.dashUser.is_super);
   const inRange=all.filter(j=>{const d=dayOf(j);return d&&d>=from&&d<=to;});
