@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-07-14.14';
+const APP_VERSION='2026-07-14.15';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1580,26 +1580,26 @@ async function renderValidation(){
   // The rejected list is independent of the for-validation queue — render it right away so it
   // ALWAYS shows (even when nothing is awaiting validation, which is the normal case for a subcon).
   renderValRejected();
-  try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=*&order=updated_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    valJobs=r.ok?await r.json():[];
-  }catch(e){valJobs=[]}
-  valDocs=await fetchDocsFor(valJobs.map(j=>j.id));
-  await loadAgentNames();
+  // These three fetches are independent of one another — the for-validation queue, the agent
+  // names, and today's approved/rejected counters. They used to run one-after-another (~1.1s
+  // total on the Validator tab); firing them together cuts the wait to the slowest single call.
+  const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
+  const today=manilaToday();
+  const ds=(today+'T00:00:00+08:00').replace('+','%2B'), de=(today+'T23:59:59.999+08:00').replace('+','%2B');
+  // "today" counters are scoped on the SERVER (bounded) so this never pulls the whole table.
+  const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
+  const [valRes, , cntRows] = await Promise.all([
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=*&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    loadAgentNames(),
+    fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
+  ]);
+  valJobs=Array.isArray(valRes)?valRes:[];
+  valDocs=await fetchDocsFor(valJobs.map(j=>j.id));   // depends on valJobs, so it follows
   $('#valPending').textContent=valJobs.length;
   $('#valAgents').textContent=new Set(valJobs.map(j=>j.created_by).filter(Boolean)).size||'—';
-  // approved/rejected today
-  try{
-    const today=manilaToday();
-    // Scope the "today" counters on the SERVER — this used to pull EVERY pending+rejected row
-    // (all orgs, unbounded), which delayed the whole Validator page.
-    const ds=(today+'T00:00:00+08:00').replace('+','%2B'), de=(today+'T23:59:59.999+08:00').replace('+','%2B');
-    const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
-    const r2=await fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const rows=r2.ok?await r2.json():[];
-    $('#valApproved').textContent=rows.filter(x=>x.status==='pending'&&x.validated_at&&new Date(x.validated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
-    $('#valRejected').textContent=rows.filter(x=>x.status==='rejected'&&x.updated_at&&new Date(x.updated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
-  }catch(e){}
+  const rows=Array.isArray(cntRows)?cntRows:[];
+  $('#valApproved').textContent=rows.filter(x=>x.status==='pending'&&x.validated_at&&new Date(x.validated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
+  $('#valRejected').textContent=rows.filter(x=>x.status==='rejected'&&x.updated_at&&new Date(x.updated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
   if(!valJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No job orders awaiting validation.</td></tr>`;refreshValBadge();return}
   body.innerHTML=valJobs.map(j=>{
     const docs=valDocs[j.id]||[];
@@ -1728,7 +1728,10 @@ async function fetchTechnicians(){
   }catch(e){return[]}
 }
 let agentNames={};
-async function loadAgentNames(){ try{ const ts=await fetchTechnicians(); agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); }catch(e){} return agentNames; }
+// Only username + display_name are needed for the agent label — pull just those (≈4 KB)
+// instead of the full technicians row (≈35 KB). fetchTechnicians() stays select=* for its
+// other callers; this path no longer drags the whole record on every Validator render.
+async function loadAgentNames(){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,display_name&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const ts=r.ok?await r.json():[]; agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); }catch(e){} return agentNames; }
 const agentLabel=u=>u?(u+(agentNames[u]?(' · '+agentNames[u]):'')):'—';
 // Who submitted this order: for a SUBCON-encoded load show the subcontractor (🏢 name);
 // for AHBA/GC loads keep the sales agent. Falls back to the sales agent if the org isn't resolved.
