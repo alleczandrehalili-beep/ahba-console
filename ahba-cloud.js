@@ -234,11 +234,14 @@
         .on('postgres_changes', {event: '*', schema: 'public', table: 'jobs'}, refreshCoalesced)
         .subscribe();
     }
-    setInterval(refreshCoalesced, 60000);   // safety-net poll only — realtime already covers live changes
+    // Safety-net poll only — realtime already covers live changes. Paused while the tab is
+    // hidden (background tabs were hammering the DB all day); one catch-up refresh on return.
+    setInterval(function () { if (!document.hidden) refreshCoalesced(); }, 60000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshCoalesced(); });
   }
 
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus,
-    getJobHistory, appendJobHistory, realtime: null};
+    getJobHistory, appendJobHistory, liveSelect, realtime: null};
 
   document.addEventListener('DOMContentLoaded', () => {
     if (!configured || typeof jobs === 'undefined') {

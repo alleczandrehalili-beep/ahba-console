@@ -133,7 +133,7 @@ function startHealthWidget(){
   const u=window.dashUser;
   if(!(u&&u.is_super)) return;
   renderHealthWidget();
-  _healthTimer=setInterval(()=>{ if(document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
+  _healthTimer=setInterval(()=>{ if(!document.hidden && document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
   const rb=document.getElementById('healthRefresh'); if(rb) rb.onclick=renderHealthWidget;
 }
 
@@ -573,7 +573,7 @@ function openJobDetail(jobId){
     pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
     fetchPhotosFor([jobId]).then(m=>{
       const list=m[jobId]||[];
-      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
+      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoThumb(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
@@ -1274,14 +1274,27 @@ function buildDailyMetrics(dateArg){
   return {counts,turnins,teams:teamsArr,jobs:list};
 }
 let _lastSnap=0;
-function maybeCaptureSnapshot(){ if(!window.dashUser) return; const now=Date.now(); if(now-_lastSnap<180000) return; _lastSnap=now; captureDailySnapshot(); }
+// Snapshot writes used to fire from EVERY open console tab every 3 minutes whether or not
+// anything changed (measured: 1.9M inserts). Now: one leader tab per browser, a 10-minute
+// floor, and a change-hash so an unchanged day is never re-uploaded. The final state of the
+// day still lands because the last real change always writes (plus the pagehide flush below).
+const _snapTabId=Math.random().toString(36).slice(2);
+function _snapLeader(){ try{ const now=Date.now(); const c=JSON.parse(localStorage.getItem('ahba_snap_leader')||'{}'); if(c.id!==_snapTabId && now-(c.t||0)<720000) return false; localStorage.setItem('ahba_snap_leader',JSON.stringify({id:_snapTabId,t:now})); return true; }catch(_){ return true; } }
+function maybeCaptureSnapshot(){ if(!window.dashUser) return; const now=Date.now(); if(now-_lastSnap<600000) return; if(!_snapLeader()) return; _lastSnap=now; captureDailySnapshot(); }
 async function captureDailySnapshot(){
   if(!window.dashUser) return;
   try{
-    const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data:buildDailyMetrics()};
+    const data=buildDailyMetrics();
+    const sig=JSON.stringify([data.counts,data.turnins,data.teams,data.jobs.length]);
+    if(sig===captureDailySnapshot._sig) return;   // nothing changed since the last upload
+    const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data};
     await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?on_conflict=work_date`,{method:'POST',headers:{...DH(),Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
+    captureDailySnapshot._sig=sig;
   }catch(e){}
 }
+// End-of-session fidelity: when the tab is being closed/hidden, flush one last snapshot
+// (throttle bypassed; the change-hash still prevents a redundant upload).
+window.addEventListener('pagehide', ()=>{ if(window.dashUser) captureDailySnapshot(); });
 // Best-effort BACKFILL of past daily snapshots from current jobs (for days not captured live,
 // e.g. before this feature was deployed). Reconstructed from current statuses — terminal loads
 // (Completed/Cancelled) are accurate; loads changed since are approximate. Flagged reconstructed.
@@ -1569,8 +1582,9 @@ function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$
 let valJobs=[], valDocs={}, valRejected=[];
 async function refreshValBadge(){
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const n=r.ok?(await r.json()).length:0; const b=$('#valBadge');
+    // HEAD + count=exact returns just the number — no rows travel over the wire.
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{method:'HEAD',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'count=exact'}});
+    const cr=(r.headers.get('content-range')||'').match(/\/(\d+)$/); const n=r.ok&&cr?+cr[1]:0; const b=$('#valBadge');
     if(b){ b.textContent=n; b.style.display=n?'':'none'; }
   }catch(e){}
 }
@@ -1680,7 +1694,7 @@ function openValidate(jobId){
   const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
   $('#valDocs').innerHTML=cats.map(([c,label])=>{
     const list=docs.filter(d=>d.category===c);
-    const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener"><img src="${photoBase(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted</div>';
+    const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener"><img src="${photoThumb(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted</div>';
     return `<div class="doc-sec"><h4>${label} (${list.length})</h4>${imgs}</div>`;
   }).join('');
   $$('#valDocs .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
@@ -1731,7 +1745,9 @@ let agentNames={};
 // Only username + display_name are needed for the agent label — pull just those (≈4 KB)
 // instead of the full technicians row (≈35 KB). fetchTechnicians() stays select=* for its
 // other callers; this path no longer drags the whole record on every Validator render.
-async function loadAgentNames(){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,display_name&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const ts=r.ok?await r.json():[]; agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); }catch(e){} return agentNames; }
+// Technician display names change rarely — cache for 10 min so repeat page renders
+// stop re-downloading the whole roster (was fetched on every History/QA/Remittance render).
+async function loadAgentNames(){ const now=Date.now(); if(loadAgentNames._at && now-loadAgentNames._at<600000 && Object.keys(agentNames).length) return agentNames; try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,display_name&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const ts=r.ok?await r.json():[]; agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); loadAgentNames._at=now; }catch(e){} return agentNames; }
 const agentLabel=u=>u?(u+(agentNames[u]?(' · '+agentNames[u]):'')):'—';
 // Who submitted this order: for a SUBCON-encoded load show the subcontractor (🏢 name);
 // for AHBA/GC loads keep the sales agent. Falls back to the sales agent if the org isn't resolved.
@@ -1967,6 +1983,10 @@ async function exportGateLog(){
 
 // ---------- Completed jobs · proof photos · validation · export ----------
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
+// Thumbnail via Supabase image transforms — grids load a ~10 KB resized copy instead of the
+// full original (originals still open on click via photoBase). Falls back safely: if the
+// transform ever 404s the <img> just shows broken for that cell, never blocks the page.
+const photoThumb = (p,w=360) => `${SUPA_URL}/storage/v1/render/image/public/job-photos/${p}?width=${w}&quality=60`;
 let compJobs=[], compPhotos={};
 async function fetchCompleted(date){
   // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and any
@@ -2018,7 +2038,7 @@ function openGallery(jobId){
   const j=compJobs.find(x=>x.id===jobId)||{}; const paths=compPhotos[jobId]||[];
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
-  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
+  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoThumb(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
   $$('#photoGrid .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
   const vb=$('#validateBtn'); vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
   openModal($('#photoModal'));
@@ -2205,14 +2225,20 @@ async function renderHistory(){
   // (or a busy week) silently dropped the OLDEST days of the export — the reported "hindi
   // nakukuha yung buong selected date." Page through 1000 at a time until the whole range is
   // drained, so every load in the period is included in the table, the stats, and the export.
+  // The heavy `history` text stays out of this fetch (≈half the payload; the job-detail modal
+  // already loads it on demand), and pages 2..n download IN PARALLEL instead of one-by-one.
   let all=[];
   try{
-    for(let offset=0; offset<50000; offset+=1000){
-      const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&${rangeQ}&order=updated_at.desc&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-      if(!r.ok) break;
-      const page=await r.json();
-      all=all.concat(page);
-      if(page.length<1000) break;   // huling page — wala nang natira
+    const sel=(window.AHBACloud&&AHBACloud.liveSelect)?AHBACloud.liveSelect():'*';
+    const base=`${SUPA_URL}/rest/v1/jobs?select=${sel}&${rangeQ}&order=updated_at.desc`;
+    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
+    const r0=await fetch(`${base}&limit=1000&offset=0`,{headers:{...H,Prefer:'count=exact'}});
+    all=r0.ok?await r0.json():[];
+    const cr=(r0.headers.get('content-range')||'').match(/\/(\d+)$/); const total=cr?+cr[1]:all.length;
+    if(total>1000){
+      const offs=[]; for(let o=1000;o<Math.min(total,50000);o+=1000) offs.push(o);
+      const pages=await Promise.all(offs.map(o=>fetch(`${base}&limit=1000&offset=${o}`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])));
+      pages.forEach(p=>{ all=all.concat(p); });
     }
   }catch(e){}
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
@@ -3168,7 +3194,7 @@ async function openCwDm(a,b,team){
   }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
 }
 function renderCwMsgs(rows){
-  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; const img=m.image_path?`<a href="${photoBase(m.image_path)}" target="_blank" rel="noopener"><img src="${photoBase(m.image_path)}" alt="photo" style="max-width:200px;max-height:200px;border-radius:9px;display:block;margin:2px 0"></a>`:''; const txt=(m.body||'').trim()?`<div>${(m.body||'').replace(/</g,'&lt;')}</div>`:''; return `<div class="dc-msg ${d?'me':'them'}">${img}${txt}<span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
+  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; const img=m.image_path?`<a href="${photoBase(m.image_path)}" target="_blank" rel="noopener"><img src="${photoThumb(m.image_path,400)}" alt="photo" style="max-width:200px;max-height:200px;border-radius:9px;display:block;margin:2px 0"></a>`:''; const txt=(m.body||'').trim()?`<div>${(m.body||'').replace(/</g,'&lt;')}</div>`:''; return `<div class="dc-msg ${d?'me':'them'}">${img}${txt}<span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
 }
 async function sendCw(){
   const inp=$('#dcInput'); const v=(inp.value||'').trim(); if((!v && !cwPhotoFile)||!cwCur)return;
@@ -3277,7 +3303,7 @@ async function renderAnnounceBar(){
     const a=(r.ok?await r.json():[])[0];
     if(!a){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
     const esc=s=>(s||'').replace(/</g,'&lt;'); const rec=!!a.photo_path;
-    const img=rec?`<img src="${photoBase(a.photo_path)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
+    const img=rec?`<img src="${photoThumb(a.photo_path,96)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
     const rm=canRemoveAnn(a)?`<button id="annBarRm" data-id="${a.id}" style="flex:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 11px;font-weight:700;font-size:11px;cursor:pointer">✕ Remove</button>`:'';
     bar.style.cssText='display:flex;gap:13px;align-items:center;padding:10px 30px;'+(rec?'background:linear-gradient(135deg,#f6c453,#e9952f);color:#3a2600':'background:#0e3531;color:#eaf5f1');
     bar.innerHTML=`${img}<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:9px;letter-spacing:.06em;opacity:.85">${rec?'🏆 RECOGNITION':'📢 ANNOUNCEMENT'} · ${esc(a.audience||'all').toUpperCase()}</div><div style="font-weight:800;font-size:13px">${esc(a.title||'Announcement')}</div><div style="font-size:11px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.body||'')}</div></div>${rm}`;
@@ -3413,7 +3439,7 @@ function init(){
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
   const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
-  refreshShifts(); setInterval(refreshShifts, 40000);   // was 20000 — lighter DB load; shifts change slowly
+  refreshShifts(); setInterval(()=>{ if(!document.hidden) refreshShifts(); }, 40000);   // was 20000 — lighter DB load; shifts change slowly; paused while tab hidden
 
   // Metric cards → clickable shortcuts
   $$('[data-go]').forEach(b=>b.onclick=()=>switchPage(b.dataset.go));
@@ -3469,10 +3495,10 @@ function init(){
   $('#mapHistTeam')?.addEventListener('change',mapHist);
   $('#mapHistDate')?.addEventListener('change',()=>{ if($('#mapHistTeam')?.value) mapHist(); });
   $('#mapHistClear')?.addEventListener('click',()=>{ clearTeamTrack(); const s=$('#mapHistTeam'); if(s)s.value=''; });
-  setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
+  setInterval(()=>{ if(!document.hidden && $('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
   // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
-  setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
-  setInterval(renderAnnounceBar, 60000);
+  setTimeout(monitorTeams, 9000); setInterval(()=>{ if(!document.hidden) monitorTeams(); }, 60000);
+  setInterval(()=>{ if(!document.hidden) renderAnnounceBar(); }, 60000);
   $('#clearLoadsBtn')?.addEventListener('click',deleteAllLoads);
 
   // Forms
@@ -3518,7 +3544,7 @@ function init(){
   $('#gateExport')?.addEventListener('click',exportGateLog);
 
   // Validator badge (count of pending sales-agent submissions)
-  refreshValBadge(); setInterval(refreshValBadge,30000);
+  refreshValBadge(); setInterval(()=>{ if(!document.hidden) refreshValBadge(); },30000);
 
   // Superadmin password reset
   $('#resetNow')?.addEventListener('click',resetNow);
