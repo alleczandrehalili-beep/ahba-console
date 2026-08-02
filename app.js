@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.3';
+const APP_VERSION='2026-08-03.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1286,9 +1286,20 @@ let _lastSnap=0;
 // day still lands because the last real change always writes (plus the pagehide flush below).
 const _snapTabId=Math.random().toString(36).slice(2);
 function _snapLeader(){ try{ const now=Date.now(); const c=JSON.parse(localStorage.getItem('ahba_snap_leader')||'{}'); if(c.id!==_snapTabId && now-(c.t||0)<720000) return false; localStorage.setItem('ahba_snap_leader',JSON.stringify({id:_snapTabId,t:now})); return true; }catch(_){ return true; } }
-function maybeCaptureSnapshot(){ if(!window.dashUser) return; const now=Date.now(); if(now-_lastSnap<600000) return; if(!_snapLeader()) return; _lastSnap=now; captureDailySnapshot(); }
-async function captureDailySnapshot(){
+function maybeCaptureSnapshot(){ captureDailySnapshot(); }
+// The throttle lives INSIDE the writer: renderProductivityHistory() used to call this
+// directly on every dashboard render (i.e. on every realtime job event, from every open
+// tab), bypassing the leader/floor guards. Each write rewrites a ~240 KB row, which made
+// these INSERTs 83% of all database time and stalled everything else. Only an explicit
+// force=true (page close) may skip the throttle.
+async function captureDailySnapshot(force){
   if(!window.dashUser) return;
+  if(!force){
+    const now=Date.now();
+    if(now-_lastSnap<600000) return;
+    if(!_snapLeader()) return;
+    _lastSnap=now;
+  }
   try{
     const data=buildDailyMetrics();
     const sig=JSON.stringify([data.counts,data.turnins,data.teams,data.jobs.length]);
@@ -1300,7 +1311,7 @@ async function captureDailySnapshot(){
 }
 // End-of-session fidelity: when the tab is being closed/hidden, flush one last snapshot
 // (throttle bypassed; the change-hash still prevents a redundant upload).
-window.addEventListener('pagehide', ()=>{ if(window.dashUser) captureDailySnapshot(); });
+window.addEventListener('pagehide', ()=>{ if(window.dashUser) captureDailySnapshot(true); });
 // Best-effort BACKFILL of past daily snapshots from current jobs (for days not captured live,
 // e.g. before this feature was deployed). Reconstructed from current statuses — terminal loads
 // (Completed/Cancelled) are accurate; loads changed since are approximate. Flagged reconstructed.
@@ -1325,7 +1336,7 @@ async function renderProductivityHistory(){
   const date=dEl?dEl.value:manilaToday();
   panel.innerHTML='<div class="empty-row">Loading…</div>';
   let snap=null, live=(date===manilaToday());
-  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }
+  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }   // throttled inside
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
   if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
   const d=snap.data||{}, c=d.counts||{};
