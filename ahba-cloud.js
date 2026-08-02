@@ -29,7 +29,13 @@
       try { detail = (await response.text()).slice(0, 180); } catch (e) {}
       throw new Error(`HTTP ${response.status} ${response.statusText}${detail ? ' — ' + detail : ''}`);
     }
-    return response.status === 204 ? null : response.json();
+    // A 200 with an empty body (void RPCs, some proxy responses) used to throw
+    // "Unexpected end of JSON input" and flip the badge to a false 'Sync error'.
+    if (response.status === 204) return null;
+    const text = await response.text();
+    if (!text) return null;
+    try { return JSON.parse(text); }
+    catch (e) { throw new Error('Bad response from server (not JSON)'); }
   }
 
   // Extra subscriber / job-order fields (DB snake_case keys, carried as-is on the job object)
@@ -244,6 +250,7 @@
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus,
     getJobHistory, appendJobHistory, liveSelect, realtime: null};
 
+  let renderScheduled = false;
   document.addEventListener('DOMContentLoaded', () => {
     if (!configured || typeof jobs === 'undefined') {
       setStatus('', 'Local only', 'Cloud not configured — running on this device only');
@@ -273,12 +280,33 @@
     startDashboard(
       cloudJobs => {
         jobs = cloudJobs;
-        localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs));
-        renderOverview();
-        // Live-refresh the active tab too, so the Dispatch Board and Timeline stay in sync
-        // when technicians update status on mobile (realtime + 15s poll).
-        // Dashboard now holds BOTH the team timeline and the embedded dispatch board → refresh both.
-        try { if (document.getElementById('timelinePage') && document.getElementById('timelinePage').classList.contains('active')) { if (typeof renderTimeline === 'function') renderTimeline(); if (typeof renderJobs === 'function') renderJobs(); } } catch (e) {}
+        // A full re-render of the working set costs ~0.6s of BLOCKED main thread at 1,200
+        // loads (measured). Running it straight from the sync callback — while the 30s/40s/60s
+        // timers fire too — is what froze the tab ('Page Unresponsive'). Collapse repeat
+        // requests into ONE pass per frame, and hand the browser a breath between the
+        // heavy pieces so clicks and scrolling stay alive.
+        if (renderScheduled) return;
+        renderScheduled = true;
+        // rAF is paused in background tabs, so fall back to a timer when hidden —
+        // the cache write must still happen, while the visible-only render guards
+        // inside renderOverview keep hidden tabs cheap.
+        var schedule = document.hidden
+          ? function (fn) { setTimeout(fn, 0); }
+          : function (fn) { requestAnimationFrame(fn); };
+        schedule(function () {
+          renderScheduled = false;
+          try { localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs)); } catch (e) {}
+          try { renderOverview(); } catch (e) {}
+          setTimeout(function () {
+            try {
+              var tp = document.getElementById('timelinePage');
+              if (tp && tp.classList.contains('active')) {
+                if (typeof renderTimeline === 'function') renderTimeline();
+                if (typeof renderJobs === 'function') renderJobs();
+              }
+            } catch (e) {}
+          }, 0);
+        });
       },
       () => upsertJobs(jobs) // onEmpty: bootstrap a brand-new/empty project once
     );

@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.4';
+const APP_VERSION='2026-08-03.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1331,6 +1331,9 @@ async function backfillSnapshots(fromDate){
 }
 async function renderProductivityHistory(){
   const panel=$('#tlProd'); if(!panel) return;
+  // buildDailyMetrics() walks every live job and produces a ~1.3 MB structure (52 ms at
+  // 1,200 loads). Skip it entirely while the panel is off-screen or the tab is hidden.
+  if(document.hidden || !panel.offsetParent) return;
   const dEl=$('#tlProdDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); }
   if(dEl&&!dEl._wired){ dEl._wired=true; dEl.onchange=renderProductivityHistory; }
   const date=dEl?dEl.value:manilaToday();
@@ -1605,6 +1608,9 @@ async function refreshValBadge(){
     if(b){ b.textContent=n; b.style.display=n?'':'none'; }
   }catch(e){}
 }
+// Column list for the Validator lists: everything the dashboard carries EXCEPT the
+// heavy append-only `history` text (loaded on demand in the review panels).
+function _valSelect(){ return (window.AHBACloud&&AHBACloud.liveSelect)?AHBACloud.liveSelect():'*'; }
 async function renderValidation(){
   const body=$('#validationBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
@@ -1620,7 +1626,7 @@ async function renderValidation(){
   // "today" counters are scoped on the SERVER (bounded) so this never pulls the whole table.
   const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=*&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=${_valSelect()}&order=updated_at.asc&limit=1000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1646,7 +1652,7 @@ async function renderValRejected(){
   try{
     // Bound to the recent window — this used to pull every rejected order ever (all orgs).
     const rjCut=new Date(Date.now()-60*24*3600*1000).toISOString();
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=*&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=${_valSelect()}&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     valRejected=r.ok?await r.json():[];
   }catch(e){ valRejected=[]; }
   if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }
