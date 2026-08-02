@@ -29,13 +29,7 @@
       try { detail = (await response.text()).slice(0, 180); } catch (e) {}
       throw new Error(`HTTP ${response.status} ${response.statusText}${detail ? ' — ' + detail : ''}`);
     }
-    // A 200 with an empty body (void RPCs, some proxy responses) used to throw
-    // "Unexpected end of JSON input" and flip the badge to a false 'Sync error'.
-    if (response.status === 204) return null;
-    const text = await response.text();
-    if (!text) return null;
-    try { return JSON.parse(text); }
-    catch (e) { throw new Error('Bad response from server (not JSON)'); }
+    return response.status === 204 ? null : response.json();
   }
 
   // Extra subscriber / job-order fields (DB snake_case keys, carried as-is on the job object)
@@ -48,8 +42,7 @@
     'remittance_received','remittance_received_by','remittance_received_at',
     'dwelling_type','install_fee_type','amount_to_collect','completed_at','add_on','addon_count',
     'scheduled_at','est_minutes','district','deleted_at','deleted_by','load_type','current_plan','ticket_no','created_by',
-    'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark',
-    'email','reject_reason','rejected_by','rejected_at'];
+    'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark'];
     // NOTE: `lock_bypass` was missing here, so openJobDetail's unlock toggle always read
     // undefined and showed "locked" even for an already-unlocked job order. Fixed 2026-07-20.
 
@@ -241,16 +234,12 @@
         .on('postgres_changes', {event: '*', schema: 'public', table: 'jobs'}, refreshCoalesced)
         .subscribe();
     }
-    // Safety-net poll only — realtime already covers live changes. Paused while the tab is
-    // hidden (background tabs were hammering the DB all day); one catch-up refresh on return.
-    setInterval(function () { if (!document.hidden) refreshCoalesced(); }, 60000);
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshCoalesced(); });
+    setInterval(refreshCoalesced, 60000);   // safety-net poll only — realtime already covers live changes
   }
 
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus,
-    getJobHistory, appendJobHistory, liveSelect, realtime: null};
+    getJobHistory, appendJobHistory, realtime: null};
 
-  let renderScheduled = false;
   document.addEventListener('DOMContentLoaded', () => {
     if (!configured || typeof jobs === 'undefined') {
       setStatus('', 'Local only', 'Cloud not configured — running on this device only');
@@ -280,33 +269,12 @@
     startDashboard(
       cloudJobs => {
         jobs = cloudJobs;
-        // A full re-render of the working set costs ~0.6s of BLOCKED main thread at 1,200
-        // loads (measured). Running it straight from the sync callback — while the 30s/40s/60s
-        // timers fire too — is what froze the tab ('Page Unresponsive'). Collapse repeat
-        // requests into ONE pass per frame, and hand the browser a breath between the
-        // heavy pieces so clicks and scrolling stay alive.
-        if (renderScheduled) return;
-        renderScheduled = true;
-        // rAF is paused in background tabs, so fall back to a timer when hidden —
-        // the cache write must still happen, while the visible-only render guards
-        // inside renderOverview keep hidden tabs cheap.
-        var schedule = document.hidden
-          ? function (fn) { setTimeout(fn, 0); }
-          : function (fn) { requestAnimationFrame(fn); };
-        schedule(function () {
-          renderScheduled = false;
-          try { localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs)); } catch (e) {}
-          try { renderOverview(); } catch (e) {}
-          setTimeout(function () {
-            try {
-              var tp = document.getElementById('timelinePage');
-              if (tp && tp.classList.contains('active')) {
-                if (typeof renderTimeline === 'function') renderTimeline();
-                if (typeof renderJobs === 'function') renderJobs();
-              }
-            } catch (e) {}
-          }, 0);
-        });
+        localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs));
+        renderOverview();
+        // Live-refresh the active tab too, so the Dispatch Board and Timeline stay in sync
+        // when technicians update status on mobile (realtime + 15s poll).
+        // Dashboard now holds BOTH the team timeline and the embedded dispatch board → refresh both.
+        try { if (document.getElementById('timelinePage') && document.getElementById('timelinePage').classList.contains('active')) { if (typeof renderTimeline === 'function') renderTimeline(); if (typeof renderJobs === 'function') renderJobs(); } } catch (e) {}
       },
       () => upsertJobs(jobs) // onEmpty: bootstrap a brand-new/empty project once
     );

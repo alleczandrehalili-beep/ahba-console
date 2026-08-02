@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.6';
+const APP_VERSION='2026-08-03.7';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -41,7 +41,7 @@ function _showVerNudge(){
   b.id='verNudge';
   b.textContent='🔄 New console version — tap to refresh';
   b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#0d3b34;color:#fff;font:600 12px Manrope,sans-serif;padding:9px 16px;border-radius:0 0 12px 12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.28)';
-  b.onclick=()=>{ try{ location.replace(location.pathname+'?r='+Date.now()); }catch(_){ location.reload(true); } };
+  b.onclick=()=>location.reload();
   document.body.appendChild(b);
 }
 // True only if `dep` is a STRICTLY NEWER version than `cur` (YYYY-MM-DD.N).
@@ -133,7 +133,7 @@ function startHealthWidget(){
   const u=window.dashUser;
   if(!(u&&u.is_super)) return;
   renderHealthWidget();
-  _healthTimer=setInterval(()=>{ if(!document.hidden && document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
+  _healthTimer=setInterval(()=>{ if(document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
   const rb=document.getElementById('healthRefresh'); if(rb) rb.onclick=renderHealthWidget;
 }
 
@@ -220,11 +220,6 @@ function isOnline(loc){return loc && loc.location_at && (Date.now()-new Date(loc
 // ---- Live team shifts (account + crew) read from today's attendance ----
 let shiftByTeam={};   // { AHBA_SLI001: {account,driver,tech1,tech2,online,time_in} }
 async function loadTeamShifts(){
-  // Also fired on every realtime job event via the timeline hook (measured 6.3M calls).
-  // Shifts change on time-in/out only — a 30s floor keeps the UI live and kills the storm.
-  const now=Date.now();
-  if(loadTeamShifts._at && now-loadTeamShifts._at<30000) return;
-  loadTeamShifts._at=now;
   const today=manilaToday();
   const yd=new Date(); yd.setDate(yd.getDate()-1); const yest=yd.toLocaleDateString('en-CA',{timeZone:TZ});
   try{
@@ -419,12 +414,7 @@ function renderJobs(){
     const _td=manilaToday();
     if($('#pendingBadge')) $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
     if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong></td><td>${j.type}</td><td>${esc(j.area)}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
-    // The whole 14-day live window used to be written into this table (1,500 loads =
-    // ~19,500 DOM nodes, ~57k on the page). Every nav click then made Chrome restyle that
-    // whole tree, which is what produced 'Page Unresponsive'. Now only the rows that pass
-    // the current filter are rendered, capped — searching still covers EVERY load, because
-    // applyJobTableFilter() filters the jobs array, not the DOM.
-    applyJobTableFilter();
+    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
   }
   const stages=[['pending','For Dispatch'],['assigned','Acknowledged'],['en-route','Travel'],['on-site,in-progress','On Site'],['negative','Incomplete'],['completed','Completed'],['cancelled','Cancelled']];
   $('#dispatchBoard').innerHTML=stages.map(([keys,label])=>{
@@ -437,11 +427,7 @@ function renderJobs(){
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     // In a PREVIOUS-DATE view, allow carrying that day's Incomplete loads to today's For Dispatch.
     const carryBtn=(hist && keys==='negative' && list.length)?`<button class="assign-btn" data-carryneg="1" style="width:100%;margin:0 0 8px;background:#fff4e1;border-color:#f0d9a8;color:#a4690f">↩ Carry all to For Dispatch (today)</button>`:'';
-    // Only the first BOARD_COL_CAP cards go into the DOM — a full day across all columns
-    // was ~15,000 nodes on its own. The column header still shows the TRUE total.
-    const _shown=list.slice(0,BOARD_COL_CAP);
-    const _more=list.length>_shown.length?`<div class="job-card" style="text-align:center;color:#8a9894;font-size:11px;cursor:default">+${list.length-_shown.length} more — open Work Orders to see all</div>`:'';
-    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${_shown.map(jobCard).join('')+_more||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
+    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
   const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
   const todayLoads=(hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
@@ -558,8 +544,7 @@ function openJobDetail(jobId){
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
     F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
-    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
-    F('Validated by',j.validated_by),F('Rejected by',j.rejected_by?`${j.rejected_by}${j.rejected_at?(' · '+fmtWhen(j.rejected_at)):''}`:''),
+    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
     F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
@@ -588,7 +573,7 @@ function openJobDetail(jobId){
     pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
     fetchPhotosFor([jobId]).then(m=>{
       const list=m[jobId]||[];
-      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoThumb(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
+      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
@@ -914,28 +899,21 @@ async function renderExpenses(){
 function bindAssignButtons(){$$('[data-assign]').forEach(b=>b.onclick=()=>openAssign(b.dataset.assign))}
 
 // Work-order table filtering (search text + active chip combined)
-const BOARD_COL_CAP=60;   // job cards rendered per dispatch-board column
-const WO_TABLE_CAP=250;   // rows put in the DOM at once; the search covers all loads
 function applyJobTableFilter(){
-  const body=$('#workOrderBody'); if(!body) return;
   const chip=$('#jobFilters .active'), f=chip?chip.dataset.filter:'all';
   const q=($('#jobSearch')?.value||'').toLowerCase().trim();
-  const matches=(jobs||[]).filter(j=>{
-    const type=(j.type||'').toLowerCase();
-    const matchesChip = f==='all' || (f==='pending' ? j.status==='pending' : type===f);
-    if(!matchesChip) return false;
-    if(!q) return true;
-    return (j.id+' '+(j.subscriber||'')+' '+(j.area||'')).toLowerCase().includes(q);
+  let shown=0;
+  $$('#workOrderBody tr').forEach(r=>{
+    const matchesChip = f==='all' || (f==='pending'?r.dataset.status==='pending':r.dataset.type===f);
+    const matchesText = !q || r.dataset.text.includes(q);
+    const show=matchesChip&&matchesText;
+    r.style.display=show?'':'none';
+    if(show) shown++;
   });
-  const slice=matches.slice(0,WO_TABLE_CAP);
-  body.innerHTML=slice.map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('')
-    + (matches.length>slice.length?`<tr><td colspan="7" style="text-align:center;color:#8a9894;font-size:11px;padding:10px">Showing ${slice.length} of ${matches.length} — use the search box to narrow it down.</td></tr>`:'');
-  const empty=$('#workOrderEmpty'); if(empty) empty.hidden=matches.length!==0;
+  const empty=$('#workOrderEmpty'); if(empty) empty.hidden=shown!==0;
 }
 
 // ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
-const TL_FEED_CAP=80;     // load cards rendered in the timeline feed
-const TL_HIST_LINES=6;    // most-recent history lines shown per card
 const TL_START=8, TL_END=21;                 // 8 AM – 9 PM
 const TL_HOURS=TL_END-TL_START;              // 13 hourly columns
 const TL_DEFMIN=90;                          // default Job Order duration: 1 hr 30 mins
@@ -1256,14 +1234,10 @@ function renderTimelineHistory(){
   // Re-render once the fetched history lands; the cache check then short-circuits, so
   // this settles after exactly one extra pass and never loops.
   tlFillHistory(loads).then(changed=>{ if(changed) renderTimelineHistory(); });
-  // This feed rendered EVERY load encoded today, each with its whole history expanded —
-  // ~16,500 DOM nodes on a busy day. Cap the cards and show only the most recent lines.
-  const _tlShown=loads.slice(0,TL_FEED_CAP);
-  el.innerHTML=_tlShown.map(j=>{
+  el.innerHTML=loads.map(j=>{
     const cls=(j.status||'pending'); const lbl=statusLabel(j.status||'pending');
     const hist=(tlHistCache[j.id]&&tlHistCache[j.id].history)||j.history||'';
-    let lines=hist.split('\n').map(s=>s.trim()).filter(Boolean);
-    if(lines.length>TL_HIST_LINES) lines=lines.slice(-TL_HIST_LINES);
+    const lines=hist.split('\n').map(s=>s.trim()).filter(Boolean);
     const log=lines.length?lines.map(l=>{ const m=l.match(/^\[(.+?)\]\s*(.*)$/);
       return m?`<div class="tl-hist-line"><span class="tl-hist-time">${m[1].replace(/</g,'&lt;')}</span><span>${m[2].replace(/</g,'&lt;')}</span></div>`
               :`<div class="tl-hist-line"><span class="tl-hist-time"></span><span>${l.replace(/</g,'&lt;')}</span></div>`;
@@ -1274,7 +1248,7 @@ function renderTimelineHistory(){
       +`<div class="tl-hist-head"><b>${sub}</b><span class="tl-hist-jo">J.O. ${jo}</span><span class="status ${cls}">${lbl}</span>${j.team?`<span class="tl-hist-team">${j.team.replace(/</g,'&lt;')}</span>`:''}${dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px">⟳${dc}</span>`:''}</div>`
       +`<div class="tl-chip-by" style="margin:3px 0 0">Agent: ${tlBy(j).replace(/</g,'&lt;')}</div>`
       +`<div class="tl-hist-log">${log}</div></div>`;
-  }).join('') + (loads.length>_tlShown.length?`<div class="empty-row" style="color:#8a9894">Showing the ${_tlShown.length} most recent of ${loads.length} loads encoded today.</div>`:'');
+  }).join('');
   $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
   const tg=$('#tlHistToggle'); if(tg&&!tg._wired){ tg._wired=true; tg.onclick=()=>{ const h=$('#tlHistory'); const hidden=h.style.display==='none'; h.style.display=hidden?'':'none'; tg.textContent=hidden?'Hide':'Show'; }; }
 }
@@ -1300,38 +1274,14 @@ function buildDailyMetrics(dateArg){
   return {counts,turnins,teams:teamsArr,jobs:list};
 }
 let _lastSnap=0;
-// Snapshot writes used to fire from EVERY open console tab every 3 minutes whether or not
-// anything changed (measured: 1.9M inserts). Now: one leader tab per browser, a 10-minute
-// floor, and a change-hash so an unchanged day is never re-uploaded. The final state of the
-// day still lands because the last real change always writes (plus the pagehide flush below).
-const _snapTabId=Math.random().toString(36).slice(2);
-function _snapLeader(){ try{ const now=Date.now(); const c=JSON.parse(localStorage.getItem('ahba_snap_leader')||'{}'); if(c.id!==_snapTabId && now-(c.t||0)<720000) return false; localStorage.setItem('ahba_snap_leader',JSON.stringify({id:_snapTabId,t:now})); return true; }catch(_){ return true; } }
-function maybeCaptureSnapshot(){ captureDailySnapshot(); }
-// The throttle lives INSIDE the writer: renderProductivityHistory() used to call this
-// directly on every dashboard render (i.e. on every realtime job event, from every open
-// tab), bypassing the leader/floor guards. Each write rewrites a ~240 KB row, which made
-// these INSERTs 83% of all database time and stalled everything else. Only an explicit
-// force=true (page close) may skip the throttle.
-async function captureDailySnapshot(force){
+function maybeCaptureSnapshot(){ if(!window.dashUser) return; const now=Date.now(); if(now-_lastSnap<180000) return; _lastSnap=now; captureDailySnapshot(); }
+async function captureDailySnapshot(){
   if(!window.dashUser) return;
-  if(!force){
-    const now=Date.now();
-    if(now-_lastSnap<600000) return;
-    if(!_snapLeader()) return;
-    _lastSnap=now;
-  }
   try{
-    const data=buildDailyMetrics();
-    const sig=JSON.stringify([data.counts,data.turnins,data.teams,data.jobs.length]);
-    if(sig===captureDailySnapshot._sig) return;   // nothing changed since the last upload
-    const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data};
+    const body={work_date:manilaToday(),captured_at:new Date().toISOString(),data:buildDailyMetrics()};
     await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?on_conflict=work_date`,{method:'POST',headers:{...DH(),Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
-    captureDailySnapshot._sig=sig;
   }catch(e){}
 }
-// End-of-session fidelity: when the tab is being closed/hidden, flush one last snapshot
-// (throttle bypassed; the change-hash still prevents a redundant upload).
-window.addEventListener('pagehide', ()=>{ if(window.dashUser) captureDailySnapshot(true); });
 // Best-effort BACKFILL of past daily snapshots from current jobs (for days not captured live,
 // e.g. before this feature was deployed). Reconstructed from current statuses — terminal loads
 // (Completed/Cancelled) are accurate; loads changed since are approximate. Flagged reconstructed.
@@ -1351,15 +1301,12 @@ async function backfillSnapshots(fromDate){
 }
 async function renderProductivityHistory(){
   const panel=$('#tlProd'); if(!panel) return;
-  // buildDailyMetrics() walks every live job and produces a ~1.3 MB structure (52 ms at
-  // 1,200 loads). Skip it entirely while the panel is off-screen or the tab is hidden.
-  if(document.hidden || !panel.offsetParent) return;
   const dEl=$('#tlProdDate'); if(dEl&&!dEl.value){ dEl.value=manilaToday(); }
   if(dEl&&!dEl._wired){ dEl._wired=true; dEl.onchange=renderProductivityHistory; }
   const date=dEl?dEl.value:manilaToday();
   panel.innerHTML='<div class="empty-row">Loading…</div>';
   let snap=null, live=(date===manilaToday());
-  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }   // throttled inside
+  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
   if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
   const d=snap.data||{}, c=d.counts||{};
@@ -1622,15 +1569,11 @@ function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$
 let valJobs=[], valDocs={}, valRejected=[];
 async function refreshValBadge(){
   try{
-    // HEAD + count=exact returns just the number — no rows travel over the wire.
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{method:'HEAD',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'count=exact'}});
-    const cr=(r.headers.get('content-range')||'').match(/\/(\d+)$/); const n=r.ok&&cr?+cr[1]:0; const b=$('#valBadge');
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const n=r.ok?(await r.json()).length:0; const b=$('#valBadge');
     if(b){ b.textContent=n; b.style.display=n?'':'none'; }
   }catch(e){}
 }
-// Column list for the Validator lists: everything the dashboard carries EXCEPT the
-// heavy append-only `history` text (loaded on demand in the review panels).
-function _valSelect(){ return (window.AHBACloud&&AHBACloud.liveSelect)?AHBACloud.liveSelect():'*'; }
 async function renderValidation(){
   const body=$('#validationBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
@@ -1646,7 +1589,7 @@ async function renderValidation(){
   // "today" counters are scoped on the SERVER (bounded) so this never pulls the whole table.
   const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=${_valSelect()}&order=updated_at.asc&limit=1000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=*&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1672,7 +1615,7 @@ async function renderValRejected(){
   try{
     // Bound to the recent window — this used to pull every rejected order ever (all orgs).
     const rjCut=new Date(Date.now()-60*24*3600*1000).toISOString();
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=${_valSelect()}&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=*&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     valRejected=r.ok?await r.json():[];
   }catch(e){ valRejected=[]; }
   if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }
@@ -1684,9 +1627,9 @@ async function renderValRejected(){
   rb.innerHTML=valRejected.map(j=>{
     const reason=rejectionReason(j);
     const delBtn=canDelRej?` <button class="assign-btn" data-delrej="${j.id}" style="color:#c2503a;border-color:#f0c3ba" title="Soft-delete this rejected order (kept in records)">🗑 Delete</button>`:'';
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${esc(j.rejected_by||'—')}</td><td>${fmtWhen(j.rejected_at||j.updated_at)}</td><td><button class="assign-btn" data-viewrej="${j.id}">👁 View &amp; comply</button>${delBtn}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
   }).join('');
-  rb.querySelectorAll('[data-viewrej]').forEach(b=>b.onclick=()=>openRejectedView(b.dataset.viewrej));
+  rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
   rb.querySelectorAll('[data-delrej]').forEach(b=>b.onclick=()=>softDeleteRejectedOrder(b.dataset.delrej));
 }
 // GC Validator (or superadmin) soft-deletes a rejected order that will never be resubmitted
@@ -1712,47 +1655,9 @@ async function fetchDocsFor(ids){
   if(!ids.length)return{};
   try{
     const q=ids.map(encodeURIComponent).join(',');
-    const r=await fetch(`${SUPA_URL}/rest/v1/job_docs?select=job_id,category,path,created_at&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/job_docs?select=job_id,category,path&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push(x)}); return m;
   }catch(e){return{}}
-}
-// Rejected-order review for the UPLOADER (subcon or GC): the Validator's full remark
-// history plus every attachment already submitted, with a direct path to fix and resubmit.
-// Attachments are readable here under the same RLS the Validator queue uses — they were
-// simply never fetched for rejected orders before.
-async function openRejectedView(jobId){
-  const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId)||{id:jobId};
-  $('#rejTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#rejSub').textContent=`Submitted by ${encoderLabel(j)} · rejected ${fmtWhen(j.rejected_at||j.updated_at)}${j.rejected_by?(' by '+j.rejected_by):''}`;
-  const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
-  $('#rejInfo').innerHTML=[
-    F('Subscriber',esc(j.subscriber)),F('Primary no.',esc(j.primary_no)),F('Other contact',esc(j.other_contact_no)),
-    F('Email',esc(j.email)),F('Plan',esc(j.plan)),F('Reference no.',esc(j.ref_no)),
-    F('Address',esc(j.address)),F('Your note',esc(j.special_note))
-  ].join('');
-  $('#rejHistory').textContent='Loading remarks…';
-  $('#rejDocs').innerHTML='<div class="none" style="padding:12px;color:#8a9894;font-size:12px">Loading attachments…</div>';
-  $('#rejEditBtn').onclick=()=>{ closeModals(); editRejectedOrder(jobId); };
-  openModal($('#rejModal'));
-  // Remarks: newest first, so the latest instruction is what they read.
-  try{
-    const h=(await AHBACloud.getJobHistory(jobId))||'';
-    const lines=h.split('\n').filter(l=>l.trim());
-    const remarks=lines.filter(l=>/VALIDATED|REJECTED|resubmit/i.test(l));
-    const show=(remarks.length?remarks:lines).reverse().join('\n');
-    $('#rejHistory').textContent=show||`No remark recorded. Latest reason: ${rejectionReason(j)||'—'}`;
-  }catch(e){ $('#rejHistory').textContent=`Could not load the remark history. Latest reason: ${rejectionReason(j)||'—'}`; }
-  // Attachments, grouped like the Validator sees them.
-  try{
-    const docs=(await fetchDocsFor([jobId]))[jobId]||[];
-    const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
-    $('#rejDocs').innerHTML=cats.map(([c,label])=>{
-      const list=docs.filter(d=>d.category===c).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
-      const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener" title="${label}${d.created_at?(' — uploaded '+fmtWhen(d.created_at)):''}"><img src="${photoThumb(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted for this requirement</div>';
-      return `<div class="doc-sec"><h4>${label} (${list.length})</h4>${imgs}</div>`;
-    }).join('');
-    $$('#rejDocs .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
-  }catch(e){ $('#rejDocs').innerHTML='<div class="none" style="padding:12px;color:#c2503a;font-size:12px">Could not load attachments — close and try again.</div>'; }
 }
 function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
@@ -1763,7 +1668,7 @@ function openValidate(jobId){
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),F('Add-ons (2P)',j.addon_count),F('VAS no.',j.vas_no),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
-    F('Email',j.email),F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
+    F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
     F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
   ].join('');
   $('#valJONum').value=j.job_order_no||''; $('#valIbas').value=j.ibass_acct_no||'';
@@ -1775,7 +1680,7 @@ function openValidate(jobId){
   const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
   $('#valDocs').innerHTML=cats.map(([c,label])=>{
     const list=docs.filter(d=>d.category===c);
-    const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener"><img src="${photoThumb(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted</div>';
+    const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener"><img src="${photoBase(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted</div>';
     return `<div class="doc-sec"><h4>${label} (${list.length})</h4>${imgs}</div>`;
   }).join('');
   $$('#valDocs .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
@@ -1800,49 +1705,33 @@ async function decideValidation(jobId,approve){
     if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
     // Intake approval assigns JO/IBAS + records approval time, but does NOT mark QA-validated.
     // QA validation (proof-photo review on the QA Validation page) is a separate, manual step.
-    body={status:'pending', validated_at:new Date().toISOString(), validated_by:actorLabel(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+    body={status:'pending', validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
     if(j.play_type==='2-PLAY'){
       const vs=$$('.valVas').map(i=>i.value.trim());
       if(!vs.length||vs.some(x=>!x)){ showToast('Enter all VAS Number(s) — required for 2-PLAY'); return; }
       body.vas_no=vs.join(', ');
     }
   } else {
-    // The uploader's own special_note is NEVER overwritten any more — the remark has its
-    // own column, plus a permanent line in the append-only history.
-    const reason=($('#valReason').value||'').trim();
-    if(!reason){ showToast('Enter a rejection remark so the uploader knows what to fix'); $('#valReason').focus(); return; }
-    body={status:'rejected', updated_at:new Date().toISOString(), reject_reason:reason, rejected_by:actorLabel(), rejected_at:new Date().toISOString()};
+    body={status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
   }
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
-    histLog(jobId, approve
-      ? `✅ VALIDATED by ${actorLabel()} — JO ${body.job_order_no||'—'}, IBAS ${body.ibass_acct_no||'—'}${body.vas_no?(', VAS '+body.vas_no):''}`
-      : `❌ REJECTED by ${actorLabel()} — ${body.reject_reason}`);
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
   }catch(e){showToast('Action failed: '+e.message)}
 }
 
 // ---------- Accounts (technician login accounts) ----------
-async function fetchTechnicians(force){
-  // Full-roster select was re-fetched by every open tab on EVERY realtime job event
-  // (measured 11.1M calls / 2.7 hours of DB time). Roster fields change rarely —
-  // cache 5 min; Access Control passes force=true so account admin always sees fresh rows.
-  const now=Date.now();
-  if(!force && fetchTechnicians._at && now-fetchTechnicians._at<300000) return fetchTechnicians._rows||[];
+async function fetchTechnicians(){
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=*&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const rows=r.ok?await r.json():[];
-    if(rows.length){ fetchTechnicians._rows=rows; fetchTechnicians._at=now; }
-    return rows;
-  }catch(e){return fetchTechnicians._rows||[]}
+    return r.ok?await r.json():[];
+  }catch(e){return[]}
 }
 let agentNames={};
 // Only username + display_name are needed for the agent label — pull just those (≈4 KB)
 // instead of the full technicians row (≈35 KB). fetchTechnicians() stays select=* for its
 // other callers; this path no longer drags the whole record on every Validator render.
-// Technician display names change rarely — cache for 10 min so repeat page renders
-// stop re-downloading the whole roster (was fetched on every History/QA/Remittance render).
-async function loadAgentNames(){ const now=Date.now(); if(loadAgentNames._at && now-loadAgentNames._at<600000 && Object.keys(agentNames).length) return agentNames; try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,display_name&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const ts=r.ok?await r.json():[]; agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); loadAgentNames._at=now; }catch(e){} return agentNames; }
+async function loadAgentNames(){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=username,display_name&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const ts=r.ok?await r.json():[]; agentNames={}; ts.forEach(t=>agentNames[t.username]=t.display_name||''); }catch(e){} return agentNames; }
 const agentLabel=u=>u?(u+(agentNames[u]?(' · '+agentNames[u]):'')):'—';
 // Who submitted this order: for a SUBCON-encoded load show the subcontractor (🏢 name);
 // for AHBA/GC loads keep the sales agent. Falls back to the sales agent if the org isn't resolved.
@@ -1851,23 +1740,8 @@ function encoderLabel(j){
   if(oid && gcOrgId && oid!==gcOrgId && orgById[oid]){ const o=orgById[oid]; return '🏢 '+(o.name||o.code||'Subcon'); }
   return agentLabel(j&&j.created_by);
 }
-// Who is acting, for the permanent audit trail: "Name (USERNAME) · Org".
-// Shown to every organization so a subcon always knows which GC account acted on their JO.
-function actorLabel(){
-  const u=window.dashUser||{};
-  const name=u.display_name||u.username||'Console';
-  const uname=u.username&&u.display_name?` (${u.username})`:'';
-  const oid=myOrgId();
-  const org=(oid&&orgById[oid]&&(orgById[oid].name||orgById[oid].code))||(oid===gcOrgId?'AHBA':'');
-  return `${name}${uname}${org?' · '+org:''}`;
-}
-// The rejection remark now lives in its own column. Older orders kept it inside
-// special_note as "REJECTED: <reason>" — still read those so nothing looks blank.
-function rejectionReason(j){
-  const rr=((j&&j.reject_reason)||'').trim(); if(rr) return rr;
-  const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given';
-  return '';
-}
+// The GC Validator stores the rejection reason in special_note as "REJECTED: <reason>".
+function rejectionReason(j){ const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given'; return s; }
 // Current user's own org (from the JWT app_metadata) — used to scope own-org-only views (e.g. Remittance).
 function myOrgId(){ try{ return (JSON.parse(atob(dashTok().split('.')[1])).app_metadata||{}).org_id||''; }catch(_){ return ''; } }
 const TZ='Asia/Manila';
@@ -1878,7 +1752,7 @@ function fmtDur(inTs,outTs){if(!inTs)return'—';const end=outTs?new Date(outTs)
 async function renderAccounts(){
   const body=$('#accountsBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="6" class="empty-cell">Loading accounts…</td></tr>`;
-  let rows=await fetchTechnicians(true);
+  let rows=await fetchTechnicians();
   if(!rows.length){
     // fall back to the 20 known accounts if the table isn't set up yet
     rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null,role:'technician'}));
@@ -2093,10 +1967,6 @@ async function exportGateLog(){
 
 // ---------- Completed jobs · proof photos · validation · export ----------
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
-// Thumbnail via Supabase image transforms — grids load a ~10 KB resized copy instead of the
-// full original (originals still open on click via photoBase). Falls back safely: if the
-// transform ever 404s the <img> just shows broken for that cell, never blocks the page.
-const photoThumb = (p,w=360) => `${SUPA_URL}/storage/v1/render/image/public/job-photos/${p}?width=${w}&quality=60`;
 let compJobs=[], compPhotos={};
 async function fetchCompleted(date){
   // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and any
@@ -2148,7 +2018,7 @@ function openGallery(jobId){
   const j=compJobs.find(x=>x.id===jobId)||{}; const paths=compPhotos[jobId]||[];
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
-  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoThumb(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
+  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
   $$('#photoGrid .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
   const vb=$('#validateBtn'); vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
   openModal($('#photoModal'));
@@ -2190,7 +2060,6 @@ async function exportZip(){
     'NEW REF #': j.new_ref||'',
     'PRIMARY NO.': j.primary_no||'',
     'OTHER CONTACT NO.': j.other_contact_no||'',
-    'EMAIL': j.email||'',
     'FIRST NAME': j.first_name||'',
     'MIDDLE NAME': j.middle_name||'',
     'LAST NAME': j.last_name||'',
@@ -2304,7 +2173,7 @@ function jobToRow(j,nPhotos){
     'MAPPING REMARKS': j.mapping_remarks||'', 'DISPATCHED REMARKS': j.dispatched_remarks||'',
     'IBASS ACCT NO.': j.ibass_acct_no||'', 'JOB ORDER NO.': j.job_order_no||'', 'VAS NO': j.vas_no||'',
     '1P OR 2P': j.play_type||'', 'SPECIAL NOTE': j.special_note||'', 'REF NO.': j.ref_no||'', 'NEW REF #': j.new_ref||'',
-    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'', 'EMAIL': j.email||'',
+    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'',
     'FIRST NAME': j.first_name||'', 'MIDDLE NAME': j.middle_name||'', 'LAST NAME': j.last_name||'',
     'HOUSE NO.': j.house_no||'', 'STREET NAME': j.street_name||'', 'VILLAGE / SUBDIVISION': j.village||'',
     'BRGY': j.brgy||'', 'CITY': j.city||j.area||'',
@@ -2336,20 +2205,14 @@ async function renderHistory(){
   // (or a busy week) silently dropped the OLDEST days of the export — the reported "hindi
   // nakukuha yung buong selected date." Page through 1000 at a time until the whole range is
   // drained, so every load in the period is included in the table, the stats, and the export.
-  // The heavy `history` text stays out of this fetch (≈half the payload; the job-detail modal
-  // already loads it on demand), and pages 2..n download IN PARALLEL instead of one-by-one.
   let all=[];
   try{
-    const sel=(window.AHBACloud&&AHBACloud.liveSelect)?AHBACloud.liveSelect():'*';
-    const base=`${SUPA_URL}/rest/v1/jobs?select=${sel}&${rangeQ}&order=updated_at.desc`;
-    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
-    const r0=await fetch(`${base}&limit=1000&offset=0`,{headers:{...H,Prefer:'count=exact'}});
-    all=r0.ok?await r0.json():[];
-    const cr=(r0.headers.get('content-range')||'').match(/\/(\d+)$/); const total=cr?+cr[1]:all.length;
-    if(total>1000){
-      const offs=[]; for(let o=1000;o<Math.min(total,50000);o+=1000) offs.push(o);
-      const pages=await Promise.all(offs.map(o=>fetch(`${base}&limit=1000&offset=${o}`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])));
-      pages.forEach(p=>{ all=all.concat(p); });
+    for(let offset=0; offset<50000; offset+=1000){
+      const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&${rangeQ}&order=updated_at.desc&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      if(!r.ok) break;
+      const page=await r.json();
+      all=all.concat(page);
+      if(page.length<1000) break;   // huling page — wala nang natira
     }
   }catch(e){}
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
@@ -2563,14 +2426,7 @@ function editRejectedOrder(jobId){
   const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
   const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
   const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
-  ['first_name','middle_name','last_name','primary_no','other_contact_no','email','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
-  // Pin the Validator's latest remark at the top of the form so they can comply while editing.
-  const rbn=$('#ordRejBanner');
-  if(rbn){
-    const reason=rejectionReason(j);
-    rbn.style.display=reason?'':'none';
-    rbn.innerHTML=reason?`<div style="background:#fff7f5;border:1px solid #f3d9d2;border-radius:10px;padding:10px 12px"><div style="font:800 9px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#c2503a;margin-bottom:3px">Validator remark — please comply</div><div style="font-size:12px;color:#2a3a36;white-space:pre-wrap">${esc(reason)}</div>${j.rejected_by?`<div style="font-size:9px;color:#8a9894;margin-top:4px">by ${esc(j.rejected_by)}${j.rejected_at?(' · '+fmtWhen(j.rejected_at)):''}</div>`:''}</div>`:'';
-  }
+  ['first_name','middle_name','last_name','primary_no','other_contact_no','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
   if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
   if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||'');
   // ALL CAPS ang options ngayon — itugma anuman ang pagkakasulat ng lumang record
@@ -2601,11 +2457,6 @@ async function submitOrder(e){
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
-  // Email is required on NEW orders. Resubmitting an older order that never had one is
-  // not blocked — those pre-date the field. Never uppercased: emails are case-sensitive.
-  const em=(f.email||'').trim();
-  if(em && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(em)){ err('Enter a valid email address (e.g. juan@email.com).'); return; }
-  if(!em && !ordEditId){ err('Email address is required.'); return; }
   if(ordType==='SLI'){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
@@ -2620,7 +2471,7 @@ async function submitOrder(e){
   // SLI goes to the Validator first; Migration & SLR go straight to For Dispatch.
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
-    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,email:em,
+    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
   if(ordType==='SLI'){
@@ -2658,7 +2509,6 @@ async function submitOrder(e){
     const wasEdit=!!ordEditId; ordEditId=null;
     ordDocs={id:[],billing:[],premise:[]};
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
-    const rb2=$('#ordRejBanner'); if(rb2){ rb2.style.display='none'; rb2.innerHTML=''; }
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
     closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
@@ -3318,7 +3168,7 @@ async function openCwDm(a,b,team){
   }catch(e){ $('#dcMsgs').innerHTML='<div style="color:#c2503a;font-size:11px;padding:14px">Could not load.</div>'; }
 }
 function renderCwMsgs(rows){
-  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; const img=m.image_path?`<a href="${photoBase(m.image_path)}" target="_blank" rel="noopener"><img src="${photoThumb(m.image_path,400)}" alt="photo" style="max-width:200px;max-height:200px;border-radius:9px;display:block;margin:2px 0"></a>`:''; const txt=(m.body||'').trim()?`<div>${(m.body||'').replace(/</g,'&lt;')}</div>`:''; return `<div class="dc-msg ${d?'me':'them'}">${img}${txt}<span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
+  const el=$('#dcMsgs'); el.innerHTML=rows.length?rows.map(m=>{const d=m.role==='dispatch'; const who=(m.sender||(d?'Console':(m.team||''))); const roleTag=(d&&m.sender_role)?` · ${String(m.sender_role).replace(/</g,'&lt;')}`:''; const img=m.image_path?`<a href="${photoBase(m.image_path)}" target="_blank" rel="noopener"><img src="${photoBase(m.image_path)}" alt="photo" style="max-width:200px;max-height:200px;border-radius:9px;display:block;margin:2px 0"></a>`:''; const txt=(m.body||'').trim()?`<div>${(m.body||'').replace(/</g,'&lt;')}</div>`:''; return `<div class="dc-msg ${d?'me':'them'}">${img}${txt}<span>${who.replace(/</g,'&lt;')}${roleTag} · ${fmtWhen(m.created_at)}</span></div>`;}).join(''):'<div style="color:#9aa6a2;font-size:11px;text-align:center;padding:14px">No messages yet.</div>'; el.scrollTop=el.scrollHeight;
 }
 async function sendCw(){
   const inp=$('#dcInput'); const v=(inp.value||'').trim(); if((!v && !cwPhotoFile)||!cwCur)return;
@@ -3427,7 +3277,7 @@ async function renderAnnounceBar(){
     const a=(r.ok?await r.json():[])[0];
     if(!a){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
     const esc=s=>(s||'').replace(/</g,'&lt;'); const rec=!!a.photo_path;
-    const img=rec?`<img src="${photoThumb(a.photo_path,96)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
+    const img=rec?`<img src="${photoBase(a.photo_path)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
     const rm=canRemoveAnn(a)?`<button id="annBarRm" data-id="${a.id}" style="flex:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 11px;font-weight:700;font-size:11px;cursor:pointer">✕ Remove</button>`:'';
     bar.style.cssText='display:flex;gap:13px;align-items:center;padding:10px 30px;'+(rec?'background:linear-gradient(135deg,#f6c453,#e9952f);color:#3a2600':'background:#0e3531;color:#eaf5f1');
     bar.innerHTML=`${img}<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:9px;letter-spacing:.06em;opacity:.85">${rec?'🏆 RECOGNITION':'📢 ANNOUNCEMENT'} · ${esc(a.audience||'all').toUpperCase()}</div><div style="font-weight:800;font-size:13px">${esc(a.title||'Announcement')}</div><div style="font-size:11px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.body||'')}</div></div>${rm}`;
@@ -3563,7 +3413,7 @@ function init(){
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
   const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
-  refreshShifts(); setInterval(()=>{ if(!document.hidden) refreshShifts(); }, 40000);   // was 20000 — lighter DB load; shifts change slowly; paused while tab hidden
+  refreshShifts(); setInterval(refreshShifts, 40000);   // was 20000 — lighter DB load; shifts change slowly
 
   // Metric cards → clickable shortcuts
   $$('[data-go]').forEach(b=>b.onclick=()=>switchPage(b.dataset.go));
@@ -3581,7 +3431,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const _rb=$('#ordRejBanner'); if(_rb){_rb.style.display='none';_rb.innerHTML='';} const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
@@ -3619,10 +3469,10 @@ function init(){
   $('#mapHistTeam')?.addEventListener('change',mapHist);
   $('#mapHistDate')?.addEventListener('change',()=>{ if($('#mapHistTeam')?.value) mapHist(); });
   $('#mapHistClear')?.addEventListener('click',()=>{ clearTeamTrack(); const s=$('#mapHistTeam'); if(s)s.value=''; });
-  setInterval(()=>{ if(!document.hidden && $('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
+  setInterval(()=>{ if($('#overviewPage')?.classList.contains('active')) renderTeamLocations(); }, 30000);
   // Proactive team-monitoring alerts (travel >45m, idle >30m) for ALL console users
-  setTimeout(monitorTeams, 9000); setInterval(()=>{ if(!document.hidden) monitorTeams(); }, 60000);
-  setInterval(()=>{ if(!document.hidden) renderAnnounceBar(); }, 60000);
+  setTimeout(monitorTeams, 9000); setInterval(monitorTeams, 60000);
+  setInterval(renderAnnounceBar, 60000);
   $('#clearLoadsBtn')?.addEventListener('click',deleteAllLoads);
 
   // Forms
@@ -3668,7 +3518,7 @@ function init(){
   $('#gateExport')?.addEventListener('click',exportGateLog);
 
   // Validator badge (count of pending sales-agent submissions)
-  refreshValBadge(); setInterval(()=>{ if(!document.hidden) refreshValBadge(); },30000);
+  refreshValBadge(); setInterval(refreshValBadge,30000);
 
   // Superadmin password reset
   $('#resetNow')?.addEventListener('click',resetNow);
