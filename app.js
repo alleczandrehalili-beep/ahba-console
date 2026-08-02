@@ -220,6 +220,11 @@ function isOnline(loc){return loc && loc.location_at && (Date.now()-new Date(loc
 // ---- Live team shifts (account + crew) read from today's attendance ----
 let shiftByTeam={};   // { AHBA_SLI001: {account,driver,tech1,tech2,online,time_in} }
 async function loadTeamShifts(){
+  // Also fired on every realtime job event via the timeline hook (measured 6.3M calls).
+  // Shifts change on time-in/out only — a 30s floor keeps the UI live and kills the storm.
+  const now=Date.now();
+  if(loadTeamShifts._at && now-loadTeamShifts._at<30000) return;
+  loadTeamShifts._at=now;
   const today=manilaToday();
   const yd=new Date(); yd.setDate(yd.getDate()-1); const yest=yd.toLocaleDateString('en-CA',{timeZone:TZ});
   try{
@@ -1735,11 +1740,18 @@ async function decideValidation(jobId,approve){
 }
 
 // ---------- Accounts (technician login accounts) ----------
-async function fetchTechnicians(){
+async function fetchTechnicians(force){
+  // Full-roster select was re-fetched by every open tab on EVERY realtime job event
+  // (measured 11.1M calls / 2.7 hours of DB time). Roster fields change rarely —
+  // cache 5 min; Access Control passes force=true so account admin always sees fresh rows.
+  const now=Date.now();
+  if(!force && fetchTechnicians._at && now-fetchTechnicians._at<300000) return fetchTechnicians._rows||[];
   try{
     const r=await fetch(`${SUPA_URL}/rest/v1/technicians?select=*&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    return r.ok?await r.json():[];
-  }catch(e){return[]}
+    const rows=r.ok?await r.json():[];
+    if(rows.length){ fetchTechnicians._rows=rows; fetchTechnicians._at=now; }
+    return rows;
+  }catch(e){return fetchTechnicians._rows||[]}
 }
 let agentNames={};
 // Only username + display_name are needed for the agent label — pull just those (≈4 KB)
@@ -1768,7 +1780,7 @@ function fmtDur(inTs,outTs){if(!inTs)return'—';const end=outTs?new Date(outTs)
 async function renderAccounts(){
   const body=$('#accountsBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="6" class="empty-cell">Loading accounts…</td></tr>`;
-  let rows=await fetchTechnicians();
+  let rows=await fetchTechnicians(true);
   if(!rows.length){
     // fall back to the 20 known accounts if the table isn't set up yet
     rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null,role:'technician'}));
