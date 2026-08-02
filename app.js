@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.2';
+const APP_VERSION='2026-08-03.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -41,7 +41,7 @@ function _showVerNudge(){
   b.id='verNudge';
   b.textContent='🔄 New console version — tap to refresh';
   b.style.cssText='position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:99999;background:#0d3b34;color:#fff;font:600 12px Manrope,sans-serif;padding:9px 16px;border-radius:0 0 12px 12px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.28)';
-  b.onclick=()=>location.reload();
+  b.onclick=()=>{ try{ location.replace(location.pathname+'?r='+Date.now()); }catch(_){ location.reload(true); } };
   document.body.appendChild(b);
 }
 // True only if `dep` is a STRICTLY NEWER version than `cur` (YYYY-MM-DD.N).
