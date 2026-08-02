@@ -549,7 +549,8 @@ function openJobDetail(jobId){
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
     F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
-    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
+    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
+    F('Validated by',j.validated_by),F('Rejected by',j.rejected_by?`${j.rejected_by}${j.rejected_at?(' · '+fmtWhen(j.rejected_at)):''}`:''),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
     F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
@@ -1646,9 +1647,9 @@ async function renderValRejected(){
   rb.innerHTML=valRejected.map(j=>{
     const reason=rejectionReason(j);
     const delBtn=canDelRej?` <button class="assign-btn" data-delrej="${j.id}" style="color:#c2503a;border-color:#f0c3ba" title="Soft-delete this rejected order (kept in records)">🗑 Delete</button>`:'';
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${esc(j.rejected_by||'—')}</td><td>${fmtWhen(j.rejected_at||j.updated_at)}</td><td><button class="assign-btn" data-viewrej="${j.id}">👁 View &amp; comply</button>${delBtn}</td></tr>`;
   }).join('');
-  rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
+  rb.querySelectorAll('[data-viewrej]').forEach(b=>b.onclick=()=>openRejectedView(b.dataset.viewrej));
   rb.querySelectorAll('[data-delrej]').forEach(b=>b.onclick=()=>softDeleteRejectedOrder(b.dataset.delrej));
 }
 // GC Validator (or superadmin) soft-deletes a rejected order that will never be resubmitted
@@ -1674,9 +1675,47 @@ async function fetchDocsFor(ids){
   if(!ids.length)return{};
   try{
     const q=ids.map(encodeURIComponent).join(',');
-    const r=await fetch(`${SUPA_URL}/rest/v1/job_docs?select=job_id,category,path&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/job_docs?select=job_id,category,path,created_at&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push(x)}); return m;
   }catch(e){return{}}
+}
+// Rejected-order review for the UPLOADER (subcon or GC): the Validator's full remark
+// history plus every attachment already submitted, with a direct path to fix and resubmit.
+// Attachments are readable here under the same RLS the Validator queue uses — they were
+// simply never fetched for rejected orders before.
+async function openRejectedView(jobId){
+  const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId)||{id:jobId};
+  $('#rejTitle').textContent=`${jobId} · ${j.subscriber||''}`;
+  $('#rejSub').textContent=`Submitted by ${encoderLabel(j)} · rejected ${fmtWhen(j.rejected_at||j.updated_at)}${j.rejected_by?(' by '+j.rejected_by):''}`;
+  const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
+  $('#rejInfo').innerHTML=[
+    F('Subscriber',esc(j.subscriber)),F('Primary no.',esc(j.primary_no)),F('Other contact',esc(j.other_contact_no)),
+    F('Email',esc(j.email)),F('Plan',esc(j.plan)),F('Reference no.',esc(j.ref_no)),
+    F('Address',esc(j.address)),F('Your note',esc(j.special_note))
+  ].join('');
+  $('#rejHistory').textContent='Loading remarks…';
+  $('#rejDocs').innerHTML='<div class="none" style="padding:12px;color:#8a9894;font-size:12px">Loading attachments…</div>';
+  $('#rejEditBtn').onclick=()=>{ closeModals(); editRejectedOrder(jobId); };
+  openModal($('#rejModal'));
+  // Remarks: newest first, so the latest instruction is what they read.
+  try{
+    const h=(await AHBACloud.getJobHistory(jobId))||'';
+    const lines=h.split('\n').filter(l=>l.trim());
+    const remarks=lines.filter(l=>/VALIDATED|REJECTED|resubmit/i.test(l));
+    const show=(remarks.length?remarks:lines).reverse().join('\n');
+    $('#rejHistory').textContent=show||`No remark recorded. Latest reason: ${rejectionReason(j)||'—'}`;
+  }catch(e){ $('#rejHistory').textContent=`Could not load the remark history. Latest reason: ${rejectionReason(j)||'—'}`; }
+  // Attachments, grouped like the Validator sees them.
+  try{
+    const docs=(await fetchDocsFor([jobId]))[jobId]||[];
+    const cats=[['id','Valid ID'],['billing','Proof of Billing'],['premise','Subscriber Premise']];
+    $('#rejDocs').innerHTML=cats.map(([c,label])=>{
+      const list=docs.filter(d=>d.category===c).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+      const imgs=list.length?`<div class="photo-grid" style="max-height:none;padding:0">${list.map(d=>`<a class="ph" href="${photoBase(d.path)}" target="_blank" rel="noopener" title="${label}${d.created_at?(' — uploaded '+fmtWhen(d.created_at)):''}"><img src="${photoThumb(d.path)}" alt="${label}" loading="lazy"></a>`).join('')}</div>`:'<div class="none" style="padding:12px;color:#c2503a;font-size:12px">⚠ No photo submitted for this requirement</div>';
+      return `<div class="doc-sec"><h4>${label} (${list.length})</h4>${imgs}</div>`;
+    }).join('');
+    $$('#rejDocs .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
+  }catch(e){ $('#rejDocs').innerHTML='<div class="none" style="padding:12px;color:#c2503a;font-size:12px">Could not load attachments — close and try again.</div>'; }
 }
 function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
@@ -1687,7 +1726,7 @@ function openValidate(jobId){
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
     F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),F('Add-ons (2P)',j.addon_count),F('VAS no.',j.vas_no),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
-    F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
+    F('Email',j.email),F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
     F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),F('Special note',j.special_note)
   ].join('');
   $('#valJONum').value=j.job_order_no||''; $('#valIbas').value=j.ibass_acct_no||'';
@@ -1724,17 +1763,24 @@ async function decideValidation(jobId,approve){
     if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
     // Intake approval assigns JO/IBAS + records approval time, but does NOT mark QA-validated.
     // QA validation (proof-photo review on the QA Validation page) is a separate, manual step.
-    body={status:'pending', validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+    body={status:'pending', validated_at:new Date().toISOString(), validated_by:actorLabel(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
     if(j.play_type==='2-PLAY'){
       const vs=$$('.valVas').map(i=>i.value.trim());
       if(!vs.length||vs.some(x=>!x)){ showToast('Enter all VAS Number(s) — required for 2-PLAY'); return; }
       body.vas_no=vs.join(', ');
     }
   } else {
-    body={status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
+    // The uploader's own special_note is NEVER overwritten any more — the remark has its
+    // own column, plus a permanent line in the append-only history.
+    const reason=($('#valReason').value||'').trim();
+    if(!reason){ showToast('Enter a rejection remark so the uploader knows what to fix'); $('#valReason').focus(); return; }
+    body={status:'rejected', updated_at:new Date().toISOString(), reject_reason:reason, rejected_by:actorLabel(), rejected_at:new Date().toISOString()};
   }
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    histLog(jobId, approve
+      ? `✅ VALIDATED by ${actorLabel()} — JO ${body.job_order_no||'—'}, IBAS ${body.ibass_acct_no||'—'}${body.vas_no?(', VAS '+body.vas_no):''}`
+      : `❌ REJECTED by ${actorLabel()} — ${body.reject_reason}`);
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
   }catch(e){showToast('Action failed: '+e.message)}
 }
@@ -1768,8 +1814,23 @@ function encoderLabel(j){
   if(oid && gcOrgId && oid!==gcOrgId && orgById[oid]){ const o=orgById[oid]; return '🏢 '+(o.name||o.code||'Subcon'); }
   return agentLabel(j&&j.created_by);
 }
-// The GC Validator stores the rejection reason in special_note as "REJECTED: <reason>".
-function rejectionReason(j){ const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given'; return s; }
+// Who is acting, for the permanent audit trail: "Name (USERNAME) · Org".
+// Shown to every organization so a subcon always knows which GC account acted on their JO.
+function actorLabel(){
+  const u=window.dashUser||{};
+  const name=u.display_name||u.username||'Console';
+  const uname=u.username&&u.display_name?` (${u.username})`:'';
+  const oid=myOrgId();
+  const org=(oid&&orgById[oid]&&(orgById[oid].name||orgById[oid].code))||(oid===gcOrgId?'AHBA':'');
+  return `${name}${uname}${org?' · '+org:''}`;
+}
+// The rejection remark now lives in its own column. Older orders kept it inside
+// special_note as "REJECTED: <reason>" — still read those so nothing looks blank.
+function rejectionReason(j){
+  const rr=((j&&j.reject_reason)||'').trim(); if(rr) return rr;
+  const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given';
+  return '';
+}
 // Current user's own org (from the JWT app_metadata) — used to scope own-org-only views (e.g. Remittance).
 function myOrgId(){ try{ return (JSON.parse(atob(dashTok().split('.')[1])).app_metadata||{}).org_id||''; }catch(_){ return ''; } }
 const TZ='Asia/Manila';
@@ -2092,6 +2153,7 @@ async function exportZip(){
     'NEW REF #': j.new_ref||'',
     'PRIMARY NO.': j.primary_no||'',
     'OTHER CONTACT NO.': j.other_contact_no||'',
+    'EMAIL': j.email||'',
     'FIRST NAME': j.first_name||'',
     'MIDDLE NAME': j.middle_name||'',
     'LAST NAME': j.last_name||'',
@@ -2205,7 +2267,7 @@ function jobToRow(j,nPhotos){
     'MAPPING REMARKS': j.mapping_remarks||'', 'DISPATCHED REMARKS': j.dispatched_remarks||'',
     'IBASS ACCT NO.': j.ibass_acct_no||'', 'JOB ORDER NO.': j.job_order_no||'', 'VAS NO': j.vas_no||'',
     '1P OR 2P': j.play_type||'', 'SPECIAL NOTE': j.special_note||'', 'REF NO.': j.ref_no||'', 'NEW REF #': j.new_ref||'',
-    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'',
+    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'', 'EMAIL': j.email||'',
     'FIRST NAME': j.first_name||'', 'MIDDLE NAME': j.middle_name||'', 'LAST NAME': j.last_name||'',
     'HOUSE NO.': j.house_no||'', 'STREET NAME': j.street_name||'', 'VILLAGE / SUBDIVISION': j.village||'',
     'BRGY': j.brgy||'', 'CITY': j.city||j.area||'',
@@ -2464,7 +2526,14 @@ function editRejectedOrder(jobId){
   const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
   const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
   const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
-  ['first_name','middle_name','last_name','primary_no','other_contact_no','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  ['first_name','middle_name','last_name','primary_no','other_contact_no','email','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  // Pin the Validator's latest remark at the top of the form so they can comply while editing.
+  const rbn=$('#ordRejBanner');
+  if(rbn){
+    const reason=rejectionReason(j);
+    rbn.style.display=reason?'':'none';
+    rbn.innerHTML=reason?`<div style="background:#fff7f5;border:1px solid #f3d9d2;border-radius:10px;padding:10px 12px"><div style="font:800 9px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#c2503a;margin-bottom:3px">Validator remark — please comply</div><div style="font-size:12px;color:#2a3a36;white-space:pre-wrap">${esc(reason)}</div>${j.rejected_by?`<div style="font-size:9px;color:#8a9894;margin-top:4px">by ${esc(j.rejected_by)}${j.rejected_at?(' · '+fmtWhen(j.rejected_at)):''}</div>`:''}</div>`:'';
+  }
   if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
   if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||'');
   // ALL CAPS ang options ngayon — itugma anuman ang pagkakasulat ng lumang record
@@ -2495,6 +2564,11 @@ async function submitOrder(e){
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
+  // Email is required on NEW orders. Resubmitting an older order that never had one is
+  // not blocked — those pre-date the field. Never uppercased: emails are case-sensitive.
+  const em=(f.email||'').trim();
+  if(em && !/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(em)){ err('Enter a valid email address (e.g. juan@email.com).'); return; }
+  if(!em && !ordEditId){ err('Email address is required.'); return; }
   if(ordType==='SLI'){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
@@ -2509,7 +2583,7 @@ async function submitOrder(e){
   // SLI goes to the Validator first; Migration & SLR go straight to For Dispatch.
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
-    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
+    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,email:em,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
   if(ordType==='SLI'){
@@ -2547,6 +2621,7 @@ async function submitOrder(e){
     const wasEdit=!!ordEditId; ordEditId=null;
     ordDocs={id:[],billing:[],premise:[]};
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
+    const rb2=$('#ordRejBanner'); if(rb2){ rb2.style.display='none'; rb2.innerHTML=''; }
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
     closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
@@ -3469,7 +3544,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const _rb=$('#ordRejBanner'); if(_rb){_rb.style.display='none';_rb.innerHTML='';} const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));

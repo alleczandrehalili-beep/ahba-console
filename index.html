@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-07-31.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-03.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -31,8 +31,8 @@
     .info-grid div b{display:block;color:#9aa6a2;font-size:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:2px}
     .doc-sec{padding:8px 25px}
     .doc-sec h4{font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:10px 0 8px}
-    #valModal.modal{width:min(820px,calc(100% - 30px))}
-    #valModal{max-height:92vh;overflow:auto}
+    #valModal.modal,#rejModal.modal{width:min(820px,calc(100% - 30px))}
+    #valModal,#rejModal{max-height:92vh;overflow:auto}
     /* Tall modals scroll inside; header + action buttons stay reachable */
     #orderModal,#jobDetailModal,#teamDetailModal,#announceModal{max-height:92vh;overflow:auto}
     .dispatch-board{display:flex!important;grid-template-columns:none!important;gap:10px;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin}
@@ -379,8 +379,8 @@
           <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>Area</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
         </article>
         <article class="panel full-table" id="valRejectedPanel" style="margin-top:14px;display:none">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">⚠ Rejected — needs fixing</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Orders the Validator rejected. Click “Edit &amp; resubmit” to fix the details and send it back for validation.</p></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Encoded by</th><th>Subscriber</th><th>Rejection reason</th><th>Rejected</th><th>Action</th></tr></thead><tbody id="valRejectedBody"></tbody></table></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">⚠ Rejected — needs fixing</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Orders the Validator rejected. Click “View &amp; comply” to see the Validator’s remarks and your uploaded attachments, then fix and resubmit.</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Encoded by</th><th>Subscriber</th><th>Rejection reason</th><th>Rejected by</th><th>Rejected</th><th>Action</th></tr></thead><tbody id="valRejectedBody"></tbody></table></div>
         </article>
       </section>
 
@@ -541,12 +541,14 @@
       <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button></div></div>
 
       <div class="form-grid">
+        <div class="field full" id="ordRejBanner" style="display:none"></div>
         <div class="field full form-sec">Subscriber</div>
         <label class="field"><span>First name *</span><input name="first_name" required></label>
         <label class="field"><span>Middle name</span><input name="middle_name"></label>
         <label class="field"><span>Last name *</span><input name="last_name" required></label>
         <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
         <label class="field"><span>Other contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+        <label class="field"><span>Email address *</span><input name="email" type="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="subscriber@email.com"></label>
       </div>
 
       <div class="form-grid">
@@ -694,6 +696,14 @@
     <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="valReject" style="color:#c2503a;border-color:#f0c4b9">Reject</button><button type="button" class="primary-btn" id="valApprove">Approve → Dispatch</button></div>
   </dialog>
 
+  <dialog id="rejModal" class="modal">
+    <div class="modal-head"><div><span class="eyebrow">REJECTED ORDER · REVIEW</span><h2 id="rejTitle">Rejected job order</h2><p id="rejSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div style="padding:18px 25px 4px"><div class="info-grid" id="rejInfo"></div></div>
+    <div style="padding:6px 25px 4px"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#c2503a;margin:2px 0 6px">Validator remarks &amp; history</div><div id="rejHistory" style="font-size:12px;color:#2a3a36;background:#fff7f5;border:1px solid #f3d9d2;border-radius:10px;padding:11px 13px;white-space:pre-wrap;max-height:230px;overflow:auto">Loading…</div></div>
+    <div id="rejDocs"></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="rejEditBtn">✏️ Edit &amp; resubmit</button></div>
+  </dialog>
+
   <!-- Messenger-style floating team chat -->
   <button id="dashChatFab" class="dash-chat-fab" title="Team messages">💬<span id="dashChatBadge" class="hidden">0</span></button>
   <div id="dashChatWidget" class="dash-chat" style="display:none">
@@ -712,8 +722,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-07-31.1"></script>
+  <script src="app.js?v=2026-08-03.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-07-31.1"></script>
+  <script src="ahba-cloud.js?v=2026-08-03.1"></script>
 </body>
 </html>
