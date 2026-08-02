@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.5';
+const APP_VERSION='2026-08-03.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -419,7 +419,12 @@ function renderJobs(){
     const _td=manilaToday();
     if($('#pendingBadge')) $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
     if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong></td><td>${j.type}</td><td>${esc(j.area)}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
-    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
+    // The whole 14-day live window used to be written into this table (1,500 loads =
+    // ~19,500 DOM nodes, ~57k on the page). Every nav click then made Chrome restyle that
+    // whole tree, which is what produced 'Page Unresponsive'. Now only the rows that pass
+    // the current filter are rendered, capped — searching still covers EVERY load, because
+    // applyJobTableFilter() filters the jobs array, not the DOM.
+    applyJobTableFilter();
   }
   const stages=[['pending','For Dispatch'],['assigned','Acknowledged'],['en-route','Travel'],['on-site,in-progress','On Site'],['negative','Incomplete'],['completed','Completed'],['cancelled','Cancelled']];
   $('#dispatchBoard').innerHTML=stages.map(([keys,label])=>{
@@ -432,7 +437,11 @@ function renderJobs(){
     if(keys==='pending'){ list=list.slice().sort((a,b)=>(b.dispatch_count||0)-(a.dispatch_count||0)); }
     // In a PREVIOUS-DATE view, allow carrying that day's Incomplete loads to today's For Dispatch.
     const carryBtn=(hist && keys==='negative' && list.length)?`<button class="assign-btn" data-carryneg="1" style="width:100%;margin:0 0 8px;background:#fff4e1;border-color:#f0d9a8;color:#a4690f">↩ Carry all to For Dispatch (today)</button>`:'';
-    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${list.map(jobCard).join('')||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
+    // Only the first BOARD_COL_CAP cards go into the DOM — a full day across all columns
+    // was ~15,000 nodes on its own. The column header still shows the TRUE total.
+    const _shown=list.slice(0,BOARD_COL_CAP);
+    const _more=list.length>_shown.length?`<div class="job-card" style="text-align:center;color:#8a9894;font-size:11px;cursor:default">+${list.length-_shown.length} more — open Work Orders to see all</div>`:'';
+    return `<div class="board-column" data-drop="${keys}"><div class="column-head"><strong>${label}</strong><span>${list.length}</span></div>${carryBtn}${_shown.map(jobCard).join('')+_more||'<div class="job-card empty"><p>No jobs in this stage.</p></div>'}</div>`;
   }).join('');
   const encDate=j=> j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '';
   const todayLoads=(hist ? [...new Map(SRC.map(j=>[j.id,j])).values()]
@@ -905,21 +914,28 @@ async function renderExpenses(){
 function bindAssignButtons(){$$('[data-assign]').forEach(b=>b.onclick=()=>openAssign(b.dataset.assign))}
 
 // Work-order table filtering (search text + active chip combined)
+const BOARD_COL_CAP=60;   // job cards rendered per dispatch-board column
+const WO_TABLE_CAP=250;   // rows put in the DOM at once; the search covers all loads
 function applyJobTableFilter(){
+  const body=$('#workOrderBody'); if(!body) return;
   const chip=$('#jobFilters .active'), f=chip?chip.dataset.filter:'all';
   const q=($('#jobSearch')?.value||'').toLowerCase().trim();
-  let shown=0;
-  $$('#workOrderBody tr').forEach(r=>{
-    const matchesChip = f==='all' || (f==='pending'?r.dataset.status==='pending':r.dataset.type===f);
-    const matchesText = !q || r.dataset.text.includes(q);
-    const show=matchesChip&&matchesText;
-    r.style.display=show?'':'none';
-    if(show) shown++;
+  const matches=(jobs||[]).filter(j=>{
+    const type=(j.type||'').toLowerCase();
+    const matchesChip = f==='all' || (f==='pending' ? j.status==='pending' : type===f);
+    if(!matchesChip) return false;
+    if(!q) return true;
+    return (j.id+' '+(j.subscriber||'')+' '+(j.area||'')).toLowerCase().includes(q);
   });
-  const empty=$('#workOrderEmpty'); if(empty) empty.hidden=shown!==0;
+  const slice=matches.slice(0,WO_TABLE_CAP);
+  body.innerHTML=slice.map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('')
+    + (matches.length>slice.length?`<tr><td colspan="7" style="text-align:center;color:#8a9894;font-size:11px;padding:10px">Showing ${slice.length} of ${matches.length} — use the search box to narrow it down.</td></tr>`:'');
+  const empty=$('#workOrderEmpty'); if(empty) empty.hidden=matches.length!==0;
 }
 
 // ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
+const TL_FEED_CAP=80;     // load cards rendered in the timeline feed
+const TL_HIST_LINES=6;    // most-recent history lines shown per card
 const TL_START=8, TL_END=21;                 // 8 AM – 9 PM
 const TL_HOURS=TL_END-TL_START;              // 13 hourly columns
 const TL_DEFMIN=90;                          // default Job Order duration: 1 hr 30 mins
@@ -1240,10 +1256,14 @@ function renderTimelineHistory(){
   // Re-render once the fetched history lands; the cache check then short-circuits, so
   // this settles after exactly one extra pass and never loops.
   tlFillHistory(loads).then(changed=>{ if(changed) renderTimelineHistory(); });
-  el.innerHTML=loads.map(j=>{
+  // This feed rendered EVERY load encoded today, each with its whole history expanded —
+  // ~16,500 DOM nodes on a busy day. Cap the cards and show only the most recent lines.
+  const _tlShown=loads.slice(0,TL_FEED_CAP);
+  el.innerHTML=_tlShown.map(j=>{
     const cls=(j.status||'pending'); const lbl=statusLabel(j.status||'pending');
     const hist=(tlHistCache[j.id]&&tlHistCache[j.id].history)||j.history||'';
-    const lines=hist.split('\n').map(s=>s.trim()).filter(Boolean);
+    let lines=hist.split('\n').map(s=>s.trim()).filter(Boolean);
+    if(lines.length>TL_HIST_LINES) lines=lines.slice(-TL_HIST_LINES);
     const log=lines.length?lines.map(l=>{ const m=l.match(/^\[(.+?)\]\s*(.*)$/);
       return m?`<div class="tl-hist-line"><span class="tl-hist-time">${m[1].replace(/</g,'&lt;')}</span><span>${m[2].replace(/</g,'&lt;')}</span></div>`
               :`<div class="tl-hist-line"><span class="tl-hist-time"></span><span>${l.replace(/</g,'&lt;')}</span></div>`;
@@ -1254,7 +1274,7 @@ function renderTimelineHistory(){
       +`<div class="tl-hist-head"><b>${sub}</b><span class="tl-hist-jo">J.O. ${jo}</span><span class="status ${cls}">${lbl}</span>${j.team?`<span class="tl-hist-team">${j.team.replace(/</g,'&lt;')}</span>`:''}${dc>0?`<span class="redispatch dc${Math.min(dc,5)}" style="font-size:8px;padding:1px 5px">⟳${dc}</span>`:''}</div>`
       +`<div class="tl-chip-by" style="margin:3px 0 0">Agent: ${tlBy(j).replace(/</g,'&lt;')}</div>`
       +`<div class="tl-hist-log">${log}</div></div>`;
-  }).join('');
+  }).join('') + (loads.length>_tlShown.length?`<div class="empty-row" style="color:#8a9894">Showing the ${_tlShown.length} most recent of ${loads.length} loads encoded today.</div>`:'');
   $$('#tlHistory [data-tlhist]').forEach(it=>it.onclick=()=>openJobDetail(it.dataset.tlhist));
   const tg=$('#tlHistToggle'); if(tg&&!tg._wired){ tg._wired=true; tg.onclick=()=>{ const h=$('#tlHistory'); const hidden=h.style.display==='none'; h.style.display=hidden?'':'none'; tg.textContent=hidden?'Hide':'Show'; }; }
 }
