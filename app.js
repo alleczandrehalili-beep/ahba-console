@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.7';
+const APP_VERSION='2026-08-03.8';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -544,7 +544,7 @@ function openJobDetail(jobId){
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
     F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
-    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
+    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
     F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
@@ -1626,8 +1626,9 @@ async function renderValRejected(){
   const canDelRej=dashCanEdit('validation');
   rb.innerHTML=valRejected.map(j=>{
     const reason=rejectionReason(j);
+    const by=j.validated_by?`<div style="font-size:8px;color:#9aa6a2;margin-top:2px">Rejected by ${esc(j.validated_by)}</div>`:'';
     const delBtn=canDelRej?` <button class="assign-btn" data-delrej="${j.id}" style="color:#c2503a;border-color:#f0c3ba" title="Soft-delete this rejected order (kept in records)">🗑 Delete</button>`:'';
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}${by}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
   }).join('');
   rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
   rb.querySelectorAll('[data-delrej]').forEach(b=>b.onclick=()=>softDeleteRejectedOrder(b.dataset.delrej));
@@ -1665,7 +1666,7 @@ function openValidate(jobId){
   $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.updated_at)}`;
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
-    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),
+    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
     F('Plan',j.plan),F('Add-on',j.add_on),F('Reference no.',j.ref_no),F('1P/2P',j.play_type),F('Add-ons (2P)',j.addon_count),F('VAS no.',j.vas_no),
     F('Unit type',j.dwelling_type),F('Installation fee',j.install_fee_type),F('Amount to collect',j.amount_to_collect!=null?money(j.amount_to_collect):''),
     F('Source of sales',j.source_of_sales),F('Referral',j.referral_name),F('Address',j.address),
@@ -1697,7 +1698,8 @@ function openValidate(jobId){
 async function decideValidation(jobId,approve){
   if(!dashCanEdit('validation')){ showToast('Validation is GC-only'); return; }
   const j=valJobs.find(x=>x.id===jobId)||{};
-  let body;
+  const u=window.dashUser||{}; const who=u.display_name||u.username||'Validator';   // sino ang nag-desisyon
+  let body, rejReason='';
   if(approve){
     const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
@@ -1705,17 +1707,24 @@ async function decideValidation(jobId,approve){
     if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
     // Intake approval assigns JO/IBAS + records approval time, but does NOT mark QA-validated.
     // QA validation (proof-photo review on the QA Validation page) is a separate, manual step.
-    body={status:'pending', validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas};
+    // validated_by records WHO approved this at intake (was previously left blank here).
+    body={status:'pending', validated_at:new Date().toISOString(), updated_at:new Date().toISOString(), load_date:manilaToday(), job_order_no:jo, ibass_acct_no:ibas, validated_by:who};
     if(j.play_type==='2-PLAY'){
       const vs=$$('.valVas').map(i=>i.value.trim());
       if(!vs.length||vs.some(x=>!x)){ showToast('Enter all VAS Number(s) — required for 2-PLAY'); return; }
       body.vas_no=vs.join(', ');
     }
   } else {
-    body={status:'rejected', updated_at:new Date().toISOString(), special_note:(($('#valReason').value||'').trim()?('REJECTED: '+$('#valReason').value.trim()):'REJECTED')};
+    rejReason=($('#valReason').value||'').trim();
+    // validated_by here = who handled this order in validation (the rejecter); shown in the Rejected panel.
+    body={status:'rejected', updated_at:new Date().toISOString(), validated_by:who, special_note:(rejReason?('REJECTED: '+rejReason):'REJECTED')};
   }
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    // Append-only audit line so the JO Detail history shows WHO approved/rejected and when.
+    histLog(jobId, approve
+      ? `Approved at intake by ${who} (JO ${body.job_order_no} · IBAS ${body.ibass_acct_no})`
+      : `Rejected by ${who}${rejReason?': '+rejReason:''}`);
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
   }catch(e){showToast('Action failed: '+e.message)}
 }
@@ -2173,7 +2182,7 @@ function jobToRow(j,nPhotos){
     'MAPPING REMARKS': j.mapping_remarks||'', 'DISPATCHED REMARKS': j.dispatched_remarks||'',
     'IBASS ACCT NO.': j.ibass_acct_no||'', 'JOB ORDER NO.': j.job_order_no||'', 'VAS NO': j.vas_no||'',
     '1P OR 2P': j.play_type||'', 'SPECIAL NOTE': j.special_note||'', 'REF NO.': j.ref_no||'', 'NEW REF #': j.new_ref||'',
-    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'',
+    'PRIMARY NO.': j.primary_no||'', 'OTHER CONTACT NO.': j.other_contact_no||'', 'EMAIL': j.email||'',
     'FIRST NAME': j.first_name||'', 'MIDDLE NAME': j.middle_name||'', 'LAST NAME': j.last_name||'',
     'HOUSE NO.': j.house_no||'', 'STREET NAME': j.street_name||'', 'VILLAGE / SUBDIVISION': j.village||'',
     'BRGY': j.brgy||'', 'CITY': j.city||j.area||'',
@@ -2426,7 +2435,7 @@ function editRejectedOrder(jobId){
   const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
   const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
   const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
-  ['first_name','middle_name','last_name','primary_no','other_contact_no','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  ['first_name','middle_name','last_name','primary_no','other_contact_no','email','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
   if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
   if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||'');
   // ALL CAPS ang options ngayon — itugma anuman ang pagkakasulat ng lumang record
@@ -2454,7 +2463,11 @@ async function submitOrder(e){
   const t=v=>(v||'').trim().toUpperCase();
   const ordType=($('#orderForm').dataset.ordtype)||'SLI';   // SLI · Migration · SLR
   const fn=t(f.first_name), ln=t(f.last_name), dist=t(f.district), brgy=t(f.brgy), city=t(f.city)||'QUEZON CITY', pno=t(f.primary_no), ono=t(f.other_contact_no);
+  // Email is NOT uppercased (emails are case-sensitive in the local part) — read raw, lowercased.
+  const email=(f.email||'').trim().toLowerCase();
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
+  if(!email){ err('Email address is required.'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err('Enter a valid email address (name@email.com).'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
   if(ordType==='SLI'){
@@ -2471,7 +2484,7 @@ async function submitOrder(e){
   // SLI goes to the Validator first; Migration & SLR go straight to For Dispatch.
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
-    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,
+    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,email:email,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
   if(ordType==='SLI'){

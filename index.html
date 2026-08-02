@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-08-03.7" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-03.8" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -547,6 +547,7 @@
         <label class="field"><span>Last name *</span><input name="last_name" required></label>
         <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
         <label class="field"><span>Other contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+        <label class="field"><span>Email address *</span><input name="email" type="email" inputmode="email" autocomplete="off" placeholder="name@email.com" required></label>
       </div>
 
       <div class="form-grid">
@@ -712,8 +713,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-03.7"></script>
+  <script src="app.js?v=2026-08-03.8"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-03.7"></script>
+  <script src="ahba-cloud.js?v=2026-08-03.8"></script>
 </body>
 </html>
