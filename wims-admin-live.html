@@ -446,7 +446,7 @@
 
   // ---- Reports (materials monitoring + extraction) ----
   var repRows=[], ledRows=[];
-  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_serials','IPTV'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
+  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
   function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadReports(){
     loadInventory();
