@@ -342,6 +342,7 @@
     if(e.target.id==='dlTemplate'){doTemplate();return;}
     if(e.target.id==='dlMatTemplate'){doMatTemplate();return;}
     if(e.target.id==='doMatImport'){doMatImport();return;}
+    var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
     if(e.target.id==='issTeam')updateRelease();
@@ -379,21 +380,36 @@
   }
 
   // ---- technicians (live FieldOps mobile accounts, incl. subcon) ----
+  var enrolledSet={};
   function loadTechnicians(){
     var el=$('#techList'); el.innerHTML='<span class="empty">Loading…</span>';
-    apiPublic('/technicians?select=*&order=username.asc').then(function(rows){
-      rows=(rows||[]).filter(function(r){return !isSalesAcct(r.username);});
+    Promise.all([
+      apiPublic('/technicians?select=*&order=username.asc'),
+      rpc('list_tech_access',{}).catch(function(){return [];})
+    ]).then(function(res){
+      var rows=(res[0]||[]).filter(function(r){return !isSalesAcct(r.username);});
+      enrolledSet={}; (res[1]||[]).forEach(function(x){ if(x.username) enrolledSet[x.username]=1; });
       var isSub=function(u){return !/^AHBA_/i.test(u.username||'');};
       var own=rows.filter(function(r){return !isSub(r);}), sub=rows.filter(isSub);
-      var cell=function(r){return '<tr><td class="tnum" style="font-weight:700">'+(r.username||'—')+'</td><td>'+(r.display_name||r.area||'—')+'</td><td>'+(r.role||'technician')+'</td><td>'+(r.last_login?new Date(r.last_login).toLocaleDateString():'never')+'</td></tr>';};
-      var tbl=function(list){return list.length?'<table><thead><tr><th>Account</th><th>Name / area</th><th>Role</th><th>Last login</th></tr></thead><tbody>'+list.map(cell).join('')+'</tbody></table>':'<span class="empty">None.</span>';};
-      el.innerHTML='<div class="stats" style="margin-bottom:14px">'+
+      var cell=function(r){var on=!!enrolledSet[r.username];
+        return '<tr><td class="tnum" style="font-weight:700">'+(r.username||'—')+'</td><td>'+(r.display_name||r.area||'—')+'</td>'+
+          '<td>'+(on?'<span class="pill installed">✓ WIMS on</span>':'<span class="pill stock">off</span>')+'</td>'+
+          '<td><button class="chip" data-tech="'+r.username+'" data-on="'+(on?1:0)+'">'+(on?'Disable':'Enable')+'</button></td></tr>';};
+      var tbl=function(list){return list.length?'<table><thead><tr><th>Account</th><th>Name / area</th><th>WIMS</th><th></th></tr></thead><tbody>'+list.map(cell).join('')+'</tbody></table>':'<span class="empty">None.</span>';};
+      var enN=Object.keys(enrolledSet).length;
+      el.innerHTML='<div class="note info">🔒 <b>Controlled rollout:</b> only technicians you <b>Enable</b> here see the WIMS material report on their mobile app — everyone else is unaffected. <b class="tnum">'+enN+'</b> enrolled.</div>'+
+        '<div class="stats" style="margin:12px 0">'+
         '<div class="sc d"><b class="tnum">'+rows.length+'</b><span>Total technicians</span></div>'+
         '<div class="sc g"><b class="tnum">'+own.length+'</b><span>AHBA-owned</span></div>'+
         '<div class="sc a"><b class="tnum">'+sub.length+'</b><span>Subcontractor</span></div></div>'+
         '<div class="lbl">AHBA-owned teams</div>'+tbl(own)+
         '<div class="lbl" style="margin-top:16px">Subcontractor teams</div>'+tbl(sub);
-    }).catch(function(e){$('#techList').innerHTML='<span class="empty">'+e.message+' — (kung 401/permission, tsignal na kailangan ng access sa technicians table)</span>';});
+    }).catch(function(e){$('#techList').innerHTML='<span class="empty">'+e.message+'</span>';});
+  }
+  function toggleTech(username,on){
+    rpc('set_tech_access',{p_username:username,p_enable:!on}).then(function(){
+      toast((on?'Disabled':'Enabled')+' WIMS for '+username);return loadTechnicians();
+    }).catch(function(e){toast('Failed: '+e.message,true);});
   }
   function doSync(){
     var btn=$('#syncTeams');btn.disabled=true;btn.textContent='Syncing…';
