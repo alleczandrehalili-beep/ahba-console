@@ -2,6 +2,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WIMS — Warehouse (live)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
     --ink:#102925;--muted:#6d7d78;--faint:#9aa8a3;--deep:#082c28;
@@ -91,6 +94,7 @@
     <button class="tab on" data-tab="issue">📤 Issuance</button>
     <button class="tab" data-tab="receive">📥 Receiving</button>
     <button class="tab" data-tab="stock">📊 Stock</button>
+    <button class="tab" data-tab="techs">🧑‍🔧 Technicians</button>
   </div>
 
   <!-- ISSUANCE -->
@@ -151,6 +155,17 @@
       <div id="matList"><span class="empty">Loading…</span></div>
     </div>
   </section>
+
+  <!-- TECHNICIANS -->
+  <section id="tab-techs" hidden>
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h2>Technicians with FieldOps access</h2><p class="desc" style="margin:0">Every mobile technician account — AHBA-owned and subcontractor teams. Live from FieldOps.</p></div>
+        <button class="btn" id="syncTeams" style="margin-left:auto">🔄 Sync to WIMS teams</button>
+      </div>
+      <div id="techList" style="margin-top:12px"><span class="empty">Loading…</span></div>
+    </div>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -183,6 +198,8 @@
   // ---- REST helpers (wims schema) ----
   function H(write){var h={'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)};h[write?'Content-Profile':'Accept-Profile']='wims';if(write)h['Content-Type']='application/json';return h;}
   function api(path){return fetch(CFG.url+'/rest/v1'+path,{headers:H(false)}).then(chk);}
+  // read a table in the DEFAULT (public) schema — no wims profile header
+  function apiPublic(path){return fetch(CFG.url+'/rest/v1'+path,{headers:{'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)}}).then(chk);}
   function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
   function chk(r){return r.text().then(function(t){var j=t?JSON.parse(t):null;if(!r.ok){var msg=(j&&(j.message||j.hint))||('HTTP '+r.status);throw new Error(msg);}return j;});}
 
@@ -277,7 +294,7 @@
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-tab]');
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
-      ['issue','receive','stock'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); return;}
+      ['issue','receive','stock','techs'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); return;}
 
     var bx=e.target.closest('[data-box]'); if(bx){curBox=bx.getAttribute('data-box');pick={};renderBoxes();return;}
     var pk=e.target.closest('[data-pick]'); if(pk){var s=pk.getAttribute('data-pick');pick[s]=!pick[s];renderUnits();return;}
@@ -286,6 +303,7 @@
     if(e.target.id==='doRelease'){doRelease();return;}
     if(e.target.id==='doReceive'){doReceive();return;}
     if(e.target.id==='doMat'){doMat();return;}
+    if(e.target.id==='syncTeams'){doSync();return;}
   });
   document.addEventListener('change',function(e){ if(e.target.id==='issTeam')updateRelease(); });
 
@@ -316,6 +334,30 @@
       .then(function(){toast('✓ Materials received');return loadStock();})
       .catch(function(e){toast('Failed: '+e.message,true);})
       .then(function(){btn.disabled=false;btn.textContent='📦 Receive materials';});
+  }
+
+  // ---- technicians (live FieldOps mobile accounts, incl. subcon) ----
+  function loadTechnicians(){
+    var el=$('#techList'); el.innerHTML='<span class="empty">Loading…</span>';
+    apiPublic('/technicians?select=*&order=username.asc').then(function(rows){
+      rows=rows||[];
+      var isSub=function(u){return !/^AHBA_/i.test(u.username||'');};
+      var own=rows.filter(function(r){return !isSub(r);}), sub=rows.filter(isSub);
+      var cell=function(r){return '<tr><td class="tnum" style="font-weight:700">'+(r.username||'—')+'</td><td>'+(r.display_name||r.area||'—')+'</td><td>'+(r.role||'technician')+'</td><td>'+(r.last_login?new Date(r.last_login).toLocaleDateString():'never')+'</td></tr>';};
+      var tbl=function(list){return list.length?'<table><thead><tr><th>Account</th><th>Name / area</th><th>Role</th><th>Last login</th></tr></thead><tbody>'+list.map(cell).join('')+'</tbody></table>':'<span class="empty">None.</span>';};
+      el.innerHTML='<div class="stats" style="margin-bottom:14px">'+
+        '<div class="sc d"><b class="tnum">'+rows.length+'</b><span>Total technicians</span></div>'+
+        '<div class="sc g"><b class="tnum">'+own.length+'</b><span>AHBA-owned</span></div>'+
+        '<div class="sc a"><b class="tnum">'+sub.length+'</b><span>Subcontractor</span></div></div>'+
+        '<div class="lbl">AHBA-owned teams</div>'+tbl(own)+
+        '<div class="lbl" style="margin-top:16px">Subcontractor teams</div>'+tbl(sub);
+    }).catch(function(e){$('#techList').innerHTML='<span class="empty">'+e.message+' — (kung 401/permission, tsignal na kailangan ng access sa technicians table)</span>';});
+  }
+  function doSync(){
+    var btn=$('#syncTeams');btn.disabled=true;btn.textContent='Syncing…';
+    rpc('sync_teams',{}).then(function(n){toast('✓ Synced '+(n==null?'':n+' ')+'technicians into WIMS teams');return loadTeams();})
+      .catch(function(e){toast('Sync failed: '+e.message,true);})
+      .then(function(){btn.disabled=false;btn.textContent='🔄 Sync to WIMS teams';});
   }
 })();
 </script>

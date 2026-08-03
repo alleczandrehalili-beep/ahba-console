@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-03.10';
+const APP_VERSION='2026-08-03.11';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1567,7 +1567,7 @@ function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
-function initWims(){ const f=document.getElementById('wimsFrame'); if(f && !f.getAttribute('src')){ f.setAttribute('src','wims-admin-live.html'); } }
+function initWims(){ const f=document.getElementById('wimsFrame'); if(f && !f.getAttribute('src')){ f.setAttribute('src','wims-admin-live.html?v='+APP_VERSION); } }
 // Hand the embedded WIMS admin our live Supabase session so it reuses this login
 // (no separate sign-in). We only ever answer OUR own iframe's request.
 window.addEventListener('message', function(e){
