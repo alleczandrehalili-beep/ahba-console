@@ -95,6 +95,7 @@
     <button class="tab" data-tab="receive">📥 Receiving</button>
     <button class="tab" data-tab="stock">📊 Stock</button>
     <button class="tab" data-tab="techs">🧑‍🔧 Technicians</button>
+    <button class="tab" data-tab="reports">📄 Reports</button>
   </div>
 
   <!-- ISSUANCE -->
@@ -181,6 +182,26 @@
         <button class="btn" id="syncTeams" style="margin-left:auto">🔄 Sync to WIMS teams</button>
       </div>
       <div id="techList" style="margin-top:12px"><span class="empty">Loading…</span></div>
+    </div>
+  </section>
+
+  <!-- REPORTS -->
+  <section id="tab-reports" hidden>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Materials used — per technician / JO</h2><p class="desc" style="margin:0">Every completed install: modem + IPTV serials, kit, and drop materials used, per JO &amp; subscriber.</p></div>
+        <div class="field" style="margin-left:auto"><label>Technician / team</label><select id="repTeam"><option value="">All technicians</option></select></div>
+        <button class="btn" id="repExport">⬇ Export CSV</button>
+      </div>
+      <div class="stats" id="repStats" style="margin:12px 0"></div>
+      <div id="repTable" style="overflow:auto;max-height:520px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Inventory deductions — drop-material ledger</h2><p class="desc" style="margin:0">Auto-deducted from warehouse stock on receive / issue / install.</p></div>
+        <button class="btn" id="ledExport" style="margin-left:auto">⬇ Export CSV</button>
+      </div>
+      <div id="ledTable" style="overflow:auto;max-height:360px;margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
   </section>
 </div>
@@ -328,7 +349,7 @@
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-tab]');
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
-      ['issue','receive','stock','techs'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); return;}
+      ['issue','receive','stock','techs','reports'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); return;}
 
     var bx=e.target.closest('[data-box]'); if(bx){curBox=bx.getAttribute('data-box');pick={};renderBoxes();return;}
     var pk=e.target.closest('[data-pick]'); if(pk){var s=pk.getAttribute('data-pick');pick[s]=!pick[s];renderUnits();return;}
@@ -342,12 +363,15 @@
     if(e.target.id==='dlTemplate'){doTemplate();return;}
     if(e.target.id==='dlMatTemplate'){doMatTemplate();return;}
     if(e.target.id==='doMatImport'){doMatImport();return;}
+    if(e.target.id==='repExport'){exportRep();return;}
+    if(e.target.id==='ledExport'){exportLed();return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
     if(e.target.id==='issTeam')updateRelease();
     if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]);
     if(e.target.id==='matFile'&&e.target.files&&e.target.files[0])onMatFile(e.target.files[0]);
+    if(e.target.id==='repTeam')loadReports();
   });
 
   function doRelease(){
@@ -411,6 +435,38 @@
       toast((on?'Disabled':'Enabled')+' WIMS for '+username);return loadTechnicians();
     }).catch(function(e){toast('Failed: '+e.message,true);});
   }
+
+  // ---- Reports (materials monitoring + extraction) ----
+  var repRows=[], ledRows=[];
+  var REPCOLS=[['completed_at','When'],['team','Team'],['technician','Technician'],['jo_number','JO'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_serials','IPTV'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
+  function csvcell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
+  function downloadCsv(name,rows){ var t=rows.map(function(r){return r.join(',');}).join('\n'); var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(t); a.download=name; a.click(); toast('Exported '+name); }
+  function loadReports(){
+    var sel=$('#repTeam');
+    if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
+    var team=sel?sel.value:'';
+    $('#repTable').innerHTML='<span class="empty">Loading…</span>';
+    api('/v_install_report?select=*&order=completed_at.desc&limit=2000'+(team?('&team=eq.'+encodeURIComponent(team)):'')).then(function(rows){
+      repRows=rows||[];
+      var foc=0,iptv=0,modems=0; repRows.forEach(function(r){foc+=(+r.foc_m||0);iptv+=(+r.iptv_count||0);if(r.modem_serial)modems++;});
+      $('#repStats').innerHTML=
+        '<div class="sc d"><b class="tnum">'+repRows.length+'</b><span>Completed JOs</span></div>'+
+        '<div class="sc g"><b class="tnum">'+modems+'</b><span>Modems installed</span></div>'+
+        '<div class="sc b"><b class="tnum">'+iptv+'</b><span>IPTV installed</span></div>'+
+        '<div class="sc a"><b class="tnum">'+foc.toLocaleString()+'</b><span>FOC used (m)</span></div>';
+      if(!repRows.length){$('#repTable').innerHTML='<span class="empty">No completed installs yet for this filter.</span>';return;}
+      $('#repTable').innerHTML='<table><thead><tr>'+REPCOLS.map(function(c){return '<th>'+c[1]+'</th>';}).join('')+'</tr></thead><tbody>'+
+        repRows.map(function(r){return '<tr>'+REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return '<td>'+(v==null||v===''?'—':v)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table>';
+    }).catch(function(e){$('#repTable').innerHTML='<span class="empty">'+e.message+'</span>';});
+    api('/v_material_ledger?select=*&order=created_at.desc&limit=2000').then(function(rows){
+      ledRows=rows||[];
+      if(!ledRows.length){$('#ledTable').innerHTML='<span class="empty">No movements yet.</span>';return;}
+      $('#ledTable').innerHTML='<table><thead><tr><th>When</th><th>Material</th><th>Type</th><th>Qty</th><th>Unit</th><th>Team</th><th>Note</th></tr></thead><tbody>'+
+        ledRows.map(function(r){var neg=(+r.qty<0);return '<tr><td>'+new Date(r.created_at).toLocaleString()+'</td><td>'+r.material+'</td><td>'+r.kind+'</td><td style="color:'+(neg?'var(--coral)':'var(--green)')+';font-weight:700">'+r.qty+'</td><td>'+r.unit+'</td><td>'+(r.team||'central')+'</td><td>'+(r.note||'')+'</td></tr>';}).join('')+'</tbody></table>';
+    }).catch(function(e){$('#ledTable').innerHTML='<span class="empty">'+e.message+'</span>';});
+  }
+  function exportRep(){ if(!repRows.length){toast('Nothing to export',true);return;} var rows=[REPCOLS.map(function(c){return c[1];})].concat(repRows.map(function(r){return REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toISOString();return csvcell(v);});})); downloadCsv('wims-materials-per-technician.csv',rows); }
+  function exportLed(){ if(!ledRows.length){toast('Nothing to export',true);return;} var rows=[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toISOString(),r.material,r.kind,r.qty,r.unit,r.team||'central',csvcell(r.note)];})); downloadCsv('wims-inventory-deductions.csv',rows); }
   function doSync(){
     var btn=$('#syncTeams');btn.disabled=true;btn.textContent='Syncing…';
     rpc('sync_teams',{}).then(function(n){toast('✓ Synced '+(n==null?'':n+' ')+'technicians into WIMS teams');return loadTeams();})
