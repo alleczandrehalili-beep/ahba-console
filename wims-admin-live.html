@@ -116,8 +116,17 @@
   <!-- RECEIVING -->
   <section id="tab-receive" hidden>
     <div class="panel">
-      <h2>Receive a delivery (CPE)</h2>
-      <p class="desc">Bring serialized CPE into stock from Converge. Serials are auto-generated for the dry run, packed into boxes of 20.</p>
+      <h2>Import serials — Excel / CSV</h2>
+      <p class="desc">Upload the real Converge masterlist (.xlsx or .csv). The serial column is auto-detected; serials pack into boxes of 20. Modem vs IPTV is inferred (ZTE/B866 = IPTV).</p>
+      <div class="row" style="align-items:flex-end">
+        <div class="field"><label>Masterlist file</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
+        <div class="field"><label>DR / reference #</label><input id="impDr" value="CVG-2026-08" style="width:150px"></div>
+      </div>
+      <div id="impPreview" style="margin-top:12px"></div>
+    </div>
+    <div class="panel">
+      <h2>Or generate demo serials</h2>
+      <p class="desc">No masterlist handy? Auto-generate serials for a dry run, packed into boxes of 20.</p>
       <div class="row">
         <div class="field"><label>DR / reference #</label><input id="rcvDr" value="CVG-DEMO-001" style="width:170px"></div>
         <div class="field"><label>Model</label>
@@ -306,8 +315,9 @@
     if(e.target.id==='doReceive'){doReceive();return;}
     if(e.target.id==='doMat'){doMat();return;}
     if(e.target.id==='syncTeams'){doSync();return;}
+    if(e.target.id==='doImport'){doImport();return;}
   });
-  document.addEventListener('change',function(e){ if(e.target.id==='issTeam')updateRelease(); });
+  document.addEventListener('change',function(e){ if(e.target.id==='issTeam')updateRelease(); if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]); });
 
   function doRelease(){
     var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
@@ -360,6 +370,61 @@
     rpc('sync_teams',{}).then(function(n){toast('✓ Synced '+(n==null?'':n+' ')+'technicians into WIMS teams');return loadTeams();})
       .catch(function(e){toast('Sync failed: '+e.message,true);})
       .then(function(){btn.disabled=false;btn.textContent='🔄 Sync to WIMS teams';});
+  }
+
+  // ---- Excel/CSV import of a real Converge masterlist ----
+  var impRows=[], impHeaders=[];
+  function loadXLSX(cb){ if(window.XLSX)return cb(); var s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=cb; s.onerror=function(){toast('Could not load the spreadsheet parser',true);}; document.head.appendChild(s); }
+  function pickCol(hs,names){for(var i=0;i<hs.length;i++){var h=String(hs[i]||'').toLowerCase();for(var j=0;j<names.length;j++)if(h.indexOf(names[j])>=0)return hs[i];}return null;}
+  function onFile(file){
+    var el=$('#impPreview'); el.innerHTML='<span class="empty">Reading '+file.name+'…</span>';
+    loadXLSX(function(){
+      var rd=new FileReader();
+      rd.onload=function(e){
+        try{
+          var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+          var ws=wb.Sheets[wb.SheetNames[0]];
+          impRows=XLSX.utils.sheet_to_json(ws,{defval:''});
+          if(!impRows.length){el.innerHTML='<span class="empty">No rows found in the first sheet.</span>';return;}
+          impHeaders=Object.keys(impRows[0]);
+          renderImportPreview();
+        }catch(err){el.innerHTML='<span class="empty">Parse error: '+err.message+'</span>';}
+      };
+      rd.readAsArrayBuffer(file);
+    });
+  }
+  function renderImportPreview(){
+    var el=$('#impPreview');
+    var guess=pickCol(impHeaders,['serial','sn','s/n','serialno'])||impHeaders[0];
+    var opts=impHeaders.map(function(h){return '<option value="'+h+'"'+(h===guess?' selected':'')+'>'+h+'</option>';}).join('');
+    var sample=impRows.slice(0,4).map(function(r){return '<tr>'+impHeaders.map(function(h){return '<td>'+String(r[h]).slice(0,20)+'</td>';}).join('')+'</tr>';}).join('');
+    el.innerHTML='<div class="note info">Found <b class="tnum">'+impRows.length+'</b> rows · '+impHeaders.length+' columns. Confirm the serial column, then import.</div>'+
+      '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field"><label>Serial column</label><select id="impSerCol">'+opts+'</select></div>'+
+      '<button class="btn lime" id="doImport" style="margin-left:auto">📥 Import '+impRows.length+' serials</button></div>'+
+      '<div style="overflow:auto;margin-top:10px"><table><thead><tr>'+impHeaders.map(function(h){return '<th>'+String(h).slice(0,16)+'</th>';}).join('')+'</tr></thead><tbody>'+sample+'</tbody></table></div>';
+  }
+  function doImport(){
+    var serCol=$('#impSerCol').value, dr=($('#impDr').value||'').trim()||'import';
+    var modelCol=pickCol(impHeaders,['model','description','item','product']);
+    var catCol=pickCol(impHeaders,['category','type','device']);
+    var macCol=pickCol(impHeaders,['mac']);
+    var boxCol=pickCol(impHeaders,['box','batch']);
+    var rows=[], seen={};
+    impRows.forEach(function(r){
+      var serial=String(r[serCol]||'').trim(); if(!serial||seen[serial])return; seen[serial]=1;
+      var model=modelCol?String(r[modelCol]||'').trim():'';
+      var hay=(String(catCol?r[catCol]:'')+' '+model+' '+serial).toLowerCase();
+      var cat=/iptv|zte|b866|set.?top|stb|tv box/.test(hay)?'iptv':'modem';
+      var box=(boxCol&&String(r[boxCol]).trim()!=='')?(parseInt(r[boxCol],10)||1):Math.floor(rows.length/20)+1;
+      var row={box_no:box,category:cat,serial:serial,model:model||CATLABEL[cat]};
+      if(macCol&&r[macCol])row.mac=String(r[macCol]).trim();
+      rows.push(row);
+    });
+    if(!rows.length){toast('No serials found in that column',true);return;}
+    var btn=$('#doImport');btn.disabled=true;btn.textContent='Importing '+rows.length+'…';
+    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
+      .then(function(){toast('✓ Imported '+rows.length+' serials into stock');$('#impPreview').innerHTML='<div class="note info">✓ Imported <b>'+rows.length+'</b> serials into stock (boxes of 20). See the Stock &amp; Issuance tabs.</div>';impRows=[];return loadStock();})
+      .catch(function(e){toast('Import failed: '+e.message,true);var b=$('#doImport');if(b){b.disabled=false;b.textContent='📥 Retry import';}});
   }
 })();
 </script>
