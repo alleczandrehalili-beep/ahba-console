@@ -485,8 +485,8 @@
       invRows=res[0]||[]; cpeOnhand=res[1]||[]; cpeDetail=res[2]||[];
       var cpeHtml=cpeOnhand.map(function(c){return '<div class="sc'+(c.category==='iptv'?' b':' d')+'"><b class="tnum">'+c.total_on_hand+'</b><span>'+(c.category==='modem'?'📶 Modems':'📺 IPTV')+' on hand ('+c.in_warehouse+' wh · '+c.team_held+' team)</span></div>';}).join('');
       var serHtml = cpeDetail.length
-        ? '<div class="lbl mt">🔢 Serialized CPE — per serial ('+cpeDetail.length+')</div><div style="overflow:auto;max-height:320px"><table><thead><tr><th>Serial</th><th>Type</th><th>Model</th><th>Location</th><th>Team</th></tr></thead><tbody>'+
-          cpeDetail.map(function(r){return '<tr><td class="tnum">'+r.serial+'</td><td>'+r.category+'</td><td class="mut">'+(r.model||'')+'</td><td>'+r.location+'</td><td>'+(r.team||'—')+'</td></tr>';}).join('')+'</tbody></table></div>'
+        ? '<div class="lbl mt">🔢 Serialized CPE — per serial · ageing ('+cpeDetail.length+')</div><div style="overflow:auto;max-height:340px"><table><thead><tr><th>Serial</th><th>Type</th><th>Location</th><th>Team</th><th>Imported</th><th>Age (d)</th><th>Assigned</th><th>Held (d)</th></tr></thead><tbody>'+
+          cpeDetail.map(function(r){var old=(+r.age_days>=30);return '<tr'+(old?' style="background:#fff8eb"':'')+'><td class="tnum">'+r.serial+'</td><td>'+r.category+'</td><td>'+r.location+'</td><td>'+(r.team||'—')+'</td><td>'+(r.imported_on||'—')+'</td><td'+(old?' style="color:#c98a1e;font-weight:700"':'')+'>'+(r.age_days==null?'—':r.age_days)+(old?' ⚠':'')+'</td><td>'+(r.assigned_on||'—')+'</td><td>'+(r.team_held_days==null?'—':r.team_held_days)+'</td></tr>';}).join('')+'</tbody></table></div>'
         : '';
       var matHtml = invRows.length
         ? '<div class="lbl mt">🧵 Drop materials (non-serialized)</div><table><thead><tr><th>Material</th><th>Central</th><th>Team-held (unused)</th><th>Total on hand</th><th>Unit</th></tr></thead><tbody>'+
@@ -497,7 +497,7 @@
   }
   function exportInv(){
     if(!cpeDetail.length && !invRows.length){toast('Nothing to export',true);return;}
-    var ser=[['Serial','Type','Model','Location','Team']].concat(cpeDetail.map(function(r){return [r.serial,r.category,r.model||'',r.location,r.team||''];}));
+    var ser=[['Serial','Type','Model','Location','Team','Imported on','Age (days)','Assigned on','Team-held (days)']].concat(cpeDetail.map(function(r){return [r.serial,r.category,r.model||'',r.location,r.team||'',r.imported_on||'',(r.age_days==null?'':+r.age_days),r.assigned_on||'',(r.team_held_days==null?'':+r.team_held_days)];}));
     var mat=[['Material','Central','Team-held (unused)','Total on hand','Unit']].concat(invRows.map(function(r){return [r.material,+r.central,+r.team_held,+r.total_on_hand,r.unit];}));
     downloadXlsxSheets('wims-inventory-on-hand.xlsx',[{name:'Serialized CPE',aoa:ser},{name:'Drop materials',aoa:mat}]);
   }
