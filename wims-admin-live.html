@@ -477,25 +477,29 @@
   function exportLed(){ if(!ledRows.length){toast('Nothing to export',true);return;} var rows=[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];})); downloadXlsx('wims-inventory-deductions.xlsx',rows); }
 
   // ---- inventory on hand (unused, incl. team-held) ----
-  var invRows=[], cpeOnhand=[];
+  var invRows=[], cpeOnhand=[], cpeDetail=[];
+  function downloadXlsxSheets(name,sheets){ loadXLSX(function(){ try{ var wb=XLSX.utils.book_new(); sheets.forEach(function(s){ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name); }); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadInventory(){
     $('#invTable').innerHTML='<span class="empty">Loading…</span>';
-    Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*') ]).then(function(res){
-      invRows=res[0]||[]; cpeOnhand=res[1]||[];
+    Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*'), api('/v_cpe_onhand_detail?select=*&limit=5000') ]).then(function(res){
+      invRows=res[0]||[]; cpeOnhand=res[1]||[]; cpeDetail=res[2]||[];
       var cpeHtml=cpeOnhand.map(function(c){return '<div class="sc'+(c.category==='iptv'?' b':' d')+'"><b class="tnum">'+c.total_on_hand+'</b><span>'+(c.category==='modem'?'📶 Modems':'📺 IPTV')+' on hand ('+c.in_warehouse+' wh · '+c.team_held+' team)</span></div>';}).join('');
+      var serHtml = cpeDetail.length
+        ? '<div class="lbl mt">🔢 Serialized CPE — per serial ('+cpeDetail.length+')</div><div style="overflow:auto;max-height:320px"><table><thead><tr><th>Serial</th><th>Type</th><th>Model</th><th>Location</th><th>Team</th></tr></thead><tbody>'+
+          cpeDetail.map(function(r){return '<tr><td class="tnum">'+r.serial+'</td><td>'+r.category+'</td><td class="mut">'+(r.model||'')+'</td><td>'+r.location+'</td><td>'+(r.team||'—')+'</td></tr>';}).join('')+'</tbody></table></div>'
+        : '';
       var matHtml = invRows.length
-        ? '<table><thead><tr><th>Material</th><th>Central</th><th>Team-held (unused)</th><th>Total on hand</th><th>Unit</th></tr></thead><tbody>'+
+        ? '<div class="lbl mt">🧵 Drop materials (non-serialized)</div><table><thead><tr><th>Material</th><th>Central</th><th>Team-held (unused)</th><th>Total on hand</th><th>Unit</th></tr></thead><tbody>'+
           invRows.map(function(r){return '<tr><td class="team">'+r.material+'</td><td>'+r.central+'</td><td>'+r.team_held+'</td><td class="big">'+r.total_on_hand+'</td><td class="mut">'+r.unit+'</td></tr>';}).join('')+'</tbody></table>'
-        : '<span class="empty">No material stock.</span>';
-      $('#invTable').innerHTML='<div class="stats" style="margin-bottom:12px">'+cpeHtml+'</div>'+matHtml;
+        : '';
+      $('#invTable').innerHTML='<div class="stats" style="margin-bottom:12px">'+cpeHtml+'</div>'+serHtml+matHtml;
     }).catch(function(e){$('#invTable').innerHTML='<span class="empty">'+e.message+'</span>';});
   }
   function exportInv(){
-    if(!invRows.length){toast('Nothing to export',true);return;}
-    var rows=[['CPE on hand','In warehouse','Team-held','Total']].concat(cpeOnhand.map(function(c){return [c.category,+c.in_warehouse,+c.team_held,+c.total_on_hand];}));
-    rows.push([]); rows.push(['Material','Central','Team-held (unused)','Total on hand','Unit']);
-    invRows.forEach(function(r){ rows.push([r.material,+r.central,+r.team_held,+r.total_on_hand,r.unit]); });
-    downloadXlsx('wims-inventory-on-hand.xlsx',rows);
+    if(!cpeDetail.length && !invRows.length){toast('Nothing to export',true);return;}
+    var ser=[['Serial','Type','Model','Location','Team']].concat(cpeDetail.map(function(r){return [r.serial,r.category,r.model||'',r.location,r.team||''];}));
+    var mat=[['Material','Central','Team-held (unused)','Total on hand','Unit']].concat(invRows.map(function(r){return [r.material,+r.central,+r.team_held,+r.total_on_hand,r.unit];}));
+    downloadXlsxSheets('wims-inventory-on-hand.xlsx',[{name:'Serialized CPE',aoa:ser},{name:'Drop materials',aoa:mat}]);
   }
   function doSync(){
     var btn=$('#syncTeams');btn.disabled=true;btn.textContent='Syncing…';
