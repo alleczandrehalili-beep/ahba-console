@@ -191,7 +191,7 @@
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Materials used — per technician / JO</h2><p class="desc" style="margin:0">Every completed install: modem + IPTV serials, kit, and drop materials used, per JO &amp; subscriber.</p></div>
         <div class="field" style="margin-left:auto"><label>Technician / team</label><select id="repTeam"><option value="">All technicians</option></select></div>
-        <button class="btn" id="repExport">⬇ Export CSV</button>
+        <button class="btn" id="repExport">⬇ Export Excel</button>
       </div>
       <div class="stats" id="repStats" style="margin:12px 0"></div>
       <div id="repTable" style="overflow:auto;max-height:520px"><span class="empty">Loading…</span></div>
@@ -199,9 +199,16 @@
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Inventory deductions — drop-material ledger</h2><p class="desc" style="margin:0">Auto-deducted from warehouse stock on receive / issue / install.</p></div>
-        <button class="btn" id="ledExport" style="margin-left:auto">⬇ Export CSV</button>
+        <button class="btn" id="ledExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
       <div id="ledTable" style="overflow:auto;max-height:360px;margin-top:12px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
+        <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div id="invTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
   </section>
 </div>
@@ -365,6 +372,7 @@
     if(e.target.id==='doMatImport'){doMatImport();return;}
     if(e.target.id==='repExport'){exportRep();return;}
     if(e.target.id==='ledExport'){exportLed();return;}
+    if(e.target.id==='invExport'){exportInv();return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
@@ -438,10 +446,10 @@
 
   // ---- Reports (materials monitoring + extraction) ----
   var repRows=[], ledRows=[];
-  var REPCOLS=[['completed_at','When'],['team','Team'],['technician','Technician'],['jo_number','JO'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_serials','IPTV'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
-  function csvcell(v){ v=(v==null?'':String(v)); return /[",\n]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v; }
-  function downloadCsv(name,rows){ var t=rows.map(function(r){return r.join(',');}).join('\n'); var a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(t); a.download=name; a.click(); toast('Exported '+name); }
+  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_serials','IPTV'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
+  function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadReports(){
+    loadInventory();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
@@ -465,8 +473,30 @@
         ledRows.map(function(r){var neg=(+r.qty<0);return '<tr><td>'+new Date(r.created_at).toLocaleString()+'</td><td>'+r.material+'</td><td>'+r.kind+'</td><td style="color:'+(neg?'var(--coral)':'var(--green)')+';font-weight:700">'+r.qty+'</td><td>'+r.unit+'</td><td>'+(r.team||'central')+'</td><td>'+(r.note||'')+'</td></tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#ledTable').innerHTML='<span class="empty">'+e.message+'</span>';});
   }
-  function exportRep(){ if(!repRows.length){toast('Nothing to export',true);return;} var rows=[REPCOLS.map(function(c){return c[1];})].concat(repRows.map(function(r){return REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toISOString();return csvcell(v);});})); downloadCsv('wims-materials-per-technician.csv',rows); }
-  function exportLed(){ if(!ledRows.length){toast('Nothing to export',true);return;} var rows=[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toISOString(),r.material,r.kind,r.qty,r.unit,r.team||'central',csvcell(r.note)];})); downloadCsv('wims-inventory-deductions.csv',rows); }
+  function exportRep(){ if(!repRows.length){toast('Nothing to export',true);return;} var rows=[REPCOLS.map(function(c){return c[1];})].concat(repRows.map(function(r){return REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return (v==null?'':v);});})); downloadXlsx('wims-materials-per-technician.xlsx',rows); }
+  function exportLed(){ if(!ledRows.length){toast('Nothing to export',true);return;} var rows=[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];})); downloadXlsx('wims-inventory-deductions.xlsx',rows); }
+
+  // ---- inventory on hand (unused, incl. team-held) ----
+  var invRows=[], cpeOnhand=[];
+  function loadInventory(){
+    $('#invTable').innerHTML='<span class="empty">Loading…</span>';
+    Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*') ]).then(function(res){
+      invRows=res[0]||[]; cpeOnhand=res[1]||[];
+      var cpeHtml=cpeOnhand.map(function(c){return '<div class="sc'+(c.category==='iptv'?' b':' d')+'"><b class="tnum">'+c.total_on_hand+'</b><span>'+(c.category==='modem'?'📶 Modems':'📺 IPTV')+' on hand ('+c.in_warehouse+' wh · '+c.team_held+' team)</span></div>';}).join('');
+      var matHtml = invRows.length
+        ? '<table><thead><tr><th>Material</th><th>Central</th><th>Team-held (unused)</th><th>Total on hand</th><th>Unit</th></tr></thead><tbody>'+
+          invRows.map(function(r){return '<tr><td class="team">'+r.material+'</td><td>'+r.central+'</td><td>'+r.team_held+'</td><td class="big">'+r.total_on_hand+'</td><td class="mut">'+r.unit+'</td></tr>';}).join('')+'</tbody></table>'
+        : '<span class="empty">No material stock.</span>';
+      $('#invTable').innerHTML='<div class="stats" style="margin-bottom:12px">'+cpeHtml+'</div>'+matHtml;
+    }).catch(function(e){$('#invTable').innerHTML='<span class="empty">'+e.message+'</span>';});
+  }
+  function exportInv(){
+    if(!invRows.length){toast('Nothing to export',true);return;}
+    var rows=[['CPE on hand','In warehouse','Team-held','Total']].concat(cpeOnhand.map(function(c){return [c.category,+c.in_warehouse,+c.team_held,+c.total_on_hand];}));
+    rows.push([]); rows.push(['Material','Central','Team-held (unused)','Total on hand','Unit']);
+    invRows.forEach(function(r){ rows.push([r.material,+r.central,+r.team_held,+r.total_on_hand,r.unit]); });
+    downloadXlsx('wims-inventory-on-hand.xlsx',rows);
+  }
   function doSync(){
     var btn=$('#syncTeams');btn.disabled=true;btn.textContent='Syncing…';
     rpc('sync_teams',{}).then(function(n){toast('✓ Synced '+(n==null?'':n+' ')+'technicians into WIMS teams');return loadTeams();})
