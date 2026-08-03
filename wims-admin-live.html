@@ -106,6 +106,7 @@
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">Box in stock</div>
       <div class="row" id="issBoxes"><span class="empty">Loading boxes…</span></div>
+      <div id="capInfo" class="note info" style="display:none;margin-top:0"></div>
       <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
       <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
@@ -121,6 +122,7 @@
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Masterlist file</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
         <div class="field"><label>DR / reference #</label><input id="impDr" value="CVG-2026-08" style="width:150px"></div>
+        <button class="chip" id="dlTemplate" style="margin-bottom:2px">⬇ Download template (.csv)</button>
       </div>
       <div id="impPreview" style="margin-top:12px"></div>
     </div>
@@ -144,7 +146,13 @@
           <select id="matKey"><option value="foc">FOC · drop fiber (spool)</option><option value="clip5">Cable Clip 5mm (bag)</option><option value="clip7">Cable Clip 7mm (bag)</option><option value="tie">Cable Tie (bag)</option><option value="dtape">Double-Sided Tape (roll)</option><option value="etape">Electrical Tape (roll)</option></select></div>
         <div class="field"><label>Issue-unit qty</label><input id="matQty" type="number" value="5" min="1" style="width:110px"></div>
       </div>
-      <button class="btn block" id="doMat">📦 Receive materials</button>
+      <button class="btn block" id="doMat">📦 Receive materials (single)</button>
+      <div class="lbl mt">Or bulk import from Excel / CSV</div>
+      <div class="row" style="align-items:flex-end">
+        <div class="field"><label>Materials file</label><input type="file" id="matFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
+        <button class="chip" id="dlMatTemplate" style="margin-bottom:2px">⬇ Download materials template (.csv)</button>
+      </div>
+      <div id="matImpPreview" style="margin-top:10px"></div>
     </div>
   </section>
 
@@ -235,7 +243,7 @@
   function loadStock(){
     return Promise.all([
       api('/cpe?select=id,serial,model,category,box_id,status,owner_team_id&order=serial'),
-      api('/boxes?select=id,box_no,category,owner_team_id&order=box_no')
+      api('/boxes?select=id,box_no,category,owner_team_id,deliveries(dr_number)&order=box_no')
     ]).then(function(res){
       stock=res[0]||[]; boxes=res[1]||[];
       renderBoxes(); renderStock();
@@ -250,9 +258,11 @@
     $('#issBoxes').innerHTML=withStock.map(function(b){
       var n=boxInStock(b.id).length;
       var lock=b.owner_team_id?(' 🔒 '+ (teams.filter(function(t){return t.id===b.owner_team_id;})[0]||{}).code):'';
-      return '<button class="chip'+(curBox===b.id?' on':'')+'" data-box="'+b.id+'">Box '+b.box_no+' <span class="n">· '+n+' left</span>'+lock+'</button>';
+      var ic=b.category==='iptv'?'📺 IPTV':'📶 Modem';
+      var dr=(b.deliveries&&b.deliveries.dr_number)?(' · '+b.deliveries.dr_number):'';
+      return '<button class="chip'+(curBox===b.id?' on':'')+'" data-box="'+b.id+'">'+ic+' · Box '+b.box_no+dr+' <span class="n">· '+n+' left</span>'+lock+'</button>';
     }).join('');
-    renderUnits();
+    renderCap();renderUnits();
   }
 
   function renderUnits(){
@@ -265,11 +275,24 @@
     updateRelease();
   }
 
+  var CAP=10; // max per team, per CPE type
+  function teamInField(cat){var tid=$('#issTeam').value;return stock.filter(function(u){return u.owner_team_id===tid&&u.status==='issued'&&u.category===cat;}).length;}
+  function renderCap(){
+    var el=$('#capInfo'); if(!el)return; var tid=$('#issTeam').value;
+    if(!tid){el.style.display='none';return;}
+    el.style.display='';
+    el.innerHTML='In-field cap for this team · <b>📶 Modem '+teamInField('modem')+'/'+CAP+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'/'+CAP+'</b>';
+  }
   function updateRelease(){
     var n=Object.keys(pick).filter(function(s){return pick[s];}).length;
     $('#pickN').textContent=n;
-    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox);
-    $('#doRelease').textContent='📤 Release '+n+' CPE';
+    renderCap();
+    var boxObj=boxes.filter(function(b){return b.id===curBox;})[0];
+    var cat=boxObj?boxObj.category:null;
+    var have=cat?teamInField(cat):0;
+    var exceeds=cat&&(have+n)>CAP;
+    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox&&!exceeds);
+    $('#doRelease').textContent=exceeds?('⚠ Max '+CAP+' '+cat+' per team — '+have+' already in-field'):('📤 Release '+n+' CPE');
   }
 
   // ---- stock tab ----
@@ -316,8 +339,15 @@
     if(e.target.id==='doMat'){doMat();return;}
     if(e.target.id==='syncTeams'){doSync();return;}
     if(e.target.id==='doImport'){doImport();return;}
+    if(e.target.id==='dlTemplate'){doTemplate();return;}
+    if(e.target.id==='dlMatTemplate'){doMatTemplate();return;}
+    if(e.target.id==='doMatImport'){doMatImport();return;}
   });
-  document.addEventListener('change',function(e){ if(e.target.id==='issTeam')updateRelease(); if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]); });
+  document.addEventListener('change',function(e){
+    if(e.target.id==='issTeam')updateRelease();
+    if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]);
+    if(e.target.id==='matFile'&&e.target.files&&e.target.files[0])onMatFile(e.target.files[0]);
+  });
 
   function doRelease(){
     var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
@@ -425,6 +455,52 @@
     rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
       .then(function(){toast('✓ Imported '+rows.length+' serials into stock');$('#impPreview').innerHTML='<div class="note info">✓ Imported <b>'+rows.length+'</b> serials into stock (boxes of 20). See the Stock &amp; Issuance tabs.</div>';impRows=[];return loadStock();})
       .catch(function(e){toast('Import failed: '+e.message,true);var b=$('#doImport');if(b){b.disabled=false;b.textContent='📥 Retry import';}});
+  }
+
+  // ---- CSV templates + drop-material bulk import ----
+  var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (bag)'],['clip7','Cable Clip 7mm (bag)'],['tie','Cable Tie (bag)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)']];
+  function download(name,text){var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(text);a.download=name;a.click();}
+  function doTemplate(){
+    download('wims-cpe-import-template.csv',
+      'serial,model,category,mac,box\n'+
+      '485754434A1B2C3D,Huawei EG8041X6,modem,,1\n'+
+      '485754434A1B2C3E,Huawei EG8041X6,modem,,1\n'+
+      'ZTEB866A1B2C,ZTE B866 V2F,iptv,,1\n');
+    toast('CPE import template downloaded');
+  }
+  function doMatTemplate(){
+    download('wims-materials-import-template.csv',
+      'material_key,label,issue_qty\n'+MATS.map(function(m){return m[0]+','+m[1]+',0';}).join('\n')+'\n');
+    toast('Materials template downloaded');
+  }
+  var matImp=[];
+  function onMatFile(file){
+    var el=$('#matImpPreview'); el.innerHTML='<span class="empty">Reading '+file.name+'…</span>';
+    loadXLSX(function(){
+      var rd=new FileReader();
+      rd.onload=function(e){
+        try{
+          var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+          var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+          var hs=rows.length?Object.keys(rows[0]):[];
+          var keyCol=pickCol(hs,['material_key','key','material']), qtyCol=pickCol(hs,['issue_qty','qty','quantity','count','bilang']);
+          var valid={}; MATS.forEach(function(m){valid[m[0]]=1;});
+          matImp=rows.map(function(r){return {key:String(r[keyCol]||'').trim().toLowerCase(),qty:parseFloat(r[qtyCol])||0};})
+                     .filter(function(x){return valid[x.key]&&x.qty>0;});
+          if(!matImp.length){el.innerHTML='<span class="empty">No valid rows — need columns material_key + issue_qty (qty &gt; 0). Keys: foc, clip5, clip7, tie, dtape, etape.</span>';return;}
+          el.innerHTML='<div class="note info">Ready: '+matImp.map(function(x){return '<b>'+x.key+' '+x.qty+'</b>';}).join(' · ')+'</div>'+
+            '<button class="btn lime" id="doMatImport" style="margin-top:8px">📦 Import '+matImp.length+' material lines</button>';
+        }catch(err){el.innerHTML='<span class="empty">Parse error: '+err.message+'</span>';}
+      };
+      rd.readAsArrayBuffer(file);
+    });
+  }
+  function doMatImport(){
+    var btn=$('#doMatImport'); if(btn){btn.disabled=true;btn.textContent='Importing…';}
+    var chain=Promise.resolve(), ok=0;
+    matImp.forEach(function(x){ chain=chain.then(function(){return rpc('receive_materials',{p_key:x.key,p_issue_qty:x.qty,p_note:'bulk import'}).then(function(){ok++;});}); });
+    chain.then(function(){toast('✓ Received '+ok+' material lines');$('#matImpPreview').innerHTML='<div class="note info">✓ Received <b>'+ok+'</b> material lines into stock. See Stock tab.</div>';matImp=[];return loadStock();})
+      .catch(function(e){toast('Import stopped: '+e.message,true);});
   }
 })();
 </script>
