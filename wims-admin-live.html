@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WIMS — Warehouse (live)</title>
+<style>
+  :root{
+    --ink:#102925;--muted:#6d7d78;--faint:#9aa8a3;--deep:#082c28;
+    --green:#18a57b;--lime:#c9f36a;--coral:#ff765f;--amber:#e0a43b;--blue:#4285f4;
+    --bg:#eef1ec;--line:#e3e8e2;--card:#fff;--soft:#f5f8f5;
+    color-scheme:light;
+    font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--ink)
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);min-height:100vh}
+  h1,h2,h3{font-family:'Manrope','DM Sans',system-ui,sans-serif}
+  .tnum{font-variant-numeric:tabular-nums}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px 16px 72px}
+
+  .bar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .mark{width:34px;height:34px;background:var(--lime);border-radius:9px;display:flex;align-items:flex-end;justify-content:center;gap:2.5px;padding:8px;flex:none}
+  .mark span{display:block;width:3.5px;background:var(--deep);border-radius:3px}
+  .mark span:nth-child(1){height:9px}.mark span:nth-child(2){height:16px}.mark span:nth-child(3){height:12px}
+  .bar h1{font:800 17px 'Manrope';margin:0}
+  .bar h1 small{display:block;font:600 11px 'DM Sans';color:var(--muted)}
+  .conn{margin-left:auto;font:800 11px 'DM Sans';border-radius:20px;padding:6px 11px;display:flex;align-items:center;gap:7px}
+  .conn .d{width:8px;height:8px;border-radius:50%}
+  .conn.ok{color:#0f6f53;background:#e9f8f1;border:1px solid #bfe6d5}.conn.ok .d{background:var(--green)}
+  .conn.off{color:#8a2013;background:#fdeeea;border:1px solid #f4c4b7}.conn.off .d{background:var(--coral)}
+  .conn.wait{color:#8a6a24;background:#fff8eb;border:1px solid #f0d9a8}.conn.wait .d{background:var(--amber)}
+
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{font:800 13px 'DM Sans';border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:11px;padding:10px 16px;cursor:pointer}
+  .tab.on{border-color:var(--green);background:var(--deep);color:#fff}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 24px rgba(25,48,43,.05);padding:18px;margin-bottom:16px}
+  .panel h2{font:800 15px 'Manrope';margin:0 0 3px}
+  .panel .desc{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+  .lbl{font:800 10.5px 'DM Sans';letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin:14px 0 8px}
+  .lbl:first-child{margin-top:0}
+
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font:700 11px 'DM Sans';color:var(--muted)}
+  input,select{font:600 13px 'DM Sans';border:1.5px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:10px 12px;min-width:0}
+  input:focus,select:focus{outline:none;border-color:var(--green)}
+  .chip{font:700 12px 'DM Sans';border:1.5px solid var(--line);background:#fff;color:var(--muted);border-radius:20px;padding:8px 13px;cursor:pointer}
+  .chip.on{border-color:var(--green);background:#e9f8f1;color:#0f6f53}
+  .chip .n{opacity:.7}
+  .btn{border:0;border-radius:12px;padding:12px 18px;font:800 13.5px 'DM Sans';cursor:pointer;background:var(--deep);color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  .btn:hover{background:#0b3a34}.btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.lime{background:var(--green)}.btn.block{width:100%;margin-top:14px}
+
+  .units{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:280px;overflow:auto;padding:2px;margin-top:4px}
+  @media(max-width:560px){.units{grid-template-columns:1fr}}
+  .unit{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff;cursor:pointer}
+  .unit .cb{width:18px;height:18px;border-radius:5px;border:2px solid #c3d0cb;flex:none;display:grid;place-items:center;color:#fff;font-size:11px}
+  .unit.sel{border-color:var(--green);background:#f3fbf7}.unit.sel .cb{background:var(--green);border-color:var(--green)}
+  .unit b{font:800 12px 'Manrope';display:block;font-variant-numeric:tabular-nums}
+  .unit span{font-size:10px;color:var(--muted)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+  .sc{background:var(--soft);border-radius:12px;padding:13px}
+  .sc b{font:800 24px 'Manrope';display:block}
+  .sc span{font-size:11px;color:var(--muted);font-weight:600}
+  .sc.g b{color:var(--green)}.sc.a b{color:#c98a1e}.sc.d b{color:var(--deep)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  th{text-align:left;font:800 9.5px 'DM Sans';letter-spacing:.4px;text-transform:uppercase;color:var(--faint);padding:7px 8px;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px;border-bottom:1px solid #eef2f0;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:0}
+  .empty{color:var(--faint);font-size:12.5px;text-align:center;padding:22px}
+
+  .note{display:flex;gap:9px;border-radius:11px;padding:11px 13px;font-size:12px;line-height:1.45;margin-top:12px}
+  .note.warn{background:#fff8eb;border:1px solid #f0d9a8;color:#8a6a24}
+  .note.info{background:#eafaf1;border:1px solid #bfe6d5;color:#0e6f52}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(80px);background:#102925;color:#fff;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 12px 30px rgba(12,37,33,.3);opacity:0;transition:.3s;z-index:60;max-width:92%}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .toast.err{background:#8a2013}
+  [hidden]{display:none!important}
+</style>
+
+<div class="wrap">
+  <div class="bar">
+    <div class="mark"><span></span><span></span><span></span></div>
+    <h1>WIMS · Warehouse <small id="who">connecting…</small></h1>
+    <div class="conn wait" id="conn"><span class="d"></span><span id="connt">connecting</span></div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-tab="issue">📤 Issuance</button>
+    <button class="tab" data-tab="receive">📥 Receiving</button>
+    <button class="tab" data-tab="stock">📊 Stock</button>
+  </div>
+
+  <!-- ISSUANCE -->
+  <section id="tab-issue">
+    <div class="panel">
+      <h2>Release CPE to a team</h2>
+      <p class="desc">Pick a team, pick a box, tick the serials, release. A box locks to the first team it's issued to; a team runs one active box until it's down to ≤5.</p>
+      <div class="lbl">Team</div>
+      <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
+      <div class="lbl">Box in stock</div>
+      <div class="row" id="issBoxes"><span class="empty">Loading boxes…</span></div>
+      <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
+        <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
+      <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
+      <button class="btn lime block" id="doRelease" disabled>📤 Release CPE</button>
+    </div>
+  </section>
+
+  <!-- RECEIVING -->
+  <section id="tab-receive" hidden>
+    <div class="panel">
+      <h2>Receive a delivery (CPE)</h2>
+      <p class="desc">Bring serialized CPE into stock from Converge. Serials are auto-generated for the dry run, packed into boxes of 20.</p>
+      <div class="row">
+        <div class="field"><label>DR / reference #</label><input id="rcvDr" value="CVG-DEMO-001" style="width:170px"></div>
+        <div class="field"><label>Model</label>
+          <select id="rcvModel"><option value="modem">Modem · Huawei EG8041X6</option><option value="iptv">IPTV · ZTE B866 V2F</option></select></div>
+        <div class="field"><label>How many CPE</label><input id="rcvCount" type="number" value="40" min="1" max="400" style="width:110px"></div>
+      </div>
+      <button class="btn block" id="doReceive">📥 Receive into stock</button>
+      <div class="note info">Tip: 40 CPE = 2 boxes of 20 — perfect for a dry run (issue one box, keep one in reserve).</div>
+    </div>
+    <div class="panel">
+      <h2>Receive drop materials</h2>
+      <p class="desc">Add bulk drop-material stock to the central warehouse.</p>
+      <div class="row">
+        <div class="field"><label>Material</label>
+          <select id="matKey"><option value="foc">FOC · drop fiber (spool)</option><option value="clip5">Cable Clip 5mm (bag)</option><option value="clip7">Cable Clip 7mm (bag)</option><option value="tie">Cable Tie (bag)</option><option value="dtape">Double-Sided Tape (roll)</option><option value="etape">Electrical Tape (roll)</option></select></div>
+        <div class="field"><label>Issue-unit qty</label><input id="matQty" type="number" value="5" min="1" style="width:110px"></div>
+      </div>
+      <button class="btn block" id="doMat">📦 Receive materials</button>
+    </div>
+  </section>
+
+  <!-- STOCK -->
+  <section id="tab-stock" hidden>
+    <div class="panel">
+      <h2>Warehouse stock</h2>
+      <p class="desc">Live counts straight from the database.</p>
+      <div class="stats" id="stockStats"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <h2>Recent releases</h2>
+      <div id="issList"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <h2>Drop-material balance</h2>
+      <div id="matList"><span class="empty">Loading…</span></div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var $=function(s){return document.querySelector(s);};
+  var $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s));};
+  function toast(m,err){var t=$('#toast');t.textContent=m;t.className='toast show'+(err?' err':'');clearTimeout(t._t);t._t=setTimeout(function(){t.className='toast';},err?4200:2400);}
+
+  // ---- connection config: received from the parent console via postMessage ----
+  var CFG={url:null,key:null,token:null};
+  function setConn(state,txt){var c=$('#conn');c.className='conn '+state;$('#connt').textContent=txt;}
+
+  // Ask the parent (console) for the Supabase session; also accept a global fallback.
+  window.addEventListener('message',function(e){
+    var d=e.data||{};
+    if(d.type==='wims-auth'&&d.url&&d.key){
+      CFG.url=d.url.replace(/\/$/,''); CFG.key=d.key; CFG.token=d.token||d.key;
+      if(d.role) $('#who').textContent=(d.name||'')+' · '+d.role;
+      boot();
+    }
+  });
+  // request auth from parent
+  try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
+  // standalone fallback (opened directly, not in console): allow window.WIMS_CFG
+  if(window.WIMS_CFG){ CFG=Object.assign(CFG,window.WIMS_CFG); boot(); }
+  setTimeout(function(){ if(!CFG.url){ setConn('off','not connected'); $('#who').textContent='open from the AHBA console'; } },2500);
+
+  // ---- REST helpers (wims schema) ----
+  function H(write){var h={'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)};h[write?'Content-Profile':'Accept-Profile']='wims';if(write)h['Content-Type']='application/json';return h;}
+  function api(path){return fetch(CFG.url+'/rest/v1'+path,{headers:H(false)}).then(chk);}
+  function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
+  function chk(r){return r.text().then(function(t){var j=t?JSON.parse(t):null;if(!r.ok){var msg=(j&&(j.message||j.hint))||('HTTP '+r.status);throw new Error(msg);}return j;});}
+
+  var CATLABEL={modem:'Huawei EG8041X6',iptv:'ZTE B866 V2F'};
+
+  // ---- state ----
+  var teams=[], boxes=[], stock=[], pick={}, curBox=null;
+
+  function boot(){
+    setConn('ok','connected');
+    loadTeams(); loadStock();
+  }
+
+  function loadTeams(){
+    api('/teams?select=id,code,category,active&active=eq.true&order=code')
+      .then(function(rows){ teams=rows||[];
+        $('#issTeam').innerHTML=teams.map(function(t){return '<option value="'+t.id+'">'+t.code+'</option>';}).join('')||'<option>No teams</option>';
+      }).catch(function(e){ setConn('off','error'); toast('Load teams failed: '+e.message,true); });
+  }
+
+  // load in-stock CPE + boxes, derive box list with counts
+  function loadStock(){
+    return Promise.all([
+      api('/cpe?select=id,serial,model,category,box_id,status,owner_team_id&order=serial'),
+      api('/boxes?select=id,box_no,category,owner_team_id&order=box_no')
+    ]).then(function(res){
+      stock=res[0]||[]; boxes=res[1]||[];
+      renderBoxes(); renderStock();
+    }).catch(function(e){ setConn('off','error'); toast('Load stock failed: '+e.message,true); });
+  }
+
+  function boxInStock(boxId){return stock.filter(function(u){return u.box_id===boxId&&u.status==='in_stock';});}
+
+  function renderBoxes(){
+    var withStock=boxes.filter(function(b){return boxInStock(b.id).length>0;});
+    if(!withStock.length){ $('#issBoxes').innerHTML='<span class="empty">No boxes in stock — receive a delivery first (Receiving tab).</span>'; $('#issUnits').innerHTML='<span class="empty">—</span>'; return; }
+    $('#issBoxes').innerHTML=withStock.map(function(b){
+      var n=boxInStock(b.id).length;
+      var lock=b.owner_team_id?(' 🔒 '+ (teams.filter(function(t){return t.id===b.owner_team_id;})[0]||{}).code):'';
+      return '<button class="chip'+(curBox===b.id?' on':'')+'" data-box="'+b.id+'">Box '+b.box_no+' <span class="n">· '+n+' left</span>'+lock+'</button>';
+    }).join('');
+    renderUnits();
+  }
+
+  function renderUnits(){
+    if(!curBox){ $('#issUnits').innerHTML='<span class="empty">Pick a box.</span>'; $('#tickAll').hidden=true; updateRelease(); return; }
+    var units=boxInStock(curBox);
+    $('#tickAll').hidden=units.length===0;
+    $('#issUnits').innerHTML=units.length?units.map(function(u){var on=pick[u.serial];
+      return '<div class="unit'+(on?' sel':'')+'" data-pick="'+u.serial+'"><div class="cb">'+(on?'✓':'')+'</div><div><b>'+u.serial+'</b><span>'+(u.model||CATLABEL[u.category])+' · '+u.category+'</span></div></div>';
+    }).join(''):'<span class="empty">Box empty.</span>';
+    updateRelease();
+  }
+
+  function updateRelease(){
+    var n=Object.keys(pick).filter(function(s){return pick[s];}).length;
+    $('#pickN').textContent=n;
+    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox);
+    $('#doRelease').textContent='📤 Release '+n+' CPE';
+  }
+
+  // ---- stock tab ----
+  function renderStock(){
+    var byStatus={};
+    stock.forEach(function(u){byStatus[u.status]=(byStatus[u.status]||0)+1;});
+    $('#stockStats').innerHTML=
+      '<div class="sc d"><b class="tnum">'+(byStatus.in_stock||0)+'</b><span>In stock</span></div>'+
+      '<div class="sc a"><b class="tnum">'+(byStatus.issued||0)+'</b><span>Issued (in-field)</span></div>'+
+      '<div class="sc g"><b class="tnum">'+(byStatus.installed||0)+'</b><span>Installed</span></div>'+
+      '<div class="sc"><b class="tnum">'+stock.length+'</b><span>Total CPE</span></div>';
+    // recent releases
+    api('/issuances?select=released_at,cpe_count,kits,team_id&order=released_at.desc&limit=8').then(function(rows){
+      if(!rows||!rows.length){$('#issList').innerHTML='<span class="empty">No releases yet.</span>';return;}
+      $('#issList').innerHTML='<table><thead><tr><th>When</th><th>Team</th><th>CPE</th><th>Kits</th></tr></thead><tbody>'+
+        rows.map(function(r){var tc=(teams.filter(function(t){return t.id===r.team_id;})[0]||{}).code||'—';
+          return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+r.cpe_count+'</td><td>'+(r.kits||0)+'</td></tr>';}).join('')+'</tbody></table>';
+    }).catch(function(e){$('#issList').innerHTML='<span class="empty">'+e.message+'</span>';});
+    // material balance
+    api('/v_material_balance?select=name,qty_issue,issue_unit,team_code&order=name').then(function(rows){
+      if(!rows||!rows.length){$('#matList').innerHTML='<span class="empty">No material stock yet.</span>';return;}
+      $('#matList').innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th></tr></thead><tbody>'+
+        rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+'</td></tr>';}).join('')+'</tbody></table>';
+    }).catch(function(e){$('#matList').innerHTML='<span class="empty">'+e.message+'</span>';});
+  }
+
+  // ---- actions ----
+  function genSerial(cat,i){
+    var stamp=(Date.now().toString(36)+i.toString(36)).toUpperCase().replace(/[^0-9A-Z]/g,'').slice(-7);
+    return cat==='iptv' ? 'ZTE'+stamp : '48575443'+stamp.padStart(8,'0').slice(-8);
+  }
+
+  document.addEventListener('click',function(e){
+    var tab=e.target.closest('[data-tab]');
+    if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
+      ['issue','receive','stock'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); return;}
+
+    var bx=e.target.closest('[data-box]'); if(bx){curBox=bx.getAttribute('data-box');pick={};renderBoxes();return;}
+    var pk=e.target.closest('[data-pick]'); if(pk){var s=pk.getAttribute('data-pick');pick[s]=!pick[s];renderUnits();return;}
+    if(e.target.id==='tickAll'){boxInStock(curBox).forEach(function(u){pick[u.serial]=true;});renderUnits();return;}
+
+    if(e.target.id==='doRelease'){doRelease();return;}
+    if(e.target.id==='doReceive'){doReceive();return;}
+    if(e.target.id==='doMat'){doMat();return;}
+  });
+  document.addEventListener('change',function(e){ if(e.target.id==='issTeam')updateRelease(); });
+
+  function doRelease(){
+    var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
+    if(!teamId||!curBox||!serials.length)return;
+    var btn=$('#doRelease');btn.disabled=true;btn.textContent='Releasing…';
+    rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:1})
+      .then(function(){toast('✓ Released '+serials.length+' CPE');pick={};curBox=null;return loadStock();})
+      .catch(function(e){toast('Release failed: '+e.message,true);})
+      .then(function(){updateRelease();});
+  }
+
+  function doReceive(){
+    var dr=$('#rcvDr').value.trim(), cat=$('#rcvModel').value, count=Math.max(1,parseInt($('#rcvCount').value,10)||0);
+    var rows=[]; for(var i=0;i<count;i++){ rows.push({box_no:Math.floor(i/20)+1,category:cat,serial:genSerial(cat,i),model:CATLABEL[cat]}); }
+    var btn=$('#doReceive');btn.disabled=true;btn.textContent='Receiving…';
+    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
+      .then(function(){toast('✓ Received '+count+' CPE into stock');return loadStock();})
+      .catch(function(e){toast('Receive failed: '+e.message,true);})
+      .then(function(){btn.disabled=false;btn.textContent='📥 Receive into stock';});
+  }
+
+  function doMat(){
+    var key=$('#matKey').value, qty=Math.max(1,parseFloat($('#matQty').value)||0);
+    var btn=$('#doMat');btn.disabled=true;btn.textContent='Receiving…';
+    rpc('receive_materials',{p_key:key,p_issue_qty:qty,p_note:'admin console'})
+      .then(function(){toast('✓ Materials received');return loadStock();})
+      .catch(function(e){toast('Failed: '+e.message,true);})
+      .then(function(){btn.disabled=false;btn.textContent='📦 Receive materials';});
+  }
+})();
+</script>
