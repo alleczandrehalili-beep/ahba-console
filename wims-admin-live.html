@@ -126,7 +126,7 @@
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Masterlist file</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
         <div class="field"><label>DR / reference #</label><input id="impDr" value="CVG-2026-08" style="width:150px"></div>
-        <button class="chip" id="dlTemplate" style="margin-bottom:2px">⬇ Download template (.csv)</button>
+        <button class="chip" id="dlTemplate" style="margin-bottom:2px">⬇ Download template (.xlsx)</button>
       </div>
       <div id="impPreview" style="margin-top:12px"></div>
     </div>
@@ -154,7 +154,8 @@
       <div class="lbl mt">Or bulk import from Excel / CSV</div>
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Materials file</label><input type="file" id="matFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
-        <button class="chip" id="dlMatTemplate" style="margin-bottom:2px">⬇ Download materials template (.csv)</button>
+        <div class="field"><label>Batch / DR #</label><input id="matBatch" placeholder="MAT-2026-08-05" style="width:160px"></div>
+        <button class="chip" id="dlMatTemplate" style="margin-bottom:2px">⬇ Download materials template (.xlsx)</button>
       </div>
       <div id="matImpPreview" style="margin-top:10px"></div>
     </div>
@@ -264,14 +265,22 @@
   }
 
   // Material catalog is DATA-DRIVEN from wims.materials — adding a material in the
-  // DB updates the dropdown, bulk-import keys, and CSV template with no UI edit.
+  // DB updates the dropdown, bulk-import codes, and template with no UI edit.
+  // Converge ITEM CODES (from the DROPS.xlsx receiving report) identify materials
+  // in the import flow; DB item_code wins, this map is the fallback until the
+  // item_code column migration is applied.
+  var CODEMAP={foc:'40001070',clip5:'40000009',clip7:'40000010',tie:'40000011',dtape:'11000304',etape:'11000008',
+               patchupc:'30000350',jumper10:'20000475',jumper20:'40000055',jumper30:'20000479',jumper40:'20000480',clipa:'80000054',clipb:'40000083'};
+  function matCode(m){ return String(m[2]||CODEMAP[m[0]]||m[0]); }
   function loadMaterials(){
-    api('/materials?select=key,name,issue_unit,unit_qty,consume_unit&order=sort')
+    // item_code may not exist yet in the DB — retry without it on failure
+    api('/materials?select=key,name,issue_unit,unit_qty,consume_unit,item_code&order=sort')
+      .catch(function(){ return api('/materials?select=key,name,issue_unit,unit_qty,consume_unit&order=sort'); })
       .then(function(rows){
         if(!rows||!rows.length) return;   // keep the hardcoded fallback
         MATS=rows.map(function(m){
           var per=(m.unit_qty?(' of '+(+m.unit_qty)+' '+m.consume_unit):'');
-          return [m.key, m.name+' ('+m.issue_unit+per+')'];
+          return [m.key, m.name+' ('+m.issue_unit+per+')', m.item_code||CODEMAP[m.key]||''];
         });
         var sel=$('#matKey'); if(sel){ var v=sel.value;
           sel.innerHTML=MATS.map(function(m){return '<option value="'+m[0]+'"'+(m[0]===v?' selected':'')+'>'+m[1]+'</option>';}).join(''); }
@@ -584,24 +593,31 @@
   }
 
   // ---- CSV templates + drop-material bulk import ----
-  var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (bag)'],['clip7','Cable Clip 7mm (bag)'],['tie','Cable Tie (bag)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)']];
-  function download(name,text){var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(text);a.download=name;a.click();}
+  var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (bag)'],['clip7','Cable Clip 7mm (bag)'],['tie','Cable Tie (bag)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)'],
+            ['patchupc','Patchcord SC/UPC–SC/APC 1.5m (pc)'],['jumper10','Jumper ILU SC/APC 10m (pc)'],['jumper20','Jumper ILU SC/APC 20m (pc)'],['jumper30','Jumper ILU SC/APC 30m (pc)'],['jumper40','Jumper ILU SC/APC 40m (pc)'],['clipa','Clip A w/ adhesive (pc)'],['clipb','Clip B w/ adhesive (pc)']];
+  // Manila-local date para sa default batch # (iwas UTC off-by-one)
+  function todayLocal(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   function doTemplate(){
-    download('wims-cpe-import-template.csv',
-      'serial,model,category,mac,box\n'+
-      '485754434A1B2C3D,Huawei EG8041X6,modem,,1\n'+
-      '485754434A1B2C3E,Huawei EG8041X6,modem,,1\n'+
-      'ZTEB866A1B2C,ZTE B866 V2F,iptv,,1\n');
-    toast('CPE import template downloaded');
+    loadXLSX(function(){ try{
+      var aoa=[['serial','model','category','mac','box'],
+        ['485754434A1B2C3D','Huawei EG8041X6','modem','',1],
+        ['485754434A1B2C3E','Huawei EG8041X6','modem','',1],
+        ['ZTEB866A1B2C','ZTE B866 V2F','iptv','',1]];
+      var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'CPE');
+      XLSX.writeFile(wb,'wims-cpe-import-template.xlsx'); toast('CPE import template downloaded');
+    }catch(e){ toast('Template failed: '+e.message,true); } });
   }
   function doMatTemplate(){
-    download('wims-materials-import-template.csv',
-      'material_key,label,issue_qty\n'+MATS.map(function(m){return m[0]+','+m[1]+',0';}).join('\n')+'\n');
-    toast('Materials template downloaded');
+    loadXLSX(function(){ try{
+      var aoa=[['material_code','description','issue_qty']].concat(MATS.map(function(m){return [matCode(m),m[1],0];}));
+      var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Materials');
+      XLSX.writeFile(wb,'wims-materials-import-template.xlsx'); toast('Materials template downloaded');
+    }catch(e){ toast('Template failed: '+e.message,true); } });
   }
-  var matImp=[];
+  var matImp=[], matImpFile='';
   function onMatFile(file){
     var el=$('#matImpPreview'); el.innerHTML='<span class="empty">Reading '+file.name+'…</span>';
+    matImpFile=file.name;
     loadXLSX(function(){
       var rd=new FileReader();
       rd.onload=function(e){
@@ -609,12 +625,20 @@
           var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
           var rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
           var hs=rows.length?Object.keys(rows[0]):[];
-          var keyCol=pickCol(hs,['material_key','key','material']), qtyCol=pickCol(hs,['issue_qty','qty','quantity','count','bilang']);
-          var valid={}; MATS.forEach(function(m){valid[m[0]]=1;});
-          matImp=rows.map(function(r){return {key:String(r[keyCol]||'').trim().toLowerCase(),qty:parseFloat(r[qtyCol])||0};})
-                     .filter(function(x){return valid[x.key]&&x.qty>0;});
-          if(!matImp.length){el.innerHTML='<span class="empty">No valid rows — need columns material_key + issue_qty (qty &gt; 0). Keys: '+MATS.map(function(m){return m[0];}).join(', ')+'.</span>';return;}
-          el.innerHTML='<div class="note info">Ready: '+matImp.map(function(x){return '<b>'+x.key+' '+x.qty+'</b>';}).join(' · ')+'</div>'+
+          // Materials are identified by CONVERGE ITEM CODE (col B ng DROPS.xlsx);
+          // legacy material_key files still accepted.
+          var codeCol=pickCol(hs,['material_code','item code','item_code','itemcode','code','material_key','key','material']),
+              qtyCol=pickCol(hs,['issue_qty','qty','quantity','count','bilang']);
+          var byCode={}, byKey={};
+          MATS.forEach(function(m){ byCode[matCode(m)]=m[0]; byKey[m[0]]=m[0]; });
+          matImp=rows.map(function(r){
+              var id=String(r[codeCol]||'').trim();
+              var key=byCode[id]||byKey[id.toLowerCase()]||null;
+              return {key:key, code:key?matCode(MATS.filter(function(m){return m[0]===key;})[0]):id, qty:parseFloat(r[qtyCol])||0};
+            }).filter(function(x){return x.key&&x.qty>0;});
+          if(!matImp.length){el.innerHTML='<span class="empty">No valid rows — need columns material_code + issue_qty (qty &gt; 0). Codes: '+MATS.map(matCode).join(', ')+'.</span>';return;}
+          var batch=$('#matBatch'); if(batch&&!batch.value.trim()) batch.value='MAT-'+todayLocal();
+          el.innerHTML='<div class="note info">Ready: '+matImp.map(function(x){return '<b>'+x.code+' ×'+x.qty+'</b>';}).join(' · ')+'</div>'+
             '<button class="btn lime" id="doMatImport" style="margin-top:8px">📦 Import '+matImp.length+' material lines</button>';
         }catch(err){el.innerHTML='<span class="empty">Parse error: '+err.message+'</span>';}
       };
@@ -623,9 +647,13 @@
   }
   function doMatImport(){
     var btn=$('#doMatImport'); if(btn){btn.disabled=true;btn.textContent='Importing…';}
+    // Batch # is stamped sa note ng bawat ledger movement → makikita sa monitoring
+    // (Stock ledger + Reports deduction table) kung kailan/aling upload ito galing.
+    var batch=(($('#matBatch')||{}).value||'').trim()||('MAT-'+todayLocal());
+    var note='batch '+batch+(matImpFile?(' · '+matImpFile):'');
     var chain=Promise.resolve(), ok=0;
-    matImp.forEach(function(x){ chain=chain.then(function(){return rpc('receive_materials',{p_key:x.key,p_issue_qty:x.qty,p_note:'bulk import'}).then(function(){ok++;});}); });
-    chain.then(function(){toast('✓ Received '+ok+' material lines');$('#matImpPreview').innerHTML='<div class="note info">✓ Received <b>'+ok+'</b> material lines into stock. See Stock tab.</div>';matImp=[];return loadStock();})
+    matImp.forEach(function(x){ chain=chain.then(function(){return rpc('receive_materials',{p_key:x.key,p_issue_qty:x.qty,p_note:note}).then(function(){ok++;});}); });
+    chain.then(function(){toast('✓ Received '+ok+' material lines · batch '+batch);$('#matImpPreview').innerHTML='<div class="note info">✓ Received <b>'+ok+'</b> material lines into stock · batch <b>'+batch+'</b>. See the Stock tab ledger.</div>';matImp=[];return loadStock();})
       .catch(function(e){toast('Import stopped: '+e.message,true);});
   }
 })();
