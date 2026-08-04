@@ -603,7 +603,9 @@
       api('/v_material_balance?select=material_key,name,team_id,team_code,qty_base,consume_unit&team_id=not.is.null&order=team_code,name'),
       api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];})
     ]).then(function(res){
-      audRows=(res[0]||[]).filter(function(r){return +r.qty_base>0;});
+      // != 0: ang NEGATIVE balance ay mahalagang audit signal — konsumo ng
+      // technician nang WALANG naitalang issuance sa team (paper-trail gap).
+      audRows=(res[0]||[]).filter(function(r){return +r.qty_base!==0;});
       audReels=res[1]||[];
       var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
       var byTeam={};
@@ -614,8 +616,14 @@
       el.innerHTML=codes.map(function(c){
         var g=byTeam[c];
         var matRows=g.mats.map(function(r){
-          return '<tr><td>'+r.name+'</td><td class="tnum"><b>'+(+r.qty_base)+'</b> '+r.consume_unit+'</td>'+
-            '<td style="width:230px"><input type="number" inputmode="decimal" min="0" max="'+(+r.qty_base)+'" value="'+(+r.qty_base)+'" data-retqty style="width:90px;padding:6px;text-align:center"> '+
+          var q=+r.qty_base;
+          if(q<0){
+            // negative = nagamit sa installs nang walang issuance sa team na ito
+            return '<tr style="background:#fdeeea"><td>'+r.name+'</td><td class="tnum" style="color:#c2503a"><b>'+q+'</b> '+r.consume_unit+'</td>'+
+              '<td style="width:230px;font-size:11px;color:#8a2013;font-weight:700">⚠ nagamit nang walang issuance — mag-issue para tumugma ang record</td></tr>';
+          }
+          return '<tr><td>'+r.name+'</td><td class="tnum"><b>'+q+'</b> '+r.consume_unit+'</td>'+
+            '<td style="width:230px"><input type="number" inputmode="decimal" min="0" max="'+q+'" value="'+q+'" data-retqty style="width:90px;padding:6px;text-align:center"> '+
             '<button class="chip" data-retbtn data-team="'+g.tid+'" data-key="'+r.material_key+'" data-unit="'+r.consume_unit+'">↩ Return</button></td></tr>';
         }).join('');
         var reelRows=g.reels.map(function(r){
