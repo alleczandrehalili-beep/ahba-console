@@ -218,6 +218,13 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Team-held materials — audit &amp; returns</h2><p class="desc" style="margin:0">Kung ano ang hawak ng bawat team ngayon (issued, hindi pa nagagamit) — at pagbabalik nito sa central warehouse. Lalabas ang bawat return sa deduction ledger.</p></div>
+        <button class="btn" id="audExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div id="audTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
         <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
@@ -261,6 +268,7 @@
   // read a table in the DEFAULT (public) schema — no wims profile header
   function apiPublic(path){return fetch(CFG.url+'/rest/v1'+path,{headers:{'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)}}).then(chk);}
   function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
+  function apiDel(path){return fetch(CFG.url+'/rest/v1'+path,{method:'DELETE',headers:H(true)}).then(chk);}
   function chk(r){return r.text().then(function(t){var j=null;try{j=t?JSON.parse(t):null;}catch(_){/* non-JSON body (proxy/network error page) */}if(!r.ok){var msg=(j&&(j.message||j.hint))||(t&&t.slice(0,120))||('HTTP '+r.status);throw new Error(msg);}return j;});}
 
   var CATLABEL={modem:'Huawei EG8041X6',iptv:'ZTE B866 V2F'};
@@ -472,6 +480,9 @@
     if(e.target.id==='repExport'){exportRep();return;}
     if(e.target.id==='ledExport'){exportLed();return;}
     if(e.target.id==='invExport'){exportInv();return;}
+    if(e.target.id==='audExport'){exportAud();return;}
+    var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
+    var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
@@ -578,8 +589,71 @@
   var repRows=[], ledRows=[];
   var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
   function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
+  // ---- Team-held audit + return-to-warehouse ----
+  var audRows=[], audReels=[];
+  function loadTeamAudit(){
+    var el=$('#audTable'); if(!el) return;
+    el.innerHTML='<span class="empty">Loading…</span>';
+    Promise.all([
+      api('/v_material_balance?select=material_key,name,team_id,team_code,qty_base,consume_unit&team_id=not.is.null&order=team_code,name'),
+      api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];})
+    ]).then(function(res){
+      audRows=(res[0]||[]).filter(function(r){return +r.qty_base>0;});
+      audReels=res[1]||[];
+      var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
+      var byTeam={};
+      audRows.forEach(function(r){ (byTeam[r.team_code]=byTeam[r.team_code]||{mats:[],reels:[],tid:r.team_id}).mats.push(r); });
+      audReels.forEach(function(r){ var c=teamCode(r.team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],tid:r.team_id}).reels.push(r); });
+      var codes=Object.keys(byTeam).sort();
+      if(!codes.length){ el.innerHTML='<span class="empty">Walang team na may hawak na materials o FOC reels ngayon.</span>'; return; }
+      el.innerHTML=codes.map(function(c){
+        var g=byTeam[c];
+        var matRows=g.mats.map(function(r){
+          return '<tr><td>'+r.name+'</td><td class="tnum"><b>'+(+r.qty_base)+'</b> '+r.consume_unit+'</td>'+
+            '<td style="width:230px"><input type="number" inputmode="decimal" min="0" max="'+(+r.qty_base)+'" value="'+(+r.qty_base)+'" data-retqty style="width:90px;padding:6px;text-align:center"> '+
+            '<button class="chip" data-retbtn data-team="'+g.tid+'" data-key="'+r.material_key+'" data-unit="'+r.consume_unit+'">↩ Return</button></td></tr>';
+        }).join('');
+        var reelRows=g.reels.map(function(r){
+          return '<tr><td>📏 FOC Reel <b class="tnum">'+r.reel_no+'</b></td><td style="font-size:11px;color:#9aa8a3">issued '+new Date(r.issued_at).toLocaleDateString()+'</td>'+
+            '<td style="width:230px"><button class="chip" data-retreel="'+r.reel_no+'">↩ Return reel</button></td></tr>';
+        }).join('');
+        return '<div class="lbl">'+c+'</div><table><thead><tr><th>Item</th><th>Hawak ngayon</th><th>Ibalik sa warehouse</th></tr></thead><tbody>'+matRows+reelRows+'</tbody></table>';
+      }).join('');
+    }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
+  }
+  function doReturnMat(btn){
+    var qty=parseFloat((btn.parentElement.querySelector('[data-retqty]')||{}).value)||0;
+    if(qty<=0){ toast('Ilagay ang dami na ibabalik',true); return; }
+    var mats={}; mats[btn.getAttribute('data-key')]=qty;
+    btn.disabled=true; btn.textContent='Returning…';
+    rpc('return_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_note:'return via audit panel'})
+      .then(function(){ toast('✓ Naibalik sa warehouse: '+qty+' '+(btn.getAttribute('data-unit')||'')); loadTeamAudit(); loadInventory(); loadMatBalances(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Kailangang i-run muna ang wims-RETURN-materials.sql sa SQL Editor',true);
+        else toast('Return failed: '+m,true);
+        btn.disabled=false; btn.textContent='↩ Return';
+      });
+  }
+  function doReturnReel(btn){
+    var reel=btn.getAttribute('data-retreel');
+    if(!window.confirm('Ibalik ang FOC reel '+reel+' sa warehouse? Magagamit itong i-issue ulit sa kahit anong team.')) return;
+    btn.disabled=true; btn.textContent='Returning…';
+    apiDel('/foc_reels?reel_no=eq.'+encodeURIComponent(reel))
+      .then(function(){ toast('✓ Reel '+reel+' naibalik — pwede nang i-issue ulit'); loadTeamAudit(); })
+      .catch(function(e){ toast('Return failed: '+e.message,true); btn.disabled=false; btn.textContent='↩ Return reel'; });
+  }
+  function exportAud(){
+    if(!audRows.length && !audReels.length){ toast('Walang i-e-export',true); return; }
+    var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
+    var mats=[['Team','Material','Held (base)','Unit']].concat(audRows.map(function(r){return [r.team_code,r.name,+r.qty_base,r.consume_unit];}));
+    var reels=[['Team','FOC Reel #','Issued at']].concat(audReels.map(function(r){return [teamCode(r.team_id),r.reel_no,new Date(r.issued_at).toLocaleString()];}));
+    downloadXlsxSheets('wims-team-held-audit.xlsx',[{name:'Team-held materials',aoa:mats},{name:'FOC reels',aoa:reels}]);
+  }
+
   function loadReports(){
     loadInventory();
+    loadTeamAudit();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
