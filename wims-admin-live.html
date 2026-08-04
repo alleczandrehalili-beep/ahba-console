@@ -65,7 +65,10 @@
   .sc{background:var(--soft);border-radius:12px;padding:13px}
   .sc b{font:800 24px 'Manrope';display:block}
   .sc span{font-size:11px;color:var(--muted);font-weight:600}
-  .sc.g b{color:var(--green)}.sc.a b{color:#c98a1e}.sc.d b{color:var(--deep)}
+  .sc.g b{color:var(--green)}.sc.a b{color:#c98a1e}.sc.d b{color:var(--deep)}.sc.b b{color:var(--blue)}
+  .pill{display:inline-block;font:700 10.5px 'DM Sans';border-radius:20px;padding:4px 10px}
+  .pill.installed{background:#e9f8f1;color:#0f6f53;border:1px solid #bfe6d5}
+  .pill.stock{background:#f1f4f2;color:#8a9894;border:1px solid var(--line)}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
   th{text-align:left;font:800 9.5px 'DM Sans';letter-spacing:.4px;text-transform:uppercase;color:var(--faint);padding:7px 8px;border-bottom:1px solid var(--line)}
@@ -102,7 +105,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team, pick a box, tick the serials, release. A box locks to the first team it's issued to; a team runs one active box until it's down to ≤5.</p>
+      <p class="desc">Pick a team, pick a box, tick the serials, release. A box locks to the first team it's issued to; each team can hold up to 10 modems + 10 IPTV in-field at a time.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">Box in stock</div>
@@ -257,7 +260,22 @@
 
   function boot(){
     setConn('ok','connected');
-    loadTeams(); loadStock();
+    loadMaterials(); loadTeams(); loadStock();
+  }
+
+  // Material catalog is DATA-DRIVEN from wims.materials — adding a material in the
+  // DB updates the dropdown, bulk-import keys, and CSV template with no UI edit.
+  function loadMaterials(){
+    api('/materials?select=key,name,issue_unit,unit_qty,consume_unit&order=sort')
+      .then(function(rows){
+        if(!rows||!rows.length) return;   // keep the hardcoded fallback
+        MATS=rows.map(function(m){
+          var per=(m.unit_qty?(' of '+(+m.unit_qty)+' '+m.consume_unit):'');
+          return [m.key, m.name+' ('+m.issue_unit+per+')'];
+        });
+        var sel=$('#matKey'); if(sel){ var v=sel.value;
+          sel.innerHTML=MATS.map(function(m){return '<option value="'+m[0]+'"'+(m[0]===v?' selected':'')+'>'+m[1]+'</option>';}).join(''); }
+      }).catch(function(){ /* fallback list stays */ });
   }
 
   function loadTeams(){
@@ -394,6 +412,8 @@
 
   function doReceive(){
     var dr=$('#rcvDr').value.trim(), cat=$('#rcvModel').value, count=Math.max(1,parseInt($('#rcvCount').value,10)||0);
+    // Guard: this generates FAKE serials into LIVE stock — confirm before polluting real inventory.
+    if(!window.confirm('Generate '+count+' DEMO '+cat+' serials into LIVE stock?\n\nFor real deliveries, use the Excel/CSV import above instead.')) return;
     var rows=[]; for(var i=0;i<count;i++){ rows.push({box_no:Math.floor(i/20)+1,category:cat,serial:genSerial(cat,i),model:CATLABEL[cat]}); }
     var btn=$('#doReceive');btn.disabled=true;btn.textContent='Receiving…';
     rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
@@ -408,7 +428,7 @@
     rpc('receive_materials',{p_key:key,p_issue_qty:qty,p_note:'admin console'})
       .then(function(){toast('✓ Materials received');return loadStock();})
       .catch(function(e){toast('Failed: '+e.message,true);})
-      .then(function(){btn.disabled=false;btn.textContent='📦 Receive materials';});
+      .then(function(){btn.disabled=false;btn.textContent='📦 Receive materials (single)';});
   }
 
   // ---- technicians (live FieldOps mobile accounts, incl. subcon) ----
@@ -593,7 +613,7 @@
           var valid={}; MATS.forEach(function(m){valid[m[0]]=1;});
           matImp=rows.map(function(r){return {key:String(r[keyCol]||'').trim().toLowerCase(),qty:parseFloat(r[qtyCol])||0};})
                      .filter(function(x){return valid[x.key]&&x.qty>0;});
-          if(!matImp.length){el.innerHTML='<span class="empty">No valid rows — need columns material_key + issue_qty (qty &gt; 0). Keys: foc, clip5, clip7, tie, dtape, etape.</span>';return;}
+          if(!matImp.length){el.innerHTML='<span class="empty">No valid rows — need columns material_key + issue_qty (qty &gt; 0). Keys: '+MATS.map(function(m){return m[0];}).join(', ')+'.</span>';return;}
           el.innerHTML='<div class="note info">Ready: '+matImp.map(function(x){return '<b>'+x.key+' '+x.qty+'</b>';}).join(' · ')+'</div>'+
             '<button class="btn lime" id="doMatImport" style="margin-top:8px">📦 Import '+matImp.length+' material lines</button>';
         }catch(err){el.innerHTML='<span class="empty">Parse error: '+err.message+'</span>';}
