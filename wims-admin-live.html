@@ -230,7 +230,7 @@
   <section id="tab-audit" hidden>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
-        <div><h2>Team-held materials — audit &amp; returns</h2><p class="desc" style="margin:0">Kung ano ang hawak ng bawat team ngayon (issued, hindi pa nagagamit) — at pagbabalik nito sa central warehouse. Lalabas ang bawat return sa deduction ledger sa Reports.</p></div>
+        <div><h2>Team-held materials — audit &amp; returns</h2><p class="desc" style="margin:0">Kung ano ang hawak ng bawat team ngayon — drop materials, CPE (hindi pa installed), at FOC reels — at pagbabalik ng mga ito sa central warehouse. Lalabas ang bawat return sa ledger at movements.</p></div>
         <button class="btn" id="audExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
       <div id="audTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
@@ -488,6 +488,7 @@
     if(e.target.id==='audExport'){exportAud();return;}
     var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
     var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
+    var rc=e.target.closest('[data-retcpe]'); if(rc){doReturnCpe(rc);return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
@@ -595,22 +596,25 @@
   var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
   function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   // ---- Team-held audit + return-to-warehouse ----
-  var audRows=[], audReels=[];
+  var audRows=[], audReels=[], audCpe=[];
   function loadTeamAudit(){
     var el=$('#audTable'); if(!el) return;
     el.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
       api('/v_material_balance?select=material_key,name,team_id,team_code,qty_base,consume_unit&team_id=not.is.null&order=team_code,name'),
-      api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];})
+      api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];}),
+      api('/cpe?select=serial,category,model,owner_team_id,released_at&status=eq.issued&owner_team_id=not.is.null&order=serial').catch(function(){return [];})
     ]).then(function(res){
       // != 0: ang NEGATIVE balance ay mahalagang audit signal — konsumo ng
       // technician nang WALANG naitalang issuance sa team (paper-trail gap).
       audRows=(res[0]||[]).filter(function(r){return +r.qty_base!==0;});
       audReels=res[1]||[];
+      audCpe=res[2]||[];
       var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
       var byTeam={};
-      audRows.forEach(function(r){ (byTeam[r.team_code]=byTeam[r.team_code]||{mats:[],reels:[],tid:r.team_id}).mats.push(r); });
-      audReels.forEach(function(r){ var c=teamCode(r.team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],tid:r.team_id}).reels.push(r); });
+      audRows.forEach(function(r){ (byTeam[r.team_code]=byTeam[r.team_code]||{mats:[],reels:[],cpe:[],tid:r.team_id}).mats.push(r); });
+      audReels.forEach(function(r){ var c=teamCode(r.team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],cpe:[],tid:r.team_id}).reels.push(r); });
+      audCpe.forEach(function(r){ var c=teamCode(r.owner_team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],cpe:[],tid:r.owner_team_id}).cpe.push(r); });
       var codes=Object.keys(byTeam).sort();
       if(!codes.length){ el.innerHTML='<span class="empty">Walang team na may hawak na materials o FOC reels ngayon.</span>'; return; }
       el.innerHTML=codes.map(function(c){
@@ -630,7 +634,13 @@
           return '<tr><td>📏 FOC Reel <b class="tnum">'+r.reel_no+'</b></td><td style="font-size:11px;color:#9aa8a3">issued '+new Date(r.issued_at).toLocaleDateString()+'</td>'+
             '<td style="width:230px"><button class="chip" data-retreel="'+r.reel_no+'">↩ Return reel</button></td></tr>';
         }).join('');
-        return '<div class="lbl">'+c+'</div><table><thead><tr><th>Item</th><th>Hawak ngayon</th><th>Ibalik sa warehouse</th></tr></thead><tbody>'+matRows+reelRows+'</tbody></table>';
+        var cpeRows=(g.cpe||[]).map(function(r){
+          var ic=r.category==='iptv'?'📺':'📶';
+          return '<tr><td>'+ic+' <b class="tnum">'+r.serial+'</b> <span style="font-size:10px;color:#9aa8a3">'+(r.model||CATLABEL[r.category]||r.category)+'</span></td>'+
+            '<td style="font-size:11px;color:#9aa8a3">issued '+(r.released_at?new Date(r.released_at).toLocaleDateString():'—')+'</td>'+
+            '<td style="width:230px"><button class="chip" data-retcpe="'+r.serial+'">↩ Return CPE</button></td></tr>';
+        }).join('');
+        return '<div class="lbl">'+c+'</div><table><thead><tr><th>Item</th><th>Hawak ngayon</th><th>Ibalik sa warehouse</th></tr></thead><tbody>'+matRows+cpeRows+reelRows+'</tbody></table>';
       }).join('');
     }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
   }
@@ -648,6 +658,19 @@
         btn.disabled=false; btn.textContent='↩ Return';
       });
   }
+  function doReturnCpe(btn){
+    var serial=btn.getAttribute('data-retcpe');
+    if(!window.confirm('Ibalik ang CPE '+serial+' sa warehouse stock? Maibibigay itong muli sa kahit anong team; maa-unlock ang box kapag wala nang nakalabas mula rito.')) return;
+    btn.disabled=true; btn.textContent='Returning…';
+    rpc('return_cpe',{p_serials:[serial],p_note:'return via audit panel'})
+      .then(function(){ toast('✓ CPE '+serial+' naibalik sa stock'); loadTeamAudit(); return loadStock(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Kailangang i-run muna ang wims-RETURN-cpe.sql sa SQL Editor',true);
+        else toast('Return failed: '+m,true);
+        btn.disabled=false; btn.textContent='↩ Return CPE';
+      });
+  }
   function doReturnReel(btn){
     var reel=btn.getAttribute('data-retreel');
     if(!window.confirm('Ibalik ang FOC reel '+reel+' sa warehouse? Magagamit itong i-issue ulit sa kahit anong team.')) return;
@@ -657,11 +680,12 @@
       .catch(function(e){ toast('Return failed: '+e.message,true); btn.disabled=false; btn.textContent='↩ Return reel'; });
   }
   function exportAud(){
-    if(!audRows.length && !audReels.length){ toast('Walang i-e-export',true); return; }
+    if(!audRows.length && !audReels.length && !audCpe.length){ toast('Walang i-e-export',true); return; }
     var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
     var mats=[['Team','Material','Held (base)','Unit']].concat(audRows.map(function(r){return [r.team_code,r.name,+r.qty_base,r.consume_unit];}));
+    var cpe=[['Team','Serial','Type','Model','Issued at']].concat(audCpe.map(function(r){return [teamCode(r.owner_team_id),r.serial,r.category,r.model||'',r.released_at?new Date(r.released_at).toLocaleString():''];}));
     var reels=[['Team','FOC Reel #','Issued at']].concat(audReels.map(function(r){return [teamCode(r.team_id),r.reel_no,new Date(r.issued_at).toLocaleString()];}));
-    downloadXlsxSheets('wims-team-held-audit.xlsx',[{name:'Team-held materials',aoa:mats},{name:'FOC reels',aoa:reels}]);
+    downloadXlsxSheets('wims-team-held-audit.xlsx',[{name:'Team-held materials',aoa:mats},{name:'Issued CPE',aoa:cpe},{name:'FOC reels',aoa:reels}]);
   }
 
   function loadReports(){
