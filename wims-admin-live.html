@@ -105,7 +105,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team, pick a box, tick the serials, release. A box locks to the first team it's issued to; each team can hold up to 10 modems + 10 IPTV in-field at a time.</p>
+      <p class="desc">Pick a team, pick a box, tick the serials, release — kasama ang kits at individual items sa iisang labas. Pwede ring mag-issue ng kits/materials lang nang walang CPE. A box locks to the first team it's issued to; each team can hold up to 10 modems + 10 IPTV in-field at a time.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">Box in stock</div>
@@ -114,7 +114,12 @@
       <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
       <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
+      <div class="lbl">🧰 Kits to issue</div>
+      <div class="row"><div class="field"><label>Standard install kits</label><input id="issKits" type="number" inputmode="numeric" min="0" value="1" style="width:110px"></div></div>
+      <div class="lbl">🧵 Individual items · optional <span style="text-transform:none;letter-spacing:0;font-weight:600">— per issue unit, galing central stock</span></div>
+      <div id="issMats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:7px"><span class="empty">Loading…</span></div>
       <button class="btn lime block" id="doRelease" disabled>📤 Release CPE</button>
+      <button class="btn block" id="doIssueMats">📦 Issue kits / materials only — walang CPE</button>
     </div>
   </section>
 
@@ -240,6 +245,8 @@
   });
   // request auth from parent
   try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
+  // paint the issuance material grid agad (fallback list) para hindi naka-"Loading…"
+  document.addEventListener('DOMContentLoaded', function(){ renderIssueMats(); });
   // standalone fallback (opened directly, not in console): allow window.WIMS_CFG
   if(window.WIMS_CFG){ CFG=Object.assign(CFG,window.WIMS_CFG); boot(); }
   setTimeout(function(){ if(!CFG.url){ setConn('off','not connected'); $('#who').textContent='open from the AHBA console'; } },2500);
@@ -250,7 +257,7 @@
   // read a table in the DEFAULT (public) schema — no wims profile header
   function apiPublic(path){return fetch(CFG.url+'/rest/v1'+path,{headers:{'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)}}).then(chk);}
   function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
-  function chk(r){return r.text().then(function(t){var j=t?JSON.parse(t):null;if(!r.ok){var msg=(j&&(j.message||j.hint))||('HTTP '+r.status);throw new Error(msg);}return j;});}
+  function chk(r){return r.text().then(function(t){var j=null;try{j=t?JSON.parse(t):null;}catch(_){/* non-JSON body (proxy/network error page) */}if(!r.ok){var msg=(j&&(j.message||j.hint))||(t&&t.slice(0,120))||('HTTP '+r.status);throw new Error(msg);}return j;});}
 
   var CATLABEL={modem:'Huawei EG8041X6',iptv:'ZTE B866 V2F'};
   // Sales-agent accounts (XXX_SA01…SAxx) don't use materials — exclude them everywhere in WIMS.
@@ -261,7 +268,37 @@
 
   function boot(){
     setConn('ok','connected');
-    loadMaterials(); loadTeams(); loadStock();
+    loadMaterials(); loadTeams(); loadStock(); loadMatBalances();
+  }
+
+  // ---- individual-item issuance: central balances + qty grid sa Issuance tab ----
+  var matBal={};   // key -> {qty: central balance in ISSUE units, unit}
+  function loadMatBalances(){
+    api('/v_material_balance?select=material_key,qty_issue,issue_unit&team_id=is.null')
+      .then(function(rows){ matBal={}; (rows||[]).forEach(function(r){ matBal[r.material_key]={qty:+r.qty_issue||0, unit:r.issue_unit}; }); renderIssueMats(); })
+      .catch(function(){ renderIssueMats(); });
+  }
+  function renderIssueMats(){
+    var el=$('#issMats'); if(!el) return;
+    // preserve typed quantities across re-renders
+    var keep={}; $$('#issMats [data-imat]').forEach(function(i){ if(+i.value>0) keep[i.getAttribute('data-imat')]=i.value; });
+    el.innerHTML=MATS.map(function(m){
+      var b=matBal[m[0]], have=b?b.qty:null, unit=b?b.unit:'';
+      var stock=(have==null)?'':(' · central: <b class="tnum">'+have+'</b> '+unit);
+      return '<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff">'+
+        '<span style="flex:1;font-size:11.5px;color:#4a5c56;font-weight:600">'+m[1]+'<span style="color:#9aa8a3;font-weight:600">'+stock+'</span></span>'+
+        '<input type="number" inputmode="numeric" min="0" value="'+(keep[m[0]]||0)+'" data-imat="'+m[0]+'" style="width:64px;padding:6px;text-align:center"></div>';
+    }).join('');
+  }
+  function collectIssueMats(){
+    var out={}, err=null;
+    $$('#issMats [data-imat]').forEach(function(i){
+      var k=i.getAttribute('data-imat'), q=parseFloat(i.value)||0; if(q<=0) return;
+      var b=matBal[k];
+      if(b && q>b.qty && !err) err='Kulang ang central stock ng '+k+' — meron '+b.qty+' '+(b.unit||'')+', hinihingi '+q;
+      out[k]=q;
+    });
+    return {mats:out, err:err, any:Object.keys(out).length>0};
   }
 
   // Material catalog is DATA-DRIVEN from wims.materials — adding a material in the
@@ -284,6 +321,7 @@
         });
         var sel=$('#matKey'); if(sel){ var v=sel.value;
           sel.innerHTML=MATS.map(function(m){return '<option value="'+m[0]+'"'+(m[0]===v?' selected':'')+'>'+m[1]+'</option>';}).join(''); }
+        renderIssueMats();
       }).catch(function(){ /* fallback list stays */ });
   }
 
@@ -360,11 +398,13 @@
       '<div class="sc g"><b class="tnum">'+(byStatus.installed||0)+'</b><span>Installed</span></div>'+
       '<div class="sc"><b class="tnum">'+stock.length+'</b><span>Total CPE</span></div>';
     // recent releases
-    api('/issuances?select=released_at,cpe_count,kits,team_id&order=released_at.desc&limit=8').then(function(rows){
+    api('/issuances?select=released_at,cpe_count,kits,team_id,materials&order=released_at.desc&limit=8').then(function(rows){
       if(!rows||!rows.length){$('#issList').innerHTML='<span class="empty">No releases yet.</span>';return;}
-      $('#issList').innerHTML='<table><thead><tr><th>When</th><th>Team</th><th>CPE</th><th>Kits</th></tr></thead><tbody>'+
+      var matSum=function(m){ if(!m) return '—'; var ks=Object.keys(m).filter(function(k){return +m[k]>0;});
+        return ks.length?ks.map(function(k){return k+'×'+m[k];}).join(' · '):'—'; };
+      $('#issList').innerHTML='<table><thead><tr><th>When</th><th>Team</th><th>CPE</th><th>Kits</th><th>Materials</th></tr></thead><tbody>'+
         rows.map(function(r){var tc=(teams.filter(function(t){return t.id===r.team_id;})[0]||{}).code||'—';
-          return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+r.cpe_count+'</td><td>'+(r.kits||0)+'</td></tr>';}).join('')+'</tbody></table>';
+          return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+(r.cpe_count||'—')+'</td><td>'+(r.kits||0)+'</td><td style="font-size:11px">'+matSum(r.materials)+'</td></tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#issList').innerHTML='<span class="empty">'+e.message+'</span>';});
     // material balance
     api('/v_material_balance?select=name,qty_issue,issue_unit,team_code&order=name').then(function(rows){
@@ -390,6 +430,7 @@
     if(e.target.id==='tickAll'){boxInStock(curBox).forEach(function(u){pick[u.serial]=true;});renderUnits();return;}
 
     if(e.target.id==='doRelease'){doRelease();return;}
+    if(e.target.id==='doIssueMats'){doIssueMats();return;}
     if(e.target.id==='doReceive'){doReceive();return;}
     if(e.target.id==='doMat'){doMat();return;}
     if(e.target.id==='syncTeams'){doSync();return;}
@@ -412,11 +453,37 @@
   function doRelease(){
     var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
     if(!teamId||!curBox||!serials.length)return;
+    var kits=Math.max(0,parseInt(($('#issKits')||{}).value,10)||0);
+    var im=collectIssueMats();
+    if(im.err){ toast(im.err,true); return; }
     var btn=$('#doRelease');btn.disabled=true;btn.textContent='Releasing…';
-    rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:1})
-      .then(function(){toast('✓ Released '+serials.length+' CPE');pick={};curBox=null;return loadStock();})
+    rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats})
+      .then(function(){toast('✓ Released '+serials.length+' CPE · '+kits+' kit(s)'+(im.any?' + materials':''));pick={};curBox=null;resetIssueInputs();return loadStock();})
       .catch(function(e){toast('Release failed: '+e.message,true);})
-      .then(function(){updateRelease();});
+      .then(function(){updateRelease();loadMatBalances();});
+  }
+
+  // Kits and/or individual items WITHOUT a CPE release (issue_materials RPC).
+  function doIssueMats(){
+    var teamId=$('#issTeam').value;
+    if(!teamId){ toast('Pick a team first',true); return; }
+    var kits=Math.max(0,parseInt(($('#issKits')||{}).value,10)||0);
+    var im=collectIssueMats();
+    if(im.err){ toast(im.err,true); return; }
+    if(!im.any && kits<=0){ toast('Walang kits o materials na naka-set',true); return; }
+    var btn=$('#doIssueMats');btn.disabled=true;btn.textContent='Issuing…';
+    rpc('issue_materials',{p_team_id:teamId,p_kits:kits,p_materials:im.mats})
+      .then(function(){toast('✓ Issued '+kits+' kit(s)'+(im.any?' + '+Object.keys(im.mats).length+' material line(s)':''));resetIssueInputs();return loadStock();})
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/function|schema cache|not exist|404/i.test(m)) toast('Kailangang i-run muna ang wims-ISSUE-materials.sql sa Supabase SQL Editor',true);
+        else toast('Issue failed: '+m,true);
+      })
+      .then(function(){btn.disabled=false;btn.textContent='📦 Issue kits / materials only — walang CPE';loadMatBalances();});
+  }
+  function resetIssueInputs(){
+    var k=$('#issKits'); if(k) k.value=1;
+    $$('#issMats [data-imat]').forEach(function(i){ i.value=0; });
   }
 
   function doReceive(){
