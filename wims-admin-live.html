@@ -118,6 +118,10 @@
       <div class="row"><div class="field"><label>Standard install kits</label><input id="issKits" type="number" inputmode="numeric" min="0" value="1" style="width:110px"></div></div>
       <div class="lbl">🧵 Individual items · optional <span style="text-transform:none;letter-spacing:0;font-weight:600">— per issue unit, galing central stock</span></div>
       <div id="issMats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:7px"><span class="empty">Loading…</span></div>
+      <div id="focReelWrap" style="display:none;margin-top:10px;border:1.5px solid #f0d9a8;background:#fff8eb;border-radius:11px;padding:11px 13px">
+        <div style="font:800 11px 'DM Sans';color:#8a6a24;margin-bottom:8px">📏 FOC REEL NUMBER(S) — required · isang reel # bawat spool. Hindi pwedeng ma-issue ang parehong reel sa ibang team.</div>
+        <div id="focReels" class="row"></div>
+      </div>
       <button class="btn lime block" id="doRelease" disabled>📤 Release CPE</button>
       <button class="btn block" id="doIssueMats">📦 Issue kits / materials only — walang CPE</button>
     </div>
@@ -298,7 +302,34 @@
       if(b && q>b.qty && !err) err='Kulang ang central stock ng '+k+' — meron '+b.qty+' '+(b.unit||'')+', hinihingi '+q;
       out[k]=q;
     });
-    return {mats:out, err:err, any:Object.keys(out).length>0};
+    // FOC reels: required — one per spool, no blanks, no dupes among the inputs
+    var reels=[];
+    if(out.foc>0){
+      reels=$$('#focReels [data-freel]').map(function(i){return i.value.trim().toUpperCase();});
+      if(!err && (reels.length!==out.foc || reels.some(function(r){return !r;}))) err='FOC: ilagay ang reel number ng bawat spool ('+out.foc+' spool = '+out.foc+' reel #)';
+      if(!err && new Set(reels).size!==reels.length) err='FOC: may inulit na reel number';
+    }
+    return {mats:out, reels:reels, err:err, any:Object.keys(out).length>0};
+  }
+  function renderFocReels(){
+    var q=0; var inp=document.querySelector('#issMats [data-imat="foc"]'); if(inp) q=parseInt(inp.value,10)||0;
+    var wrap=$('#focReelWrap'); if(!wrap) return;
+    if(q<=0){ wrap.style.display='none'; $('#focReels').innerHTML=''; return; }
+    var keep=$$('#focReels [data-freel]').map(function(i){return i.value;});
+    wrap.style.display='';
+    var html=''; for(var i=0;i<q;i++){ html+='<div class="field"><label>Reel # · spool '+(i+1)+'</label><input data-freel="'+i+'" value="'+(keep[i]||'')+'" placeholder="e.g. RL-04521" style="width:150px;text-transform:uppercase"></div>'; }
+    $('#focReels').innerHTML=html;
+  }
+  document.addEventListener('input',function(e){ if(e.target.matches&&e.target.matches('#issMats [data-imat="foc"]')) renderFocReels(); });
+  // register reels muna (validate + reserve) bago ang aktwal na release
+  function reserveFocReels(im){
+    if(!(im.mats.foc>0)) return Promise.resolve();
+    return rpc('register_foc_reels',{p_team_id:$('#issTeam').value, p_reels:im.reels})
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) throw new Error('Kailangang i-run muna ang wims-FOC-reels.sql sa Supabase SQL Editor');
+        throw e;
+      });
   }
 
   // Material catalog is DATA-DRIVEN from wims.materials — adding a material in the
@@ -457,7 +488,8 @@
     var im=collectIssueMats();
     if(im.err){ toast(im.err,true); return; }
     var btn=$('#doRelease');btn.disabled=true;btn.textContent='Releasing…';
-    rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats})
+    reserveFocReels(im)
+      .then(function(){ return rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats}); })
       .then(function(){toast('✓ Released '+serials.length+' CPE · '+kits+' kit(s)'+(im.any?' + materials':''));pick={};curBox=null;resetIssueInputs();return loadStock();})
       .catch(function(e){toast('Release failed: '+e.message,true);})
       .then(function(){updateRelease();loadMatBalances();});
@@ -472,7 +504,8 @@
     if(im.err){ toast(im.err,true); return; }
     if(!im.any && kits<=0){ toast('Walang kits o materials na naka-set',true); return; }
     var btn=$('#doIssueMats');btn.disabled=true;btn.textContent='Issuing…';
-    rpc('issue_materials',{p_team_id:teamId,p_kits:kits,p_materials:im.mats})
+    reserveFocReels(im)
+      .then(function(){ return rpc('issue_materials',{p_team_id:teamId,p_kits:kits,p_materials:im.mats}); })
       .then(function(){toast('✓ Issued '+kits+' kit(s)'+(im.any?' + '+Object.keys(im.mats).length+' material line(s)':''));resetIssueInputs();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
@@ -484,6 +517,7 @@
   function resetIssueInputs(){
     var k=$('#issKits'); if(k) k.value=1;
     $$('#issMats [data-imat]').forEach(function(i){ i.value=0; });
+    renderFocReels();
   }
 
   function doReceive(){
@@ -542,7 +576,7 @@
 
   // ---- Reports (materials monitoring + extraction) ----
   var repRows=[], ledRows=[];
-  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
+  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
   function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadReports(){
     loadInventory();
