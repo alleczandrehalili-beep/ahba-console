@@ -269,13 +269,6 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
-        <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
-        <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
-      </div>
-      <div id="invTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
-    </div>
-    <div class="panel">
-      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>🛠 Defective — overview</h2><p class="desc" style="margin:0">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p></div>
         <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="dfFrom" style="padding:7px 9px"></div>
         <div class="field"><label>To</label><input type="date" id="dfTo" style="padding:7px 9px"></div>
@@ -286,6 +279,13 @@
       <div id="defCpeTable" style="overflow:auto;max-height:320px"><span class="empty">Loading…</span></div>
       <div class="lbl" style="margin-top:14px">Defective materials — written off from team holdings</div>
       <div id="defMatTable" style="overflow:auto;max-height:320px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
+        <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div id="invTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
   </section>
 
