@@ -183,10 +183,13 @@
       <h2>🔎 Find a modem / CPE</h2>
       <p class="desc">Type a serial (or its last digits) — see instantly where it is and its status.</p>
       <div class="row">
-        <input id="cpeSearch" placeholder="e.g. 485754434A1B2C3D or 1B2C" style="min-width:280px;text-transform:uppercase" autocapitalize="characters">
-        <button class="btn" id="cpeSearchBtn">🔎 Search</button>
+        <input id="cpeSearch" placeholder="Serial · e.g. 485754434A1B2C3D or 1B2C" style="min-width:280px;text-transform:uppercase" autocapitalize="characters">
+        <button class="btn" id="cpeSearchBtn">🔎 Search CPE</button>
+        <input id="reelSearch" placeholder="FOC reel # · e.g. RL-04521" style="min-width:200px;text-transform:uppercase" autocapitalize="characters">
+        <button class="btn" id="reelSearchBtn">📏 Search reel</button>
       </div>
       <div id="cpeSearchOut" style="margin-top:12px"></div>
+      <div id="reelSearchOut" style="margin-top:6px"></div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -550,7 +553,58 @@
       })
       .catch(function(e){ out.innerHTML='<span class="empty">Search failed: '+e.message+'</span>'; });
   }
-  document.addEventListener('keydown',function(e){ if(e.key==='Enter'&&e.target&&e.target.id==='cpeSearch'){ doCpeSearch(); } });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&e.target&&e.target.id==='cpeSearch'){ doCpeSearch(); }
+    if(e.key==='Enter'&&e.target&&e.target.id==='reelSearch'){ doReelSearch(); }
+  });
+
+  // ---- FOC reel search: holder + full usage history ----
+  function doReelSearch(){
+    var q=(($('#reelSearch')||{}).value||'').trim().toUpperCase();
+    var out=$('#reelSearchOut'); if(!out) return;
+    if(q.length<2){ out.innerHTML='<span class="empty">Type at least 2 characters of the reel #.</span>'; return; }
+    out.innerHTML='<span class="empty">Searching reels…</span>';
+    Promise.all([
+      api('/foc_reels?select=reel_no,team_id,issued_at&reel_no=ilike.*'+encodeURIComponent(q)+'*&limit=10&order=reel_no'),
+      api('/v_install_report?select=completed_at,team,jo_number,subscriber,foc_reel_no,foc_start_m,foc_end_m,foc2_reel_no,foc2_end_m&or=(foc_reel_no.ilike.*'+encodeURIComponent(q)+'*,foc2_reel_no.ilike.*'+encodeURIComponent(q)+'*)&order=completed_at.desc&limit=50')
+    ]).then(function(res){
+      var held=res[0]||[], uses=res[1]||[];
+      var tcode=function(tid){return tid?(((teams.filter(function(t){return t.id===tid;})[0])||{}).code||'—'):'';};
+      var d=function(x){return x?new Date(x).toLocaleDateString():'';};
+      // group by reel number
+      var reels={};
+      held.forEach(function(r){ (reels[r.reel_no]=reels[r.reel_no]||{uses:[]}).holder=r; });
+      uses.forEach(function(u){
+        if(u.foc_reel_no&&u.foc_reel_no.indexOf(q)>=0){
+          var used=Math.abs((+u.foc_end_m||0)-(+u.foc_start_m||0));
+          (reels[u.foc_reel_no]=reels[u.foc_reel_no]||{uses:[]}).uses.push({when:u.completed_at,team:u.team,jo:u.jo_number,sub:u.subscriber,from:+u.foc_start_m,to:+u.foc_end_m,used:used});
+        }
+        if(u.foc2_reel_no&&u.foc2_reel_no.indexOf(q)>=0){
+          (reels[u.foc2_reel_no]=reels[u.foc2_reel_no]||{uses:[]}).uses.push({when:u.completed_at,team:u.team,jo:u.jo_number,sub:u.subscriber,from:0,to:+u.foc2_end_m,used:(+u.foc2_end_m||0)});
+        }
+      });
+      var names=Object.keys(reels).sort();
+      if(!names.length){ out.innerHTML='<span class="empty">No FOC reel matches "'+q+'".</span>'; return; }
+      out.innerHTML=names.map(function(rn){
+        var g=reels[rn];
+        var tot=0, last=null;
+        g.uses.sort(function(a,b){return new Date(a.when)-new Date(b.when);});
+        g.uses.forEach(function(u){ tot+=u.used; last=u.to; });
+        var holder=g.holder
+          ? '🚐 Held by <b>'+tcode(g.holder.team_id)+'</b> · issued '+d(g.holder.issued_at)
+          : '🏭 Not currently issued (returned / available)';
+        var rows=g.uses.length?('<table style="margin-top:6px"><thead><tr><th>When</th><th>Team</th><th>JO</th><th>Subscriber</th><th>From→To (m)</th><th>Used (m)</th></tr></thead><tbody>'+
+          g.uses.map(function(u){return '<tr><td>'+d(u.when)+'</td><td>'+(u.team||'—')+'</td><td class="tnum">'+(u.jo||'—')+'</td><td style="font-size:11px">'+(u.sub||'—')+'</td><td class="tnum">'+u.from+' → '+u.to+'</td><td class="tnum"><b>'+u.used+'</b></td></tr>';}).join('')+'</tbody></table>')
+          :'<div class="empty" style="padding:8px">No usage recorded yet.</div>';
+        return '<div style="border:1px solid var(--line);border-radius:11px;padding:10px 13px;margin-bottom:7px">'+
+          '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'+
+            '<b class="tnum" style="font-size:13.5px">📏 '+rn+'</b>'+
+            '<span style="font-size:12px">'+holder+'</span>'+
+            '<span class="pill stock" style="margin-left:auto">total used: <b>'+tot+'</b> m'+(last!=null?(' · last reading: <b>'+last+'</b> m'):'')+'</span>'+
+          '</div>'+rows+'</div>';
+      }).join('');
+    }).catch(function(e){ out.innerHTML='<span class="empty">Reel search failed: '+e.message+'</span>'; });
+  }
 
   // Stock tab view filter: 'all' (lahat) · 'wh' (central warehouse lang) · 'team' (per team)
   var stockView='all', stkMatRows=[], stkRecv={};
@@ -761,6 +815,7 @@
     if(e.target.id==='defDateClear'){ var df=$('#defFrom'),dt=$('#defTo'); if(df)df.value=''; if(dt)dt.value=''; loadDefective(); return; }
     if(e.target.id==='stkExport'){exportStk();return;}
     if(e.target.id==='cpeSearchBtn'){doCpeSearch();return;}
+    if(e.target.id==='reelSearchBtn'){doReelSearch();return;}
     if(e.target.id==='repDateClear'){ var f=$('#repFrom'),t=$('#repTo'); if(f)f.value=''; if(t)t.value=''; loadReports(); return; }
     var sv=e.target.closest('[data-stkview]');
     if(sv){ stockView=sv.getAttribute('data-stkview');
