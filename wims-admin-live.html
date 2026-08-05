@@ -100,7 +100,6 @@
     <button class="tab" data-tab="techs">🧑‍🔧 Technicians</button>
     <button class="tab" data-tab="reports">📄 Reports</button>
     <button class="tab" data-tab="audit">🔍 Audit</button>
-    <button class="tab" data-tab="defect">🛠 Defective</button>
   </div>
 
   <!-- ISSUANCE -->
@@ -236,12 +235,13 @@
         <div class="field"><label>📅 Date from</label><input type="date" id="repFrom"></div>
         <div class="field"><label>Date to</label><input type="date" id="repTo"></div>
         <button class="chip" id="repDateClear" style="margin-bottom:2px">✕ Clear dates</button>
-        <span style="font-size:11px;color:#8a9894;align-self:center">Applies to installs, the deduction ledger, and CPE returns — on screen and in every Excel export below.</span>
+        <button class="btn" id="repExportAll" style="margin-left:auto">⬇ Export ALL reports (Excel · one tab each)</button>
+        <span style="font-size:11px;color:#8a9894;align-self:center;flex-basis:100%">The date range applies to every report below — on screen and in the exports.</span>
       </div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
-        <div><h2>Materials used — per technician / JO</h2><p class="desc" style="margin:0">Every completed install: modem + IPTV serials, kit, and drop materials used, per JO &amp; subscriber.</p></div>
+        <div><h2>CPE monitoring — JO report</h2><p class="desc" style="margin:0">Every ACTIVATED CPE per JO — modem + IPTV serials, kit, and ALL drop materials used to accomplish the JO.</p></div>
         <div class="field" style="margin-left:auto"><label>Technician / team</label><select id="repTeam"><option value="">All technicians</option></select></div>
         <button class="btn" id="repExport">⬇ Export Excel</button>
       </div>
@@ -250,10 +250,10 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
-        <div><h2>Inventory deductions — drop-material ledger</h2><p class="desc" style="margin:0">Auto-deducted from warehouse stock on receive / issue / install.</p></div>
-        <button class="btn" id="ledExport" style="margin-left:auto">⬇ Export Excel</button>
+        <div><h2>Materials monitoring — on hand vs declared</h2><p class="desc" style="margin:0">Per material: total inventory ON HAND (central + issued to vehicles/teams while still on hand) vs TOTAL DECLARED used on completed JOs (date range).</p></div>
+        <button class="btn" id="matMonExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
-      <div id="ledTable" style="overflow:auto;max-height:360px;margin-top:12px"><span class="empty">Loading…</span></div>
+      <div id="matMonTable" style="overflow:auto;max-height:420px;margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
@@ -269,6 +269,17 @@
       </div>
       <div id="invTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>🛠 Defective — overview</h2><p class="desc" style="margin:0">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p></div>
+        <button class="btn" id="defExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div class="stats" id="defStats" style="margin-top:12px"><span class="empty">Loading…</span></div>
+      <div class="lbl" style="margin-top:14px">Defective CPE — excluded from issuance</div>
+      <div id="defCpeTable" style="overflow:auto;max-height:320px"><span class="empty">Loading…</span></div>
+      <div class="lbl" style="margin-top:14px">Defective materials — written off from team holdings</div>
+      <div id="defMatTable" style="overflow:auto;max-height:320px"><span class="empty">Loading…</span></div>
+    </div>
   </section>
 
   <!-- AUDIT -->
@@ -282,32 +293,6 @@
     </div>
   </section>
 
-  <!-- DEFECTIVE -->
-  <section id="tab-defect" hidden>
-    <div class="panel" style="padding:12px 18px">
-      <div class="row" style="align-items:flex-end">
-        <div class="field"><label>📅 From</label><input type="date" id="defFrom"></div>
-        <div class="field"><label>To</label><input type="date" id="defTo"></div>
-        <button class="chip" id="defDateClear" style="margin-bottom:2px">✕ Clear</button>
-        <button class="btn" id="defExport" style="margin-left:auto">⬇ Export Excel</button>
-      </div>
-    </div>
-    <div class="panel">
-      <h2>Defective — overview</h2>
-      <p class="desc">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p>
-      <div class="stats" id="defStats"><span class="empty">Loading…</span></div>
-    </div>
-    <div class="panel">
-      <h2>Defective CPE</h2>
-      <p class="desc">CPE returned with reason "defective" — excluded from issuance.</p>
-      <div id="defCpeTable" style="overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
-    </div>
-    <div class="panel">
-      <h2>Defective materials</h2>
-      <p class="desc">Materials written off as defective from team holdings — not returned to usable stock.</p>
-      <div id="defMatTable" style="overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
-    </div>
-  </section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -885,7 +870,7 @@
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-tab]');
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
-      ['issue','receive','stock','techs','reports','audit','defect'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); if(id==='defect')loadDefective(); return;}
+      ['issue','receive','stock','techs','reports','audit'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); return;}
 
     var ct=e.target.closest('[data-isscat]');
     if(ct){ issCat=ct.getAttribute('data-isscat');
@@ -909,7 +894,8 @@
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
     if(e.target.id==='defExport'){exportDef();return;}
-    if(e.target.id==='defDateClear'){ var df=$('#defFrom'),dt=$('#defTo'); if(df)df.value=''; if(dt)dt.value=''; loadDefective(); return; }
+    if(e.target.id==='matMonExport'){exportMatMon();return;}
+    if(e.target.id==='repExportAll'){exportAllReports();return;}
     if(e.target.id==='stkExport'){exportStk();return;}
     if(e.target.id==='cpeSearchBtn'){doCpeSearch();return;}
     if(e.target.id==='reelSearchBtn'){doReelSearch();return;}
@@ -932,7 +918,6 @@
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
     if((e.target.id==='stkFrom'||e.target.id==='stkTo')&&stockView==='team'){renderCpeStats();}
-    if(e.target.id==='defFrom'||e.target.id==='defTo')loadDefective();
   });
 
   function doRelease(){
@@ -1185,8 +1170,8 @@
     if(c) c.innerHTML='<span class="empty">Loading…</span>';
     if(m) m.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
-      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+defRange('returned_at','defFrom','defTo')),
-      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+defRange('created_at','defFrom','defTo')),
+      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+dateRange('returned_at')),
+      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+dateRange('created_at')),
       api('/cpe?select=id&status=eq.defective&limit=1').then(function(){return null;}).catch(function(){return null;})
     ]).then(function(res){
       defCpe=res[0]||[]; defMat=res[1]||[];
@@ -1210,6 +1195,53 @@
     downloadXlsxSheets('wims-defective.xlsx',[{name:'Defective CPE',aoa:cpeA},{name:'Defective materials',aoa:matA}]);
   }
 
+  // ---- MATERIALS MONITORING: total on hand (central + team-held) vs declared used ----
+  var matMonRows=[];
+  function loadMatMonitoring(){
+    var el=$('#matMonTable'); if(!el) return;
+    el.innerHTML='<span class="empty">Loading…</span>';
+    Promise.all([
+      api('/v_material_balance?select=material_key,name,qty_base,consume_unit,team_code&limit=5000'),
+      api('/material_movements?select=material_key,delta_base,created_at&kind=eq.consume&limit=10000'+dateRange('created_at'))
+    ]).then(function(res){
+      var bal=res[0]||[], cons=res[1]||[];
+      var agg={};
+      bal.forEach(function(r){
+        var g=(agg[r.material_key]=agg[r.material_key]||{name:r.name,unit:r.consume_unit,central:0,team:0,declared:0});
+        if(r.team_code) g.team+=(+r.qty_base||0); else g.central+=(+r.qty_base||0);
+      });
+      cons.forEach(function(r){
+        var g=agg[r.material_key]; if(!g) return;
+        g.declared+=Math.abs(+r.delta_base||0);
+      });
+      matMonRows=Object.keys(agg).map(function(k){var g=agg[k];return {key:k,name:g.name,unit:g.unit,central:g.central,team:g.team,total:g.central+g.team,declared:g.declared};})
+        .sort(function(a,b){return a.name.localeCompare(b.name);});
+      if(!matMonRows.length){ el.innerHTML='<span class="empty">No material data yet.</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>Material</th><th>On hand · central</th><th>On hand · teams</th><th>On hand · TOTAL</th><th>Total declared (range)</th><th>Unit</th></tr></thead><tbody>'+
+        matMonRows.map(function(r){return '<tr><td>'+r.name+'</td><td class="tnum">'+r.central+'</td><td class="tnum">'+r.team+'</td><td class="tnum"><b>'+r.total+'</b></td><td class="tnum" style="color:var(--green);font-weight:700">'+r.declared+'</td><td style="color:#9aa8a3">'+r.unit+'</td></tr>';}).join('')+'</tbody></table>';
+    }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
+  }
+  function exportMatMon(){
+    if(!matMonRows.length){ toast('Nothing to export',true); return; }
+    downloadXlsx('wims-materials-monitoring.xlsx',
+      [['Material','On hand · central','On hand · teams','On hand · TOTAL','Total declared (range)','Unit']]
+        .concat(matMonRows.map(function(r){return [r.name,r.central,r.team,r.total,r.declared,r.unit];})));
+  }
+  // ---- Export ALL: bawat report sa sariling tab ----
+  function exportAllReports(){
+    var sheets=[];
+    if(repRows.length) sheets.push({name:'CPE Monitoring (JO)', aoa:[REPCOLS.map(function(c){return c[1];})].concat(repRows.map(function(r){return REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return (v==null?'':v);});}))});
+    if(matMonRows.length) sheets.push({name:'Materials Monitoring', aoa:[['Material','On hand · central','On hand · teams','On hand · TOTAL','Total declared (range)','Unit']].concat(matMonRows.map(function(r){return [r.name,r.central,r.team,r.total,r.declared,r.unit];}))});
+    if(cretRows.length) sheets.push({name:'CPE Returns', aoa:[['When','Team','Serial','Type','Model','Reason','Remarks','Status now']].concat(cretRows.map(function(r){return [new Date(r.returned_at).toLocaleString(),r.team||'',r.serial,r.category||'',r.model||'',r.reason,r.note||'',r.current_status||''];}))});
+    if(cpeDetail.length) sheets.push({name:'Inventory On Hand - CPE', aoa:[['Serial','Type','Model','Location','Team','Imported on','Age (days)','Assigned on','Team-held (days)']].concat(cpeDetail.map(function(r){return [r.serial,r.category,r.model||'',r.location,r.team||'',r.imported_on||'',(r.age_days==null?'':+r.age_days),r.assigned_on||'',(r.team_held_days==null?'':+r.team_held_days)];}))});
+    if(invRows.length) sheets.push({name:'Inventory On Hand - Materials', aoa:[['Material','Central','Team-held (unused)','Total on hand','Unit']].concat(invRows.map(function(r){return [r.material,+r.central,+r.team_held,+r.total_on_hand,r.unit];}))});
+    if(defCpe.length) sheets.push({name:'Defective CPE', aoa:[['When','Team','Serial','Type','Model','Remarks']].concat(defCpe.map(function(r){return [new Date(r.returned_at).toLocaleString(),r.team||'',r.serial,r.category||'',r.model||'',r.note||''];}))});
+    if(defMat.length) sheets.push({name:'Defective Materials', aoa:[['When','Material','Team','Qty','Unit','Remarks']].concat(defMat.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.team||'',+r.qty,r.unit,r.note||''];}))});
+    if(ledRows.length) sheets.push({name:'Deduction Ledger', aoa:[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];}))});
+    if(!sheets.length){ toast('Reports are still loading — try again in a moment',true); return; }
+    downloadXlsxSheets('wims-ALL-reports.xlsx',sheets);
+  }
+
   function loadReports(){
     loadInventory();
     loadCpeReturns();
@@ -1230,11 +1262,10 @@
         repRows.map(function(r){return '<tr>'+REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return '<td>'+(v==null||v===''?'—':v)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#repTable').innerHTML='<span class="empty">'+e.message+'</span>';});
     api('/v_material_ledger?select=*&order=created_at.desc&limit=2000'+dateRange('created_at')).then(function(rows){
-      ledRows=rows||[];
-      if(!ledRows.length){$('#ledTable').innerHTML='<span class="empty">No movements yet.</span>';return;}
-      $('#ledTable').innerHTML='<table><thead><tr><th>When</th><th>Material</th><th>Type</th><th>Qty</th><th>Unit</th><th>Team</th><th>Note</th></tr></thead><tbody>'+
-        ledRows.map(function(r){var neg=(+r.qty<0);return '<tr><td>'+new Date(r.created_at).toLocaleString()+'</td><td>'+r.material+'</td><td>'+r.kind+'</td><td style="color:'+(neg?'var(--coral)':'var(--green)')+';font-weight:700">'+r.qty+'</td><td>'+r.unit+'</td><td>'+(r.team||'central')+'</td><td>'+(r.note||'')+'</td></tr>';}).join('')+'</tbody></table>';
-    }).catch(function(e){$('#ledTable').innerHTML='<span class="empty">'+e.message+'</span>';});
+      ledRows=rows||[];   // panel replaced by Materials monitoring; kept for the Export ALL 'Deduction Ledger' tab
+    }).catch(function(){ ledRows=[]; });
+    loadMatMonitoring();
+    loadDefective();
   }
   function exportRep(){ if(!repRows.length){toast('Nothing to export',true);return;} var rows=[REPCOLS.map(function(c){return c[1];})].concat(repRows.map(function(r){return REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return (v==null?'':v);});})); downloadXlsx('wims-materials-per-technician.xlsx',rows); }
   function exportLed(){ if(!ledRows.length){toast('Nothing to export',true);return;} var rows=[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];})); downloadXlsx('wims-inventory-deductions.xlsx',rows); }
