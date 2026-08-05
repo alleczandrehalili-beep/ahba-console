@@ -174,9 +174,17 @@
   <!-- STOCK -->
   <section id="tab-stock" hidden>
     <div class="panel">
-      <h2>Warehouse stock</h2>
-      <p class="desc">Live counts straight from the database.</p>
-      <div class="stats" id="stockStats"><span class="empty">Loading…</span></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div><h2>Warehouse stock</h2><p class="desc" style="margin:0">Live counts straight from the database.</p></div>
+        <div class="row" style="margin-left:auto;align-items:center">
+          <button class="chip on" data-stkview="all">Lahat</button>
+          <button class="chip" data-stkview="wh">🏭 Warehouse</button>
+          <button class="chip" data-stkview="team">🚐 Per team</button>
+          <button class="btn" id="stkExport">⬇ Export Excel</button>
+        </div>
+      </div>
+      <div class="stats" id="stockStats" style="margin-top:12px"><span class="empty">Loading…</span></div>
+      <div id="stockTeamTable" style="margin-top:10px"></div>
     </div>
     <div class="panel">
       <h2>Recent releases</h2>
@@ -441,14 +449,10 @@
   }
 
   // ---- stock tab ----
+  // Stock tab view filter: 'all' (lahat) · 'wh' (central warehouse lang) · 'team' (per team)
+  var stockView='all', stkMatRows=[];
   function renderStock(){
-    var byStatus={};
-    stock.forEach(function(u){byStatus[u.status]=(byStatus[u.status]||0)+1;});
-    $('#stockStats').innerHTML=
-      '<div class="sc d"><b class="tnum">'+(byStatus.in_stock||0)+'</b><span>In stock</span></div>'+
-      '<div class="sc a"><b class="tnum">'+(byStatus.issued||0)+'</b><span>Issued (in-field)</span></div>'+
-      '<div class="sc g"><b class="tnum">'+(byStatus.installed||0)+'</b><span>Installed</span></div>'+
-      '<div class="sc"><b class="tnum">'+stock.length+'</b><span>Total CPE</span></div>';
+    renderCpeStats();
     // recent releases
     api('/issuances?select=released_at,cpe_count,kits,team_id,materials&order=released_at.desc&limit=8').then(function(rows){
       if(!rows||!rows.length){$('#issList').innerHTML='<span class="empty">No releases yet.</span>';return;}
@@ -458,12 +462,80 @@
         rows.map(function(r){var tc=(teams.filter(function(t){return t.id===r.team_id;})[0]||{}).code||'—';
           return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+(r.cpe_count||'—')+'</td><td>'+(r.kits||0)+'</td><td style="font-size:11px">'+matSum(r.materials)+'</td></tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#issList').innerHTML='<span class="empty">'+e.message+'</span>';});
-    // material balance
-    api('/v_material_balance?select=name,qty_issue,issue_unit,team_code&order=name').then(function(rows){
-      if(!rows||!rows.length){$('#matList').innerHTML='<span class="empty">No material stock yet.</span>';return;}
-      $('#matList').innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th></tr></thead><tbody>'+
-        rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+'</td></tr>';}).join('')+'</tbody></table>';
+    // material balance (stored for the view filter + export)
+    api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code&order=name').then(function(rows){
+      stkMatRows=rows||[]; renderMatList();
     }).catch(function(e){$('#matList').innerHTML='<span class="empty">'+e.message+'</span>';});
+  }
+  function teamAgg(){
+    var by={};   // team code -> {modem:n, iptv:n}
+    stock.forEach(function(u){
+      if(u.status!=='issued'||!u.owner_team_id) return;
+      var tc=(teams.filter(function(t){return t.id===u.owner_team_id;})[0]||{}).code||'—';
+      (by[tc]=by[tc]||{modem:0,iptv:0})[u.category]++;
+    });
+    return by;
+  }
+  function renderCpeStats(){
+    var el=$('#stockStats'), tt=$('#stockTeamTable'); if(!el) return;
+    var cnt=function(st,cat){return stock.filter(function(u){return u.status===st&&(!cat||u.category===cat);}).length;};
+    if(stockView==='wh'){
+      el.innerHTML=
+        '<div class="sc d"><b class="tnum">'+cnt('in_stock','modem')+'</b><span>Modem sa warehouse</span></div>'+
+        '<div class="sc b"><b class="tnum">'+cnt('in_stock','iptv')+'</b><span>IPTV sa warehouse</span></div>'+
+        '<div class="sc"><b class="tnum">'+cnt('in_stock')+'</b><span>Total sa warehouse</span></div>';
+      if(tt) tt.innerHTML='';
+    } else if(stockView==='team'){
+      var by=teamAgg(), codes=Object.keys(by).sort();
+      el.innerHTML=
+        '<div class="sc a"><b class="tnum">'+cnt('issued','modem')+'</b><span>Modem in-field</span></div>'+
+        '<div class="sc b"><b class="tnum">'+cnt('issued','iptv')+'</b><span>IPTV in-field</span></div>'+
+        '<div class="sc"><b class="tnum">'+codes.length+'</b><span>Teams na may hawak</span></div>';
+      if(tt) tt.innerHTML=codes.length?('<table><thead><tr><th>Team</th><th>Modem in-field</th><th>IPTV in-field</th><th>Total</th></tr></thead><tbody>'+
+        codes.map(function(c){var g=by[c];return '<tr><td><b>'+c+'</b></td><td class="tnum">'+g.modem+'</td><td class="tnum">'+g.iptv+'</td><td class="tnum"><b>'+(g.modem+g.iptv)+'</b></td></tr>';}).join('')+'</tbody></table>'):'<span class="empty">Walang team na may hawak na CPE ngayon.</span>';
+    } else {
+      var byStatus={};
+      stock.forEach(function(u){byStatus[u.status]=(byStatus[u.status]||0)+1;});
+      el.innerHTML=
+        '<div class="sc d"><b class="tnum">'+(byStatus.in_stock||0)+'</b><span>In stock</span></div>'+
+        '<div class="sc a"><b class="tnum">'+(byStatus.issued||0)+'</b><span>Issued (in-field)</span></div>'+
+        '<div class="sc g"><b class="tnum">'+(byStatus.installed||0)+'</b><span>Installed</span></div>'+
+        '<div class="sc"><b class="tnum">'+stock.length+'</b><span>Total CPE</span></div>';
+      if(tt) tt.innerHTML='';
+    }
+  }
+  function stkMatFiltered(){
+    if(stockView==='wh')   return stkMatRows.filter(function(r){return !r.team_code;});
+    if(stockView==='team') return stkMatRows.filter(function(r){return !!r.team_code;});
+    return stkMatRows;
+  }
+  function renderMatList(){
+    var el=$('#matList'); if(!el) return;
+    var rows=stkMatFiltered();
+    if(!rows.length){el.innerHTML='<span class="empty">'+(stockView==='team'?'Walang team-held materials.':'No material stock yet.')+'</span>';return;}
+    el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+'</td></tr>';}).join('')+'</tbody></table>';
+  }
+  function exportStk(){
+    var cpeAoa;
+    if(stockView==='team'){
+      var by=teamAgg();
+      cpeAoa=[['Team','Modem in-field','IPTV in-field','Total']].concat(
+        Object.keys(by).sort().map(function(c){var g=by[c];return [c,g.modem,g.iptv,g.modem+g.iptv];}));
+    } else if(stockView==='wh'){
+      var cnt=function(cat){return stock.filter(function(u){return u.status==='in_stock'&&u.category===cat;}).length;};
+      cpeAoa=[['Category','In warehouse'],['modem',cnt('modem')],['iptv',cnt('iptv')],['TOTAL',cnt('modem')+cnt('iptv')]];
+    } else {
+      var agg={};
+      stock.forEach(function(u){var k=u.category;(agg[k]=agg[k]||{in_stock:0,issued:0,installed:0,other:0});
+        agg[k][u.status]!=null?agg[k][u.status]++:agg[k].other++;});
+      cpeAoa=[['Category','In stock','Issued','Installed','Other','Total']].concat(
+        Object.keys(agg).sort().map(function(k){var g=agg[k];return [k,g.in_stock,g.issued,g.installed,g.other,g.in_stock+g.issued+g.installed+g.other];}));
+    }
+    var matAoa=[['Material','Location','Balance (issue unit)','Unit','Balance (base)','Base unit']].concat(
+      stkMatFiltered().map(function(r){return [r.name, r.team_code||'central warehouse', +r.qty_issue, r.issue_unit, +r.qty_base, r.consume_unit];}));
+    var tag=stockView==='wh'?'warehouse':(stockView==='team'?'per-team':'all');
+    downloadXlsxSheets('wims-stock-'+tag+'.xlsx',[{name:'CPE',aoa:cpeAoa},{name:'Materials',aoa:matAoa}]);
   }
 
   // ---- actions ----
@@ -495,6 +567,11 @@
     if(e.target.id==='invExport'){exportInv();return;}
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
+    if(e.target.id==='stkExport'){exportStk();return;}
+    var sv=e.target.closest('[data-stkview]');
+    if(sv){ stockView=sv.getAttribute('data-stkview');
+      $$('[data-stkview]').forEach(function(b){b.classList.toggle('on',b===sv);});
+      renderCpeStats(); renderMatList(); return; }
     var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
     var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
     var rc=e.target.closest('[data-retcpe]'); if(rc){doReturnCpe(rc);return;}
