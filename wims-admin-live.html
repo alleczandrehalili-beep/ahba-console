@@ -186,6 +186,7 @@
           <button class="btn" id="stkExport">⬇ Export Excel</button>
         </div>
       </div>
+      <div id="lowStockBanner" class="note warn" style="display:none;margin-top:12px"></div>
       <div class="stats" id="stockStats" style="margin-top:12px"><span class="empty">Loading…</span></div>
       <div id="stockTeamTable" style="margin-top:10px"></div>
     </div>
@@ -461,7 +462,22 @@
 
   // ---- stock tab ----
   // Stock tab view filter: 'all' (lahat) · 'wh' (central warehouse lang) · 'team' (per team)
-  var stockView='all', stkMatRows=[];
+  var stockView='all', stkMatRows=[], stkRecv={};
+  var LOW_PCT=25;   // low-stock threshold: warn at <= 25% of total received
+  function stockLevel(r){   // central rows only: % ng natitira vs total received
+    if(r.team_code) return null;
+    var recv=stkRecv[r.material_key]||0; if(recv<=0) return null;
+    return Math.round((+r.qty_base/recv)*100);
+  }
+  function renderLowBanner(){
+    var el=$('#lowStockBanner'); if(!el) return;
+    var lows=stkMatRows.filter(function(r){var p=stockLevel(r);return p!=null&&p<=LOW_PCT;});
+    if(!lows.length){ el.style.display='none'; el.innerHTML=''; return; }
+    el.style.display='';
+    el.innerHTML='<span>⚠</span><div><b>LOW STOCK — '+LOW_PCT+'% or less of total received remains:</b> '+
+      lows.map(function(r){var p=stockLevel(r);return r.name+' (<b>'+p+'%</b> · '+r.qty_issue+' '+r.issue_unit+' left)';}).join(' · ')+
+      '. Receive a new delivery or adjust via manual override.</div>';
+  }
   function renderStock(){
     renderCpeStats();
     // recent releases
@@ -473,9 +489,15 @@
         rows.map(function(r){var tc=(teams.filter(function(t){return t.id===r.team_id;})[0]||{}).code||'—';
           return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+(r.cpe_count||'—')+'</td><td>'+(r.kits||0)+'</td><td style="font-size:11px">'+matSum(r.materials)+'</td></tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#issList').innerHTML='<span class="empty">'+e.message+'</span>';});
-    // material balance (stored for the view filter + export)
-    api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code,team_id&order=name').then(function(rows){
-      stkMatRows=rows||[]; renderMatList();
+    // material balance (stored for the view filter + export) + total received
+    // per material (denominator ng 25% low-stock warning)
+    Promise.all([
+      api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code,team_id&order=name'),
+      api('/material_movements?select=material_key,delta_base&kind=eq.receive&team_id=is.null&limit=10000').catch(function(){return [];})
+    ]).then(function(res){
+      stkMatRows=res[0]||[];
+      stkRecv={}; (res[1]||[]).forEach(function(m){ stkRecv[m.material_key]=(stkRecv[m.material_key]||0)+(+m.delta_base||0); });
+      renderMatList(); renderLowBanner();
     }).catch(function(e){$('#matList').innerHTML='<span class="empty">'+e.message+'</span>';});
   }
   function stkTeamSel(){ return (($('#stkTeam')||{}).value||''); }   // '' = all teams
@@ -535,8 +557,12 @@
     var el=$('#matList'); if(!el) return;
     var rows=stkMatFiltered();
     if(!rows.length){el.innerHTML='<span class="empty">'+(stockView==='team'?'No team-held materials.':'No material stock yet.')+'</span>';return;}
-    el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th><th>✏️ Manual override</th></tr></thead><tbody>'+
-      rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+' <span style="color:#9aa8a3;font-size:10px">('+(+r.qty_base)+' '+r.consume_unit+')</span></td>'+
+    el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th><th>Level</th><th>✏️ Manual override</th></tr></thead><tbody>'+
+      rows.map(function(r){var pct=stockLevel(r);
+        var lvl=(pct==null)?'<span style="color:#9aa8a3">—</span>'
+          :(pct<=LOW_PCT?'<span class="pill" style="background:#fdeeea;color:#8a2013;border:1px solid #f4c4b7">⚠ LOW '+pct+'%</span>'
+          :'<span class="pill stock">'+pct+'%</span>');
+        return '<tr'+(pct!=null&&pct<=LOW_PCT?' style="background:#fff8f6"':'')+'><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+' <span style="color:#9aa8a3;font-size:10px">('+(+r.qty_base)+' '+r.consume_unit+')</span></td><td>'+lvl+'</td>'+
         '<td style="width:360px"><input type="number" inputmode="decimal" min="0" data-ovq placeholder="new '+r.consume_unit+'" style="width:90px;padding:6px;text-align:center"> '+
         '<input data-ovr placeholder="remarks (required)" style="width:150px;padding:6px;font-size:11px"> '+
         '<button class="chip" data-ovbtn data-key="'+r.material_key+'" data-team="'+(r.team_id||'')+'" data-cur="'+(+r.qty_base)+'" data-unit="'+r.consume_unit+'" data-loc="'+(r.team_code||'central warehouse')+'">✏️ Set</button></td></tr>';}).join('')+'</tbody></table>';
@@ -600,8 +626,10 @@
       sumAoa=[['Category','In stock','Issued','Installed','Other','Total']].concat(
         Object.keys(agg).sort().map(function(k){var g=agg[k];return [k,g.in_stock,g.issued,g.installed,g.other,g.in_stock+g.issued+g.installed+g.other];}));
     }
-    var matAoa=[['Material','Location','Balance (issue unit)','Unit','Balance (base)','Base unit']].concat(
-      stkMatFiltered().map(function(r){return [r.name, r.team_code||'central warehouse', +r.qty_issue, r.issue_unit, +r.qty_base, r.consume_unit];}));
+    var matAoa=[['Material','Location','Balance (issue unit)','Unit','Balance (base)','Base unit','% of received','LOW?']].concat(
+      stkMatFiltered().map(function(r){var pct=stockLevel(r);
+        return [r.name, r.team_code||'central warehouse', +r.qty_issue, r.issue_unit, +r.qty_base, r.consume_unit,
+                (pct==null?'':pct+'%'), (pct!=null&&pct<=LOW_PCT?'LOW':'')];}));
     var tag=stockView==='wh'?'warehouse':(stockView==='team'?'per-team':'all');
     downloadXlsxSheets('wims-stock-'+tag+'.xlsx',[{name:'CPE serialized',aoa:serAoa},{name:'CPE summary',aoa:sumAoa},{name:'Materials',aoa:matAoa}]);
   }
