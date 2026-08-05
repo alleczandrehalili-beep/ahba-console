@@ -358,7 +358,8 @@
   // in the import flow; DB item_code wins, this map is the fallback until the
   // item_code column migration is applied.
   var CODEMAP={foc:'40001070',clip5:'40000009',clip7:'40000010',tie:'40000011',dtape:'11000304',etape:'11000008',
-               patchupc:'30000350',jumper10:'20000475',jumper20:'40000055',jumper30:'20000479',jumper40:'20000480',clipa:'80000054',clipb:'40000083'};
+               patchupc:'30000350',jumper10:'20000475',jumper20:'40000055',jumper30:'20000479',jumper40:'20000480',clipa:'80000054',clipb:'40000083',
+               f17:'40000048',f19:'40000049',f20:'40000050'};
   function matCode(m){ return String(m[2]||CODEMAP[m[0]]||m[0]); }
   function loadMaterials(){
     // item_code may not exist yet in the DB — retry without it on failure
@@ -601,7 +602,7 @@
 
   // ---- Reports (materials monitoring + extraction) ----
   var repRows=[], ledRows=[];
-  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
+  var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['f17_clamp_pc','F-17'],['f19_bracket_pc','F-19'],['f20_hook_pc','F-20'],['kit_sar','SAR'],['kit_saf','SAF'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
   function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   // ---- Team-held audit + return-to-warehouse ----
   var audRows=[], audReels=[], audCpe=[];
@@ -846,7 +847,8 @@
 
   // ---- CSV templates + drop-material bulk import ----
   var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (bag)'],['clip7','Cable Clip 7mm (bag)'],['tie','Cable Tie (bag)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)'],
-            ['patchupc','Patchcord SC/UPC–SC/APC 1.5m (pc)'],['jumper10','Jumper ILU SC/APC 10m (pc)'],['jumper20','Jumper ILU SC/APC 20m (pc)'],['jumper30','Jumper ILU SC/APC 30m (pc)'],['jumper40','Jumper ILU SC/APC 40m (pc)'],['clipa','Clip A w/ adhesive (pc)'],['clipb','Clip B w/ adhesive (pc)']];
+            ['patchupc','Patchcord SC/UPC–SC/APC 1.5m (pc)'],['jumper10','Jumper ILU SC/APC 10m (pc)'],['jumper20','Jumper ILU SC/APC 20m (pc)'],['jumper30','Jumper ILU SC/APC 30m (pc)'],['jumper40','Jumper ILU SC/APC 40m (pc)'],['clipa','Clip A w/ adhesive (pc)'],['clipb','Clip B w/ adhesive (pc)'],
+            ['f17','F-17 Anchor Clamp (pc)'],['f19','F-19 House Bracket (pc)'],['f20','F-20 Mid-Span Hook (pc)']];
   // Manila-local date para sa default batch # (iwas UTC off-by-one)
   function todayLocal(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
   function doTemplate(){
