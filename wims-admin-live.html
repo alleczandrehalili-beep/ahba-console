@@ -100,6 +100,7 @@
     <button class="tab" data-tab="techs">🧑‍🔧 Technicians</button>
     <button class="tab" data-tab="reports">📄 Reports</button>
     <button class="tab" data-tab="audit">🔍 Audit</button>
+    <button class="tab" data-tab="defect">🛠 Defective</button>
   </div>
 
   <!-- ISSUANCE -->
@@ -261,6 +262,33 @@
         <button class="btn" id="audExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
       <div id="audTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
+    </div>
+  </section>
+
+  <!-- DEFECTIVE -->
+  <section id="tab-defect" hidden>
+    <div class="panel" style="padding:12px 18px">
+      <div class="row" style="align-items:flex-end">
+        <div class="field"><label>📅 From</label><input type="date" id="defFrom"></div>
+        <div class="field"><label>To</label><input type="date" id="defTo"></div>
+        <button class="chip" id="defDateClear" style="margin-bottom:2px">✕ Clear</button>
+        <button class="btn" id="defExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Defective — overview</h2>
+      <p class="desc">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p>
+      <div class="stats" id="defStats"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <h2>Defective CPE</h2>
+      <p class="desc">CPE returned with reason "defective" — excluded from issuance.</p>
+      <div id="defCpeTable" style="overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <h2>Defective materials</h2>
+      <p class="desc">Materials written off as defective from team holdings — not returned to usable stock.</p>
+      <div id="defMatTable" style="overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
     </div>
   </section>
 </div>
@@ -651,7 +679,7 @@
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-tab]');
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
-      ['issue','receive','stock','techs','reports','audit'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); return;}
+      ['issue','receive','stock','techs','reports','audit','defect'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); if(id==='defect')loadDefective(); return;}
 
     var bx=e.target.closest('[data-box]'); if(bx){curBox=bx.getAttribute('data-box');pick={};renderBoxes();return;}
     var pk=e.target.closest('[data-pick]'); if(pk){var s=pk.getAttribute('data-pick');pick[s]=!pick[s];renderUnits();return;}
@@ -671,6 +699,8 @@
     if(e.target.id==='invExport'){exportInv();return;}
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
+    if(e.target.id==='defExport'){exportDef();return;}
+    if(e.target.id==='defDateClear'){ var df=$('#defFrom'),dt=$('#defTo'); if(df)df.value=''; if(dt)dt.value=''; loadDefective(); return; }
     if(e.target.id==='stkExport'){exportStk();return;}
     if(e.target.id==='repDateClear'){ var f=$('#repFrom'),t=$('#repTo'); if(f)f.value=''; if(t)t.value=''; loadReports(); return; }
     var sv=e.target.closest('[data-stkview]');
@@ -689,6 +719,7 @@
     if(e.target.id==='matFile'&&e.target.files&&e.target.files[0])onMatFile(e.target.files[0]);
     if(e.target.id==='repTeam'||e.target.id==='repFrom'||e.target.id==='repTo')loadReports();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
+    if(e.target.id==='defFrom'||e.target.id==='defTo')loadDefective();
   });
 
   function doRelease(){
@@ -821,7 +852,8 @@
           }
           return '<tr><td>'+r.name+'</td><td class="tnum"><b>'+q+'</b> '+r.consume_unit+'</td>'+
             '<td style="width:340px"><input type="number" inputmode="decimal" min="0" max="'+q+'" value="'+q+'" data-retqty style="width:80px;padding:6px;text-align:center"> '+
-            '<input data-retnote placeholder="remarks (optional)" style="width:130px;padding:6px;font-size:11px"> '+
+            '<input data-retnote placeholder="remarks (optional)" style="width:120px;padding:6px;font-size:11px"> '+
+            '<label style="font-size:10px;color:#8a2013;font-weight:700;white-space:nowrap"><input type="checkbox" data-retdef style="vertical-align:middle"> defective</label> '+
             '<button class="chip" data-retbtn data-team="'+g.tid+'" data-key="'+r.material_key+'" data-unit="'+r.consume_unit+'">↩ Return</button></td></tr>';
         }).join('');
         var reelRows=g.reels.map(function(r){
@@ -845,14 +877,19 @@
     var qty=parseFloat((btn.parentElement.querySelector('[data-retqty]')||{}).value)||0;
     if(qty<=0){ toast('Enter the quantity to return',true); return; }
     var note=((btn.parentElement.querySelector('[data-retnote]')||{}).value||'').trim();
+    var isDef=!!((btn.parentElement.querySelector('[data-retdef]')||{}).checked);
+    if(isDef && !note){ toast('Remarks are REQUIRED when declaring materials defective',true); return; }
     var mats={}; mats[btn.getAttribute('data-key')]=qty;
-    btn.disabled=true; btn.textContent='Returning…';
-    rpc('return_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_note:note||'return via audit panel'})
-      .then(function(){ toast('✓ Returned to warehouse: '+qty+' '+(btn.getAttribute('data-unit')||'')); loadTeamAudit(); loadInventory(); loadMatBalances(); })
+    if(isDef && !window.confirm('Declare '+qty+' '+(btn.getAttribute('data-unit')||'')+' as DEFECTIVE?\n\nIt will be written OFF — removed from circulation, NOT returned to usable stock.\nReason: '+note)) return;
+    btn.disabled=true; btn.textContent=isDef?'Writing off…':'Returning…';
+    (isDef
+      ? rpc('defect_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_remarks:note})
+      : rpc('return_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_note:note||'return via audit panel'}))
+      .then(function(){ toast(isDef?('✓ Written off as defective: '+qty+' '+(btn.getAttribute('data-unit')||'')):('✓ Returned to warehouse: '+qty+' '+(btn.getAttribute('data-unit')||''))); loadTeamAudit(); loadInventory(); loadMatBalances(); })
       .catch(function(e){
         var m=String(e.message||'');
-        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-RETURN-materials.sql in the SQL Editor first',true);
-        else toast('Return failed: '+m,true);
+        if(/could not find the function|schema cache/i.test(m)) toast(isDef?'Run wims-DEFECT STEP1 + STEP2 in the SQL Editor first':'Run wims-RETURN-materials.sql in the SQL Editor first',true);
+        else toast((isDef?'Write-off':'Return')+' failed: '+m,true);
         btn.disabled=false; btn.textContent='↩ Return';
       });
   }
@@ -921,6 +958,45 @@
       q+='&'+col+'=lt.'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
     return q;
   }
+  // ---- Defective tab: CPE returns (reason=defective) + material write-offs ----
+  var defCpe=[], defMat=[];
+  function defRange(col, fromId, toId){
+    var f=($('#'+fromId)||{}).value, t=($('#'+toId)||{}).value, q='';
+    if(f) q+='&'+col+'=gte.'+f;
+    if(t){ var d=new Date(t+'T00:00:00'); d.setDate(d.getDate()+1);
+      q+='&'+col+'=lt.'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    return q;
+  }
+  function loadDefective(){
+    var c=$('#defCpeTable'), m=$('#defMatTable'), st=$('#defStats');
+    if(c) c.innerHTML='<span class="empty">Loading…</span>';
+    if(m) m.innerHTML='<span class="empty">Loading…</span>';
+    Promise.all([
+      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+defRange('returned_at','defFrom','defTo')),
+      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+defRange('created_at','defFrom','defTo')),
+      api('/cpe?select=id&status=eq.defective&limit=1').then(function(){return null;}).catch(function(){return null;})
+    ]).then(function(res){
+      defCpe=res[0]||[]; defMat=res[1]||[];
+      var matPcs=0; defMat.forEach(function(r){ matPcs+=Math.abs(+r.qty||0); });
+      if(st) st.innerHTML=
+        '<div class="sc" style="background:#fdeeea"><b class="tnum" style="color:#8a2013">'+defCpe.length+'</b><span>Defective CPE (range)</span></div>'+
+        '<div class="sc" style="background:#fdeeea"><b class="tnum" style="color:#8a2013">'+defMat.length+'</b><span>Material write-off events</span></div>'+
+        '<div class="sc" style="background:#fdeeea"><b class="tnum" style="color:#8a2013">'+matPcs.toLocaleString()+'</b><span>Material units written off</span></div>';
+      if(c) c.innerHTML=defCpe.length?('<table><thead><tr><th>When</th><th>Team</th><th>Serial</th><th>Type</th><th>Model</th><th>Remarks</th></tr></thead><tbody>'+
+        defCpe.map(function(r){return '<tr><td>'+new Date(r.returned_at).toLocaleString()+'</td><td>'+(r.team||'—')+'</td><td class="tnum"><b>'+r.serial+'</b></td><td>'+(r.category||'—')+'</td><td>'+(r.model||'—')+'</td><td style="font-size:11px">'+(r.note||'—')+'</td></tr>';}).join('')+'</tbody></table>')
+        :'<span class="empty">No defective CPE in this range.</span>';
+      if(m) m.innerHTML=defMat.length?('<table><thead><tr><th>When</th><th>Material</th><th>Team</th><th>Qty</th><th>Unit</th><th>Remarks</th></tr></thead><tbody>'+
+        defMat.map(function(r){return '<tr><td>'+new Date(r.created_at).toLocaleString()+'</td><td>'+r.material+'</td><td>'+(r.team||'—')+'</td><td style="color:var(--coral);font-weight:700">'+r.qty+'</td><td>'+r.unit+'</td><td style="font-size:11px">'+(r.note||'—')+'</td></tr>';}).join('')+'</tbody></table>')
+        :'<span class="empty">No defective material write-offs in this range.</span>';
+    }).catch(function(e){ if(c) c.innerHTML='<span class="empty">'+e.message+'</span>'; if(m) m.innerHTML=''; });
+  }
+  function exportDef(){
+    if(!defCpe.length && !defMat.length){ toast('Nothing to export',true); return; }
+    var cpeA=[['When','Team','Serial','Type','Model','Remarks']].concat(defCpe.map(function(r){return [new Date(r.returned_at).toLocaleString(),r.team||'',r.serial,r.category||'',r.model||'',r.note||''];}));
+    var matA=[['When','Material','Team','Qty','Unit','Remarks']].concat(defMat.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.team||'',+r.qty,r.unit,r.note||''];}));
+    downloadXlsxSheets('wims-defective.xlsx',[{name:'Defective CPE',aoa:cpeA},{name:'Defective materials',aoa:matA}]);
+  }
+
   function loadReports(){
     loadInventory();
     loadCpeReturns();
