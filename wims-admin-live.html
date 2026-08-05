@@ -646,6 +646,74 @@
     }).catch(function(e){$('#matList').innerHTML='<span class="empty">'+e.message+'</span>';});
   }
   function stkTeamSel(){ return (($('#stkTeam')||{}).value||''); }   // '' = all teams
+  // ---- Per-team flows: Total Issued vs Used vs On-hand (date-ranged) ----
+  var tfIss=[], tfInst=[], tfMv=[], tfLoaded=false, tfLoading=false;
+  function loadTeamFlows(){
+    if(tfLoaded||tfLoading) return Promise.resolve();
+    tfLoading=true;
+    return Promise.all([
+      api('/issuances?select=team_id,cpe_count,released_at,boxes(category)&order=released_at.desc&limit=10000').catch(function(){return [];}),
+      api('/v_install_report?select=team,completed_at,modem_serial,iptv_count&order=completed_at.desc&limit=10000').catch(function(){return [];}),
+      api('/material_movements?select=material_key,team_id,kind,delta_base,created_at&team_id=not.is.null&order=created_at.desc&limit=10000').catch(function(){return [];})
+    ]).then(function(res){ tfIss=res[0]||[]; tfInst=res[1]||[]; tfMv=res[2]||[]; tfLoaded=true; tfLoading=false; });
+  }
+  function stkInRange(ts){
+    var f=($('#stkFrom')||{}).value, t=($('#stkTo')||{}).value;
+    if(!f&&!t) return true; if(!ts) return false;
+    var d=new Date(ts);
+    if(f && d<new Date(f+'T00:00:00')) return false;
+    if(t && d>new Date(t+'T23:59:59')) return false;
+    return true;
+  }
+  function matMeta(){
+    var m={}; MATS.forEach(function(x){ m[x[0]]={name:x[1],unit:''}; });
+    stkMatRows.forEach(function(r){ m[r.material_key]={name:r.name,unit:r.consume_unit}; });
+    return m;
+  }
+  // returns { teamCode: { items: { itemKey: {label,unit,issued,used,onhand} } } }
+  function computeTeamFlows(){
+    var tcode=function(tid){return tid?(((teams.filter(function(t){return t.id===tid;})[0])||{}).code||'—'):'';};
+    var only=stkTeamSel(), meta=matMeta(), out={};
+    var slot=function(tc,key,label,unit){
+      if(only&&tc!==only) return null;
+      var g=(out[tc]=out[tc]||{});
+      return g[key]=g[key]||{label:label,unit:unit,issued:0,used:0,onhand:0};
+    };
+    // ISSUED: CPE mula issuances (box category), materials mula 'issue' team moves
+    tfIss.forEach(function(r){
+      if(!stkInRange(r.released_at)||!(+r.cpe_count>0)) return;
+      var cat=(r.boxes&&r.boxes.category)||'cpe';
+      var sl=slot(tcode(r.team_id),'cpe_'+cat,(cat==='iptv'?'📺 IPTV':'📶 Modem'),'pcs');
+      if(sl) sl.issued+=(+r.cpe_count||0);
+    });
+    tfMv.forEach(function(r){
+      var tc=tcode(r.team_id), mm=meta[r.material_key]||{name:r.material_key,unit:''};
+      if(r.kind==='issue' && +r.delta_base>0 && stkInRange(r.created_at)){
+        var sl=slot(tc,'mat_'+r.material_key,mm.name,mm.unit); if(sl) sl.issued+=(+r.delta_base||0);
+      }
+      if(r.kind==='consume' && stkInRange(r.created_at)){
+        var s2=slot(tc,'mat_'+r.material_key,mm.name,mm.unit); if(s2) s2.used+=Math.abs(+r.delta_base||0);
+      }
+    });
+    // USED CPE: installed sa range (report rows)
+    tfInst.forEach(function(r){
+      if(!stkInRange(r.completed_at)) return;
+      if(r.modem_serial){ var a=slot(r.team,'cpe_modem','📶 Modem','pcs'); if(a) a.used+=1; }
+      if(+r.iptv_count>0){ var b=slot(r.team,'cpe_iptv','📺 IPTV','pcs'); if(b) b.used+=(+r.iptv_count||0); }
+    });
+    // ON-HAND (snapshot ngayon): issued CPE + team material balances
+    stock.forEach(function(u){
+      if(u.status!=='issued'||!u.owner_team_id) return;
+      var sl=slot(tcode(u.owner_team_id),'cpe_'+u.category,(u.category==='iptv'?'📺 IPTV':'📶 Modem'),'pcs');
+      if(sl) sl.onhand+=1;
+    });
+    stkMatRows.forEach(function(r){
+      if(!r.team_code||!(+r.qty_base>0)) return;
+      var sl=slot(r.team_code,'mat_'+r.material_key,r.name,r.consume_unit);
+      if(sl) sl.onhand+=(+r.qty_base||0);
+    });
+    return out;
+  }
   function teamAgg(){
     var by={}, only=stkTeamSel();   // team code -> {modem:n, iptv:n}
     stock.forEach(function(u){
@@ -673,14 +741,26 @@
       if(tt) tt.innerHTML='';
     } else if(stockView==='team'){
       fillStkTeams();
-      var by=teamAgg(), codes=Object.keys(by).sort();
-      var tm=0,tv=0; codes.forEach(function(c){tm+=by[c].modem;tv+=by[c].iptv;});
+      var by=teamAgg(), codes0=Object.keys(by).sort();
+      var tm=0,tv=0; codes0.forEach(function(c){tm+=by[c].modem;tv+=by[c].iptv;});
       el.innerHTML=
         '<div class="sc a"><b class="tnum">'+tm+'</b><span>Modem in-field</span></div>'+
         '<div class="sc b"><b class="tnum">'+tv+'</b><span>IPTV in-field</span></div>'+
-        '<div class="sc"><b class="tnum">'+codes.length+'</b><span>Teams holding CPE</span></div>';
-      if(tt) tt.innerHTML=codes.length?('<table><thead><tr><th>Team</th><th>Modem in-field</th><th>IPTV in-field</th><th>Total</th></tr></thead><tbody>'+
-        codes.map(function(c){var g=by[c];return '<tr><td><b>'+c+'</b></td><td class="tnum">'+g.modem+'</td><td class="tnum">'+g.iptv+'</td><td class="tnum"><b>'+(g.modem+g.iptv)+'</b></td></tr>';}).join('')+'</tbody></table>'):'<span class="empty">No team is holding CPE right now.</span>';
+        '<div class="sc"><b class="tnum">'+codes0.length+'</b><span>Teams holding CPE</span></div>';
+      if(!tfLoaded){
+        if(tt) tt.innerHTML='<span class="empty">Loading team flows…</span>';
+        loadTeamFlows().then(function(){ if(stockView==='team') renderCpeStats(); });
+        return;
+      }
+      var flows=computeTeamFlows(), codes=Object.keys(flows).sort();
+      if(tt) tt.innerHTML=codes.length?codes.map(function(c){
+        var items=flows[c], keys=Object.keys(items).sort();
+        return '<div class="lbl">'+c+'</div>'+
+          '<table><thead><tr><th>Item</th><th>Total issued (range)</th><th>Total used (range)</th><th>On-hand now</th></tr></thead><tbody>'+
+          keys.map(function(k){var it=items[k];
+            return '<tr><td>'+it.label+'</td><td class="tnum">'+it.issued+' '+it.unit+'</td><td class="tnum">'+it.used+' '+it.unit+'</td><td class="tnum"><b>'+it.onhand+'</b> '+it.unit+'</td></tr>';}).join('')+
+          '</tbody></table>';
+      }).join(''):'<span class="empty">No team activity for this filter.</span>';
     } else {
       var byStatus={};
       stock.forEach(function(u){byStatus[u.status]=(byStatus[u.status]||0)+1;});
@@ -776,6 +856,23 @@
         return [r.name, r.team_code||'central warehouse', +r.qty_issue, r.issue_unit, +r.qty_base, r.consume_unit,
                 (pct==null?'':pct+'%'), (pct!=null&&pct<=LOW_PCT?'LOW':'')];}));
     var tag=stockView==='wh'?'warehouse':(stockView==='team'?'per-team':'all');
+    if(stockView==='team'){
+      if(!tfLoaded){ toast('Loading team flows — try again in a moment',true); loadTeamFlows().then(function(){renderCpeStats();}); return; }
+      var flows=computeTeamFlows();
+      var mk=function(field,title){
+        var aoa=[['Team','Item','Qty','Unit']];
+        Object.keys(flows).sort().forEach(function(c){
+          Object.keys(flows[c]).sort().forEach(function(k){var it=flows[c][k];
+            if(+it[field]>0) aoa.push([c, it.label.replace(/^..\s/,''), +it[field], it.unit]);});
+        });
+        return {name:title, aoa:aoa};
+      };
+      downloadXlsxSheets('wims-stock-per-team.xlsx',[
+        mk('issued','Total Issued'), mk('onhand','Total On-Hand'), mk('used','Total Used'),
+        {name:'CPE serialized', aoa:serAoa}
+      ]);
+      return;
+    }
     downloadXlsxSheets('wims-stock-'+tag+'.xlsx',[{name:'CPE serialized',aoa:serAoa},{name:'CPE summary',aoa:sumAoa},{name:'Materials',aoa:matAoa}]);
   }
 
@@ -834,6 +931,7 @@
     if(e.target.id==='repTeam'||e.target.id==='repFrom'||e.target.id==='repTo')loadReports();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
+    if((e.target.id==='stkFrom'||e.target.id==='stkTo')&&stockView==='team'){renderCpeStats();}
     if(e.target.id==='defFrom'||e.target.id==='defTo')loadDefective();
   });
 
