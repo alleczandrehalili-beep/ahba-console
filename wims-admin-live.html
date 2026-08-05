@@ -110,8 +110,13 @@
       <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. A MODEM box locks to the first team it's issued to; an IPTV box can be SHARED by up to 4 teams (5 pcs each). Each team can hold up to 10 modems + 10 IPTV in-field at a time.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
-      <div class="lbl">Box in stock</div>
-      <div class="row" id="issBoxes"><span class="empty">Loading boxes…</span></div>
+      <div class="lbl">CPE category</div>
+      <div class="row" id="issCatRow">
+        <button class="chip on" data-isscat="modem">📶 MODEM</button>
+        <button class="chip" data-isscat="iptv">📺 IPTV</button>
+      </div>
+      <div class="lbl">Box to issue from</div>
+      <div class="row"><select id="issBox" style="min-width:300px"><option value="">— Select box —</option></select></div>
       <div id="capInfo" class="note info" style="display:none;margin-top:0"></div>
       <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
@@ -336,7 +341,7 @@
   function isSalesAcct(code){return /^SA\d/i.test((((code||'').split('_')[1])||''));}
 
   // ---- state ----
-  var teams=[], boxes=[], stock=[], pick={}, curBox=null;
+  var teams=[], boxes=[], stock=[], pick={}, curBox=null, issCat='modem';
 
   function boot(){
     setConn('ok','connected');
@@ -446,22 +451,25 @@
   function boxInStock(boxId){return stock.filter(function(u){return u.box_id===boxId&&u.status==='in_stock';});}
 
   function renderBoxes(){
-    var withStock=boxes.filter(function(b){return boxInStock(b.id).length>0;});
-    if(!withStock.length){ $('#issBoxes').innerHTML='<span class="empty">No boxes in stock — receive a delivery first (Receiving tab).</span>'; $('#issUnits').innerHTML='<span class="empty">—</span>'; return; }
-    $('#issBoxes').innerHTML=withStock.map(function(b){
-      var n=boxInStock(b.id).length;
-      var tag='';
+    var sel=$('#issBox'); if(!sel) return;
+    var withStock=boxes.filter(function(b){return b.category===issCat && boxInStock(b.id).length>0;});
+    if(curBox && !withStock.some(function(b){return b.id===curBox;})) curBox=null;
+    if(!withStock.length){
+      sel.innerHTML='<option value="">— No '+(issCat==='iptv'?'IPTV':'MODEM')+' boxes in stock —</option>';
+      $('#issUnits').innerHTML='<span class="empty">No boxes in stock for this category — receive a delivery first (Receiving tab).</span>';
+      renderCap(); updateRelease(); return;
+    }
+    sel.innerHTML='<option value="">— Select box —</option>'+withStock.map(function(b){
+      var n=boxInStock(b.id).length, tag='';
       if(b.category==='iptv'){
-        // IPTV box is SHARED: up to 4 teams, 5 pcs each
         var owners={}; stock.forEach(function(u){ if(u.box_id===b.id&&u.owner_team_id) owners[u.owner_team_id]=1; });
         var sh=Object.keys(owners).length;
-        tag=sh?(' 👥 '+sh+'/4 teams'):'';
+        tag=sh?(' · 👥 '+sh+'/4 teams'):'';
       } else {
-        tag=b.owner_team_id?(' 🔒 '+ (teams.filter(function(t){return t.id===b.owner_team_id;})[0]||{}).code):'';
+        tag=b.owner_team_id?(' · 🔒 '+ (teams.filter(function(t){return t.id===b.owner_team_id;})[0]||{}).code):'';
       }
-      var ic=b.category==='iptv'?'📺 IPTV':'📶 Modem';
       var dr=(b.deliveries&&b.deliveries.dr_number)?(' · '+b.deliveries.dr_number):'';
-      return '<button class="chip'+(curBox===b.id?' on':'')+'" data-box="'+b.id+'">'+ic+' · Box '+b.box_no+dr+' <span class="n">· '+n+' left</span>'+tag+'</button>';
+      return '<option value="'+b.id+'"'+(curBox===b.id?' selected':'')+'>Box '+b.box_no+dr+' · '+n+' left'+tag+'</option>';
     }).join('');
     renderCap();renderUnits();
   }
@@ -681,7 +689,10 @@
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
       ['issue','receive','stock','techs','reports','audit','defect'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); if(id==='defect')loadDefective(); return;}
 
-    var bx=e.target.closest('[data-box]'); if(bx){curBox=bx.getAttribute('data-box');pick={};renderBoxes();return;}
+    var ct=e.target.closest('[data-isscat]');
+    if(ct){ issCat=ct.getAttribute('data-isscat');
+      $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b===ct);});
+      curBox=null; pick={}; renderBoxes(); return; }
     var pk=e.target.closest('[data-pick]'); if(pk){var s=pk.getAttribute('data-pick');pick[s]=!pick[s];renderUnits();return;}
     if(e.target.id==='tickAll'){boxInStock(curBox).forEach(function(u){pick[u.serial]=true;});renderUnits();return;}
 
@@ -719,6 +730,7 @@
     if(e.target.id==='matFile'&&e.target.files&&e.target.files[0])onMatFile(e.target.files[0]);
     if(e.target.id==='repTeam'||e.target.id==='repFrom'||e.target.id==='repTo')loadReports();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
+    if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
     if(e.target.id==='defFrom'||e.target.id==='defTo')loadDefective();
   });
 
