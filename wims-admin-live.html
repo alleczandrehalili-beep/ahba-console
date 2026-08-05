@@ -233,18 +233,17 @@
   <!-- REPORTS -->
   <section id="tab-reports" hidden>
     <div class="panel" style="padding:12px 18px">
-      <div class="row" style="align-items:flex-end">
-        <div class="field"><label>📅 Date from</label><input type="date" id="repFrom"></div>
-        <div class="field"><label>Date to</label><input type="date" id="repTo"></div>
-        <button class="chip" id="repDateClear" style="margin-bottom:2px">✕ Clear dates</button>
+      <div class="row" style="align-items:center">
+        <span style="font-size:11.5px;color:#8a9894">Bawat report sa ibaba ay may SARILING date range — on screen at sa export.</span>
         <button class="btn" id="repExportAll" style="margin-left:auto">⬇ Export ALL reports (Excel · one tab each)</button>
-        <span style="font-size:11px;color:#8a9894;align-self:center;flex-basis:100%">The date range applies to every report below — on screen and in the exports.</span>
       </div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>CPE monitoring — JO report</h2><p class="desc" style="margin:0">Every ACTIVATED CPE per JO — modem + IPTV serials, kit, and ALL drop materials used to accomplish the JO.</p></div>
         <div class="field" style="margin-left:auto"><label>Technician / team</label><select id="repTeam"><option value="">All technicians</option></select></div>
+        <div class="field"><label>📅 From</label><input type="date" id="cpeFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="cpeTo" style="padding:7px 9px"></div>
         <button class="btn" id="repExport">⬇ Export Excel</button>
       </div>
       <div class="stats" id="repStats" style="margin:12px 0"></div>
@@ -253,14 +252,18 @@
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Materials monitoring — on hand vs declared</h2><p class="desc" style="margin:0">Per material: total inventory ON HAND (central + issued to vehicles/teams while still on hand) vs TOTAL DECLARED used on completed JOs (date range).</p></div>
-        <button class="btn" id="matMonExport" style="margin-left:auto">⬇ Export Excel</button>
+        <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="mmFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="mmTo" style="padding:7px 9px"></div>
+        <button class="btn" id="matMonExport">⬇ Export Excel</button>
       </div>
       <div id="matMonTable" style="overflow:auto;max-height:420px;margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>CPE returns</h2><p class="desc" style="margin:0">Every CPE returned to the warehouse — reason (defective / excess), remarks, and current status.</p></div>
-        <button class="btn" id="cretExport" style="margin-left:auto">⬇ Export Excel</button>
+        <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="crFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="crTo" style="padding:7px 9px"></div>
+        <button class="btn" id="cretExport">⬇ Export Excel</button>
       </div>
       <div id="cretTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
     </div>
@@ -274,7 +277,9 @@
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>🛠 Defective — overview</h2><p class="desc" style="margin:0">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p></div>
-        <button class="btn" id="defExport" style="margin-left:auto">⬇ Export Excel</button>
+        <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="dfFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="dfTo" style="padding:7px 9px"></div>
+        <button class="btn" id="defExport">⬇ Export Excel</button>
       </div>
       <div class="stats" id="defStats" style="margin-top:12px"><span class="empty">Loading…</span></div>
       <div class="lbl" style="margin-top:14px">Defective CPE — excluded from issuance</div>
@@ -780,28 +785,38 @@
           :(pct<=LOW_PCT?'<span class="pill" style="background:#fdeeea;color:#8a2013;border:1px solid #f4c4b7">⚠ LOW '+pct+'%</span>'
           :'<span class="pill stock">'+pct+'%</span>');
         return '<tr'+(pct!=null&&pct<=LOW_PCT?' style="background:#fff8f6"':'')+'><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+' <span style="color:#9aa8a3;font-size:10px">('+(+r.qty_base)+' '+r.consume_unit+')</span></td><td>'+lvl+'</td>'+
-        '<td style="width:360px"><input type="number" inputmode="decimal" min="0" data-ovq placeholder="new '+r.consume_unit+'" style="width:90px;padding:6px;text-align:center"> '+
-        '<input data-ovr placeholder="remarks (required)" style="width:150px;padding:6px;font-size:11px"> '+
-        '<button class="chip" data-ovbtn data-key="'+r.material_key+'" data-team="'+(r.team_id||'')+'" data-cur="'+(+r.qty_base)+'" data-unit="'+r.consume_unit+'" data-loc="'+(r.team_code||'central warehouse')+'">✏️ Set</button></td></tr>';}).join('')+'</tbody></table>';
+        '<td style="width:430px"><select data-ovmode style="padding:6px;font-size:11px"><option value="add">➕ Add</option><option value="sub">➖ Subtract</option><option value="set">🎯 Set exact</option></select> '+
+        '<input type="number" inputmode="decimal" min="0" data-ovq placeholder="qty ('+r.consume_unit+')" style="width:84px;padding:6px;text-align:center"> '+
+        '<input data-ovr placeholder="remarks (required)" style="width:140px;padding:6px;font-size:11px"> '+
+        '<button class="chip" data-ovbtn data-key="'+r.material_key+'" data-team="'+(r.team_id||'')+'" data-cur="'+(+r.qty_base)+'" data-unit="'+r.consume_unit+'" data-loc="'+(r.team_code||'central warehouse')+'">✏️ Apply</button></td></tr>';}).join('')+'</tbody></table>';
   }
   // Manual stock override: remarks REQUIRED, who-edited recorded server-side
   function doOverrideMat(btn){
     var row=btn.parentElement;
+    var mode=((row.querySelector('[data-ovmode]')||{}).value)||'add';
     var q=parseFloat((row.querySelector('[data-ovq]')||{}).value);
     var remarks=((row.querySelector('[data-ovr]')||{}).value||'').trim();
-    if(isNaN(q)||q<0){ toast('Enter the new balance (zero or positive, in '+(btn.getAttribute('data-unit')||'base units')+')',true); return; }
+    var cur=+btn.getAttribute('data-cur'), unit=btn.getAttribute('data-unit'), loc=btn.getAttribute('data-loc');
+    if(isNaN(q)||q<0||(q===0&&mode!=='set')){ toast('Enter the quantity in '+(unit||'base units'),true); return; }
     if(!remarks){ toast('Remarks are REQUIRED before editing stock — state the reason',true); return; }
-    var cur=btn.getAttribute('data-cur'), unit=btn.getAttribute('data-unit'), loc=btn.getAttribute('data-loc');
-    if(!window.confirm('Manual stock override @ '+loc+'?\n\n'+cur+' '+unit+'  →  '+q+' '+unit+'\nReason: '+remarks+'\n\nThis is recorded in the ledger under your user.')) return;
+    var target, verb;
+    if(mode==='add'){ target=cur+q; verb='ADD '+q+' '+unit; }
+    else if(mode==='sub'){
+      target=cur-q; verb='SUBTRACT '+q+' '+unit;
+      if(target<0){ toast('Cannot subtract '+q+' — only '+cur+' '+unit+' on hand',true); return; }
+    }
+    else { target=q; verb='SET to '+q+' '+unit; }
+    if(target===cur){ toast('No change — balance stays at '+cur+' '+unit,true); return; }
+    if(!window.confirm('Manual stock edit @ '+loc+'?\n\n'+verb+'\n'+cur+' '+unit+'  →  '+target+' '+unit+'\nReason: '+remarks+'\n\nThis is recorded in the ledger under your user.')) return;
     btn.disabled=true; btn.textContent='Saving…';
-    rpc('adjust_material_stock',{p_key:btn.getAttribute('data-key'),p_new_qty_base:q,p_remarks:remarks,p_team_id:btn.getAttribute('data-team')||null})
-      .then(function(){ toast('✓ Stock overridden: '+cur+' → '+q+' '+unit); return loadStock(); })
+    rpc('adjust_material_stock',{p_key:btn.getAttribute('data-key'),p_new_qty_base:target,p_remarks:'['+mode.toUpperCase()+'] '+remarks,p_team_id:btn.getAttribute('data-team')||null})
+      .then(function(){ toast('✓ '+verb+': '+cur+' → '+target+' '+unit); return loadStock(); })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-OVERRIDE-stock.sql in the SQL Editor first',true);
         else toast('Override failed: '+m,true);
       })
-      .then(function(){ btn.disabled=false; btn.textContent='✏️ Set'; loadMatBalances(); });
+      .then(function(){ btn.disabled=false; btn.textContent='✏️ Apply'; loadMatBalances(); });
   }
 
   function exportStk(){
@@ -922,7 +937,10 @@
     if(e.target.id==='issTeam')updateRelease();
     if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]);
     if(e.target.id==='matFile'&&e.target.files&&e.target.files[0])onMatFile(e.target.files[0]);
-    if(e.target.id==='repTeam'||e.target.id==='repFrom'||e.target.id==='repTo')loadReports();
+    if(e.target.id==='repTeam'||e.target.id==='cpeFrom'||e.target.id==='cpeTo')loadReports();
+    if(e.target.id==='mmFrom'||e.target.id==='mmTo')loadMatMonitoring();
+    if(e.target.id==='crFrom'||e.target.id==='crTo')loadCpeReturns();
+    if(e.target.id==='dfFrom'||e.target.id==='dfTo')loadDefective();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
     if((e.target.id==='stkFrom'||e.target.id==='stkTo')&&stockView==='team'){renderCpeStats();}
@@ -1144,7 +1162,7 @@
   var cretRows=[];
   function loadCpeReturns(){
     var el=$('#cretTable'); if(!el) return;
-    api('/v_cpe_returns?select=*&order=returned_at.desc&limit=1000'+dateRange('returned_at')).then(function(rows){
+    api('/v_cpe_returns?select=*&order=returned_at.desc&limit=1000'+dateRange('returned_at','crFrom','crTo')).then(function(rows){
       cretRows=rows||[];
       if(!cretRows.length){ el.innerHTML='<span class="empty">No CPE returned yet.</span>'; return; }
       var pill=function(rsn){ var red=(rsn==='defective'); return '<span class="pill '+(red?'':'installed')+'" style="'+(red?'background:#fdeeea;color:#8a2013;border:1px solid #f4c4b7':'')+'">'+rsn+'</span>'; };
@@ -1161,9 +1179,9 @@
     downloadXlsx('wims-cpe-returns.xlsx',rows);
   }
 
-  // shared date-range filter para sa lahat ng temporal extractions sa Reports
-  function dateRange(col){
-    var f=($('#repFrom')||{}).value, t=($('#repTo')||{}).value, q='';
+  // per-report date-range filter: bawat category may sariling From/To inputs
+  function dateRange(col, fid, tid){
+    var f=($('#'+(fid||'repFrom'))||{}).value, t=($('#'+(tid||'repTo'))||{}).value, q='';
     if(f) q+='&'+col+'=gte.'+f;
     if(t){ var d=new Date(t+'T00:00:00'); d.setDate(d.getDate()+1);
       q+='&'+col+'=lt.'+d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -1183,8 +1201,8 @@
     if(c) c.innerHTML='<span class="empty">Loading…</span>';
     if(m) m.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
-      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+dateRange('returned_at')),
-      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+dateRange('created_at')),
+      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+dateRange('returned_at','dfFrom','dfTo')),
+      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+dateRange('created_at','dfFrom','dfTo')),
       api('/cpe?select=id&status=eq.defective&limit=1').then(function(){return null;}).catch(function(){return null;})
     ]).then(function(res){
       defCpe=res[0]||[]; defMat=res[1]||[];
@@ -1215,7 +1233,7 @@
     el.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
       api('/v_material_balance?select=material_key,name,qty_base,consume_unit,team_code&limit=5000'),
-      api('/material_movements?select=material_key,delta_base,created_at&kind=eq.consume&limit=10000'+dateRange('created_at'))
+      api('/material_movements?select=material_key,delta_base,created_at&kind=eq.consume&limit=10000'+dateRange('created_at','mmFrom','mmTo'))
     ]).then(function(res){
       var bal=res[0]||[], cons=res[1]||[];
       var agg={};
@@ -1262,7 +1280,7 @@
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
     $('#repTable').innerHTML='<span class="empty">Loading…</span>';
-    api('/v_install_report?select=*&order=completed_at.desc&limit=2000'+(team?('&team=eq.'+encodeURIComponent(team)):'')+dateRange('completed_at')).then(function(rows){
+    api('/v_install_report?select=*&order=completed_at.desc&limit=2000'+(team?('&team=eq.'+encodeURIComponent(team)):'')+dateRange('completed_at','cpeFrom','cpeTo')).then(function(rows){
       repRows=rows||[];
       var foc=0,iptv=0,modems=0; repRows.forEach(function(r){foc+=(+r.foc_m||0);iptv+=(+r.iptv_count||0);if(r.modem_serial)modems++;});
       $('#repStats').innerHTML=
@@ -1274,7 +1292,7 @@
       $('#repTable').innerHTML='<table><thead><tr>'+REPCOLS.map(function(c){return '<th>'+c[1]+'</th>';}).join('')+'</tr></thead><tbody>'+
         repRows.map(function(r){return '<tr>'+REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return '<td>'+(v==null||v===''?'—':v)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#repTable').innerHTML='<span class="empty">'+e.message+'</span>';});
-    api('/v_material_ledger?select=*&order=created_at.desc&limit=2000'+dateRange('created_at')).then(function(rows){
+    api('/v_material_ledger?select=*&order=created_at.desc&limit=2000'+dateRange('created_at','mmFrom','mmTo')).then(function(rows){
       ledRows=rows||[];   // panel replaced by Materials monitoring; kept for the Export ALL 'Deduction Ledger' tab
     }).catch(function(){ ledRows=[]; });
     loadMatMonitoring();
