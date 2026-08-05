@@ -140,7 +140,8 @@
       <p class="desc">Upload the real Converge masterlist (.xlsx or .csv). The serial column is auto-detected; serials pack into boxes of 20. Modem vs IPTV is inferred (ZTE/B866 = IPTV).</p>
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Masterlist file</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
-        <div class="field"><label>DR / reference #</label><input id="impDr" value="CVG-2026-08" style="width:150px"></div>
+        <div class="field"><label>MTIF No.</label><input id="impDr" placeholder="e.g. 4901339925" style="width:150px"></div>
+        <div class="field"><label>Date imported</label><input type="date" id="impDate" style="width:150px"></div>
         <button class="chip" id="dlTemplate" style="margin-bottom:2px">⬇ Download template (.xlsx)</button>
       </div>
       <div id="impPreview" style="margin-top:12px"></div>
@@ -149,7 +150,8 @@
       <h2>Or generate demo serials</h2>
       <p class="desc">No masterlist handy? Auto-generate serials for a dry run, packed into boxes of 20.</p>
       <div class="row">
-        <div class="field"><label>DR / reference #</label><input id="rcvDr" value="CVG-DEMO-001" style="width:170px"></div>
+        <div class="field"><label>MTIF No.</label><input id="rcvDr" value="MTIF-DEMO-001" style="width:150px"></div>
+        <div class="field"><label>Date imported</label><input type="date" id="rcvDate" style="width:150px"></div>
         <div class="field"><label>Model</label>
           <select id="rcvModel"><option value="modem">Modem · Huawei EG8041X6</option><option value="iptv">IPTV · ZTE B866 V2F</option></select></div>
         <div class="field"><label>How many CPE</label><input id="rcvCount" type="number" value="40" min="1" max="400" style="width:110px"></div>
@@ -169,7 +171,7 @@
       <div class="lbl mt">Or bulk import from Excel / CSV</div>
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Materials file</label><input type="file" id="matFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
-        <div class="field"><label>Batch / DR #</label><input id="matBatch" placeholder="MAT-2026-08-05" style="width:160px"></div>
+        <div class="field"><label>MTIF / Batch #</label><input id="matBatch" placeholder="e.g. 4901339925" style="width:160px"></div>
         <button class="chip" id="dlMatTemplate" style="margin-bottom:2px">⬇ Download materials template (.xlsx)</button>
       </div>
       <div id="matImpPreview" style="margin-top:10px"></div>
@@ -319,7 +321,8 @@
   // request auth from parent
   try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
   // paint the issuance material grid agad (fallback list) para hindi naka-"Loading…"
-  document.addEventListener('DOMContentLoaded', function(){ renderIssueMats(); });
+  document.addEventListener('DOMContentLoaded', function(){ renderIssueMats();
+    var d1=$('#impDate'), d2=$('#rcvDate'); if(d1&&!d1.value) d1.value=todayLocal(); if(d2&&!d2.value) d2.value=todayLocal(); });
   // standalone fallback (opened directly, not in console): allow window.WIMS_CFG
   if(window.WIMS_CFG){ CFG=Object.assign(CFG,window.WIMS_CFG); boot(); }
   setTimeout(function(){ if(!CFG.url){ setConn('off','not connected'); $('#who').textContent='open from the AHBA console'; } },2500);
@@ -438,7 +441,7 @@
   function loadStock(){
     return Promise.all([
       api('/cpe?select=id,serial,model,category,box_id,status,owner_team_id,date_received,released_at&order=serial'),
-      api('/boxes?select=id,box_no,category,owner_team_id,deliveries(dr_number)&order=box_no')
+      api('/boxes?select=id,box_no,category,owner_team_id,deliveries(dr_number,date_received)&order=box_no')
     ]).then(function(res){
       stock=res[0]||[]; boxes=res[1]||[];
       renderBoxes(); renderStock();
@@ -465,8 +468,12 @@
       } else {
         tag=b.owner_team_id?(' · 🔒 '+ (teams.filter(function(t){return t.id===b.owner_team_id;})[0]||{}).code):'';
       }
-      var dr=(b.deliveries&&b.deliveries.dr_number)?(' · '+b.deliveries.dr_number):'';
-      return '<option value="'+b.id+'"'+(curBox===b.id?' selected':'')+'>Box '+b.box_no+dr+' · '+n+' left'+tag+'</option>';
+      var imp='';
+      if(b.deliveries&&b.deliveries.date_received){
+        var days=Math.floor((Date.now()-new Date(b.deliveries.date_received+'T00:00:00'))/86400000);
+        imp=' · imported '+b.deliveries.date_received+(days>=30?' · ⚠ '+days+'d old':' · '+days+'d');
+      }
+      return '<option value="'+b.id+'"'+(curBox===b.id?' selected':'')+'>Box '+b.box_no+imp+' · '+n+' left'+tag+'</option>';
     }).join('');
     renderCap();renderUnits();
   }
@@ -817,9 +824,10 @@
         return (!lo||dt>=lo)&&(!hi||dt<=hi);
       });
     }
-    var serAoa=[['Serial','Category','Model','Status','Team','Box','Imported on','Released on']].concat(
+    var mtif=function(bid){var b=boxes.filter(function(x){return x.id===bid;})[0];return (b&&b.deliveries&&b.deliveries.dr_number)||'';};
+    var serAoa=[['Serial','Category','Model','Status','Team','Box','MTIF','Imported on','Released on']].concat(
       units.map(function(u){return [u.serial, u.category, u.model||CATLABEL[u.category]||'', u.status,
-        tcode(u.owner_team_id), bno(u.box_id), d(u.date_received), d(u.released_at)];}));
+        tcode(u.owner_team_id), bno(u.box_id), mtif(u.box_id), d(u.date_received), d(u.released_at)];}));
     // summary sheet (dating aggregate) bilang pangalawang sheet
     var sumAoa;
     if(stockView==='team'){
@@ -965,7 +973,7 @@
     if(!window.confirm('Generate '+count+' DEMO '+cat+' serials into LIVE stock?\n\nFor real deliveries, use the Excel/CSV import above instead.')) return;
     var rows=[]; for(var i=0;i<count;i++){ rows.push({box_no:Math.floor(i/20)+1,category:cat,serial:genSerial(cat,i),model:CATLABEL[cat]}); }
     var btn=$('#doReceive');btn.disabled=true;btn.textContent='Receiving…';
-    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
+    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:(($('#rcvDate')||{}).value||null),p_rows:rows})
       .then(function(){toast('✓ Received '+count+' CPE into stock');return loadStock();})
       .catch(function(e){toast('Receive failed: '+e.message,true);})
       .then(function(){btn.disabled=false;btn.textContent='📥 Receive into stock';});
@@ -1352,7 +1360,7 @@
     });
     if(!rows.length){toast('No serials found in that column',true);return;}
     var btn=$('#doImport');btn.disabled=true;btn.textContent='Importing '+rows.length+'…';
-    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:null,p_rows:rows})
+    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:(($('#impDate')||{}).value||null),p_rows:rows})
       .then(function(){toast('✓ Imported '+rows.length+' serials into stock');$('#impPreview').innerHTML='<div class="note info">✓ Imported <b>'+rows.length+'</b> serials into stock (boxes of 20). See the Stock &amp; Issuance tabs.</div>';impRows=[];return loadStock();})
       .catch(function(e){toast('Import failed: '+e.message,true);var b=$('#doImport');if(b){b.disabled=false;b.textContent='📥 Retry import';}});
   }
