@@ -1024,7 +1024,12 @@
   // ---- Reports (materials monitoring + extraction) ----
   var repRows=[], ledRows=[];
   var REPCOLS=[['completed_at','When'],['team','Team'],['work_account','Work account'],['jo_number','JO (validator)'],['subscriber','Subscriber'],['account_no','Account'],['modem_serial','Modem'],['iptv_1','IPTV 1'],['iptv_2','IPTV 2'],['iptv_3','IPTV 3'],['foc_reel_no','FOC Reel'],['foc_start_m','FOC Start'],['foc_end_m','FOC End'],['foc_m','FOC(m)'],['clip_5mm','Clip5'],['clip_7mm','Clip7'],['cable_tie','Tie'],['dsided_tape_in','DTape'],['elec_tape_in','ETape'],['patchcord_upc','PatchUPC'],['jumper_10m','Jum 10m'],['jumper_20m','Jum 20m'],['jumper_30m','Jum 30m'],['jumper_40m','Jum 40m'],['clip_a','Clip A'],['clip_b','Clip B'],['f17_clamp_pc','F-17'],['f19_bracket_pc','F-19'],['f20_hook_pc','F-20'],['buf_connector','Buf Conn'],['buf_patchcord','Buf Patch'],['buf_terminalbox','Buf TBox'],['buf_sar','Buf SAR'],['buf_saf','Buf SAF'],['kit_sar','SAR'],['kit_saf','SAF'],['kit_connector','Conn'],['kit_patchcord','Patch'],['kit_terminalbox','TBox'],['kit_f17','F17'],['kit_f20','F20'],['kit_f19','F19'],['photos_count','Photos']];
-  function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
+  // Lahat ng export file: "AHBA WIMS - <REPORT> - <date of extraction>.xlsx"
+  function wimsFileName(n){
+    var mid=String(n).replace(/^wims-/i,'').replace(/\.xlsx$/i,'').replace(/-/g,' ').toUpperCase().replace(/\s+/g,' ').trim();
+    return 'AHBA WIMS - '+mid+' - '+todayLocal()+'.xlsx';
+  }
+  function downloadXlsx(name,aoa){ loadXLSX(function(){ try{ var fn=wimsFileName(name); var ws=XLSX.utils.aoa_to_sheet(aoa); var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Report'); XLSX.writeFile(wb,fn); toast('Exported '+fn); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   // ---- Team-held audit + return-to-warehouse ----
   var audRows=[], audReels=[], audCpe=[];
   function loadTeamAudit(){
@@ -1280,7 +1285,7 @@
 
   // ---- inventory on hand (unused, incl. team-held) ----
   var invRows=[], cpeOnhand=[], cpeDetail=[];
-  function downloadXlsxSheets(name,sheets){ loadXLSX(function(){ try{ var wb=XLSX.utils.book_new(); sheets.forEach(function(s){ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name); }); XLSX.writeFile(wb,name); toast('Exported '+name); }catch(e){ toast('Export failed: '+e.message,true); } }); }
+  function downloadXlsxSheets(name,sheets){ loadXLSX(function(){ try{ var fn=wimsFileName(name); var wb=XLSX.utils.book_new(); sheets.forEach(function(s){ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name); }); XLSX.writeFile(wb,fn); toast('Exported '+fn); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadInventory(){
     $('#invTable').innerHTML='<span class="empty">Loading…</span>';
     Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*'), api('/v_cpe_onhand_detail?select=*&limit=5000') ]).then(function(res){
@@ -1379,14 +1384,14 @@
         ['485754434A1B2C3E','Huawei EG8041X6','modem','',1],
         ['ZTEB866A1B2C','ZTE B866 V2F','iptv','',1]];
       var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'CPE');
-      XLSX.writeFile(wb,'wims-cpe-import-template.xlsx'); toast('CPE import template downloaded');
+      XLSX.writeFile(wb,wimsFileName('cpe-import-template')); toast('CPE import template downloaded');
     }catch(e){ toast('Template failed: '+e.message,true); } });
   }
   function doMatTemplate(){
     loadXLSX(function(){ try{
       var aoa=[['material_code','description','issue_qty']].concat(MATS.map(function(m){return [matCode(m),m[1],0];}));
       var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Materials');
-      XLSX.writeFile(wb,'wims-materials-import-template.xlsx'); toast('Materials template downloaded');
+      XLSX.writeFile(wb,wimsFileName('materials-import-template')); toast('Materials template downloaded');
     }catch(e){ toast('Template failed: '+e.message,true); } });
   }
   var matImp=[], matImpFile='';
