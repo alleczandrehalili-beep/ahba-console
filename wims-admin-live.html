@@ -245,7 +245,7 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
-        <div><h2>CPE returns</h2><p class="desc" style="margin:0">Every CPE returned to the warehouse — reason (defective / excess / return only / for replacement), remarks, and current status.</p></div>
+        <div><h2>CPE returns</h2><p class="desc" style="margin:0">Every CPE returned to the warehouse — reason (defective / excess), remarks, and current status.</p></div>
         <button class="btn" id="cretExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
       <div id="cretTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
@@ -877,7 +877,7 @@
           return '<tr><td>'+ic+' <b class="tnum">'+r.serial+'</b> <span style="font-size:10px;color:#9aa8a3">'+(r.model||CATLABEL[r.category]||r.category)+'</span></td>'+
             '<td style="font-size:11px;color:#9aa8a3">issued '+(r.released_at?new Date(r.released_at).toLocaleDateString():'—')+'</td>'+
             '<td style="width:340px"><select data-retreason style="padding:6px;font-size:11px">'+
-              '<option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option><option value="return only">Return only</option><option value="for replacement">For replacement</option></select> '+
+              '<option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option></select> '+
             '<input data-retnote placeholder="remarks" style="width:110px;padding:6px;font-size:11px"> '+
             '<button class="chip" data-retcpe="'+r.serial+'">↩ Return</button></td></tr>';
         }).join('');
@@ -909,7 +909,7 @@
     var serial=btn.getAttribute('data-retcpe');
     var reason=((btn.parentElement.querySelector('[data-retreason]')||{}).value||'');
     var note=((btn.parentElement.querySelector('[data-retnote]')||{}).value||'').trim();
-    if(!reason){ toast('Select the return REASON first (defective / excess / return only / for replacement)',true); return; }
+    if(!reason){ toast('Select the return REASON first (defective / excess)',true); return; }
     var eff=(reason==='defective')
       ? 'It will be marked DEFECTIVE — no longer issuable.'
       : 'It returns to issuable stock; the box unlocks once nothing remains issued from it.';
