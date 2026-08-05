@@ -474,7 +474,7 @@
           return '<tr><td>'+new Date(r.released_at).toLocaleString()+'</td><td>'+tc+'</td><td>'+(r.cpe_count||'—')+'</td><td>'+(r.kits||0)+'</td><td style="font-size:11px">'+matSum(r.materials)+'</td></tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#issList').innerHTML='<span class="empty">'+e.message+'</span>';});
     // material balance (stored for the view filter + export)
-    api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code&order=name').then(function(rows){
+    api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code,team_id&order=name').then(function(rows){
       stkMatRows=rows||[]; renderMatList();
     }).catch(function(e){$('#matList').innerHTML='<span class="empty">'+e.message+'</span>';});
   }
@@ -535,9 +535,32 @@
     var el=$('#matList'); if(!el) return;
     var rows=stkMatFiltered();
     if(!rows.length){el.innerHTML='<span class="empty">'+(stockView==='team'?'No team-held materials.':'No material stock yet.')+'</span>';return;}
-    el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th></tr></thead><tbody>'+
-      rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+'</td></tr>';}).join('')+'</tbody></table>';
+    el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th><th>✏️ Manual override</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr><td>'+r.name+'</td><td>'+(r.team_code||'central warehouse')+'</td><td>'+r.qty_issue+' '+r.issue_unit+' <span style="color:#9aa8a3;font-size:10px">('+(+r.qty_base)+' '+r.consume_unit+')</span></td>'+
+        '<td style="width:360px"><input type="number" inputmode="decimal" min="0" data-ovq placeholder="new '+r.consume_unit+'" style="width:90px;padding:6px;text-align:center"> '+
+        '<input data-ovr placeholder="remarks (required)" style="width:150px;padding:6px;font-size:11px"> '+
+        '<button class="chip" data-ovbtn data-key="'+r.material_key+'" data-team="'+(r.team_id||'')+'" data-cur="'+(+r.qty_base)+'" data-unit="'+r.consume_unit+'" data-loc="'+(r.team_code||'central warehouse')+'">✏️ Set</button></td></tr>';}).join('')+'</tbody></table>';
   }
+  // Manual stock override: remarks REQUIRED, who-edited recorded server-side
+  function doOverrideMat(btn){
+    var row=btn.parentElement;
+    var q=parseFloat((row.querySelector('[data-ovq]')||{}).value);
+    var remarks=((row.querySelector('[data-ovr]')||{}).value||'').trim();
+    if(isNaN(q)||q<0){ toast('Enter the new balance (zero or positive, in '+(btn.getAttribute('data-unit')||'base units')+')',true); return; }
+    if(!remarks){ toast('Remarks are REQUIRED before editing stock — state the reason',true); return; }
+    var cur=btn.getAttribute('data-cur'), unit=btn.getAttribute('data-unit'), loc=btn.getAttribute('data-loc');
+    if(!window.confirm('Manual stock override @ '+loc+'?\n\n'+cur+' '+unit+'  →  '+q+' '+unit+'\nReason: '+remarks+'\n\nThis is recorded in the ledger under your user.')) return;
+    btn.disabled=true; btn.textContent='Saving…';
+    rpc('adjust_material_stock',{p_key:btn.getAttribute('data-key'),p_new_qty_base:q,p_remarks:remarks,p_team_id:btn.getAttribute('data-team')||null})
+      .then(function(){ toast('✓ Stock overridden: '+cur+' → '+q+' '+unit); return loadStock(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-OVERRIDE-stock.sql in the SQL Editor first',true);
+        else toast('Override failed: '+m,true);
+      })
+      .then(function(){ btn.disabled=false; btn.textContent='✏️ Set'; loadMatBalances(); });
+  }
+
   function exportStk(){
     var tcode=function(tid){return tid?(((teams.filter(function(t){return t.id===tid;})[0])||{}).code||'—'):'';};
     var bno=function(bid){return bid?((boxes.filter(function(b){return b.id===bid;})[0]||{}).box_no||''):'';};
@@ -618,6 +641,7 @@
     if(sv){ stockView=sv.getAttribute('data-stkview');
       $$('[data-stkview]').forEach(function(b){b.classList.toggle('on',b===sv);});
       renderCpeStats(); renderMatList(); return; }
+    var ov=e.target.closest('[data-ovbtn]'); if(ov){doOverrideMat(ov);return;}
     var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
     var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
     var rc=e.target.closest('[data-retcpe]'); if(rc){doReturnCpe(rc);return;}
