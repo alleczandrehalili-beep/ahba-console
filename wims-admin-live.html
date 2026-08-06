@@ -147,18 +147,12 @@
       <div id="impPreview" style="margin-top:12px"></div>
     </div>
     <div class="panel">
-      <h2>Receive drop materials</h2>
-      <p class="desc">Add bulk drop-material stock to the central warehouse.</p>
-      <div class="row">
-        <div class="field"><label>Material</label>
-          <select id="matKey"><option value="foc">FOC · drop fiber (spool)</option><option value="clip5">Cable Clip 5mm (bag)</option><option value="clip7">Cable Clip 7mm (bag)</option><option value="tie">Cable Tie (bag)</option><option value="dtape">Double-Sided Tape (roll)</option><option value="etape">Electrical Tape (roll)</option></select></div>
-        <div class="field"><label>Issue-unit qty</label><input id="matQty" type="number" value="5" min="1" style="width:110px"></div>
-      </div>
-      <button class="btn block" id="doMat">📦 Receive materials (single)</button>
-      <div class="lbl mt">Or bulk import from Excel / CSV</div>
+      <h2>Receive drop materials — Excel / CSV</h2>
+      <p class="desc">Same as the CPE import: upload the materials file with its MTIF and date. Rows are matched by Converge item code.</p>
       <div class="row" style="align-items:flex-end">
         <div class="field"><label>Materials file</label><input type="file" id="matFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
-        <div class="field"><label>MTIF / Batch #</label><input id="matBatch" placeholder="e.g. 4901339925" style="width:160px"></div>
+        <div class="field"><label>MTIF No.</label><input id="matBatch" placeholder="e.g. 4901339925" style="width:150px"></div>
+        <div class="field"><label>Date imported</label><input type="date" id="matDate" style="width:150px"></div>
         <button class="chip" id="dlMatTemplate" style="margin-bottom:2px">⬇ Download materials template (.xlsx)</button>
       </div>
       <div id="matImpPreview" style="margin-top:10px"></div>
@@ -318,7 +312,7 @@
   try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
   // paint the issuance material grid agad (fallback list) para hindi naka-"Loading…"
   document.addEventListener('DOMContentLoaded', function(){ renderIssueMats();
-    var d1=$('#impDate'); if(d1&&!d1.value) d1.value=todayLocal(); });
+    var d1=$('#impDate'), d3=$('#matDate'); if(d1&&!d1.value) d1.value=todayLocal(); if(d3&&!d3.value) d3.value=todayLocal(); });
   // standalone fallback (opened directly, not in console): allow window.WIMS_CFG
   if(window.WIMS_CFG){ CFG=Object.assign(CFG,window.WIMS_CFG); boot(); }
   setTimeout(function(){ if(!CFG.url){ setConn('off','not connected'); $('#who').textContent='open from the AHBA console'; } },2500);
@@ -420,8 +414,6 @@
           var per=(m.unit_qty?(' of '+(+m.unit_qty)+' '+m.consume_unit):'');
           return [m.key, m.name+' ('+m.issue_unit+per+')', m.item_code||CODEMAP[m.key]||''];
         });
-        var sel=$('#matKey'); if(sel){ var v=sel.value;
-          sel.innerHTML=MATS.map(function(m){return '<option value="'+m[0]+'"'+(m[0]===v?' selected':'')+'>'+m[1]+'</option>';}).join(''); }
         renderIssueMats();
       }).catch(function(){ /* fallback list stays */ });
   }
@@ -899,7 +891,6 @@
 
     if(e.target.id==='doRelease'){doRelease();return;}
     if(e.target.id==='doIssueMats'){doIssueMats();return;}
-    if(e.target.id==='doMat'){doMat();return;}
     if(e.target.id==='syncTeams'){doSync();return;}
     if(e.target.id==='doImport'){doImport();return;}
     if(e.target.id==='dlTemplate'){doTemplate();return;}
@@ -983,14 +974,6 @@
   }
 
 
-  function doMat(){
-    var key=$('#matKey').value, qty=Math.max(1,parseFloat($('#matQty').value)||0);
-    var btn=$('#doMat');btn.disabled=true;btn.textContent='Receiving…';
-    rpc('receive_materials',{p_key:key,p_issue_qty:qty,p_note:'admin console'})
-      .then(function(){toast('✓ Materials received');return loadStock();})
-      .catch(function(e){toast('Failed: '+e.message,true);})
-      .then(function(){btn.disabled=false;btn.textContent='📦 Receive materials (single)';});
-  }
 
   // ---- technicians (live FieldOps mobile accounts, incl. subcon) ----
   var enrolledSet={};
@@ -1474,7 +1457,8 @@
     // Batch # is stamped sa note ng bawat ledger movement → makikita sa monitoring
     // (Stock ledger + Reports deduction table) kung kailan/aling upload ito galing.
     var batch=(($('#matBatch')||{}).value||'').trim()||('MAT-'+todayLocal());
-    var note='batch '+batch+(matImpFile?(' · '+matImpFile):'');
+    var mdate=(($('#matDate')||{}).value||todayLocal());
+    var note='MTIF '+batch+' · imported '+mdate+(matImpFile?(' · '+matImpFile):'');
     var chain=Promise.resolve(), ok=0;
     matImp.forEach(function(x){ chain=chain.then(function(){return rpc('receive_materials',{p_key:x.key,p_issue_qty:x.qty,p_note:note}).then(function(){ok++;});}); });
     chain.then(function(){toast('✓ Received '+ok+' material lines · batch '+batch);$('#matImpPreview').innerHTML='<div class="note info">✓ Received <b>'+ok+'</b> material lines into stock · batch <b>'+batch+'</b>. See the Stock tab ledger.</div>';matImp=[];return loadStock();})
