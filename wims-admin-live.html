@@ -147,19 +147,6 @@
       <div id="impPreview" style="margin-top:12px"></div>
     </div>
     <div class="panel">
-      <h2>Or generate demo serials</h2>
-      <p class="desc">No masterlist handy? Auto-generate serials for a dry run, packed into boxes of 20.</p>
-      <div class="row">
-        <div class="field"><label>MTIF No.</label><input id="rcvDr" value="MTIF-DEMO-001" style="width:150px"></div>
-        <div class="field"><label>Date imported</label><input type="date" id="rcvDate" style="width:150px"></div>
-        <div class="field"><label>Model</label>
-          <select id="rcvModel"><option value="modem">Modem · Huawei EG8041X6</option><option value="iptv">IPTV · ZTE B866 V2F</option></select></div>
-        <div class="field"><label>How many CPE</label><input id="rcvCount" type="number" value="40" min="1" max="400" style="width:110px"></div>
-      </div>
-      <button class="btn block" id="doReceive">📥 Receive into stock</button>
-      <div class="note info">Tip: 40 CPE = 2 boxes of 20 — perfect for a dry run (issue one box, keep one in reserve).</div>
-    </div>
-    <div class="panel">
       <h2>Receive drop materials</h2>
       <p class="desc">Add bulk drop-material stock to the central warehouse.</p>
       <div class="row">
@@ -214,8 +201,11 @@
       <div id="issList"><span class="empty">Loading…</span></div>
     </div>
     <div class="panel">
-      <h2>Drop-material balance</h2>
-      <div id="matList"><span class="empty">Loading…</span></div>
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>Drop-material balance</h2><p class="desc" style="margin:0">Piliin ang lokasyon na gustong tingnan / i-edit — bawat row ay may sariling Add / Subtract / Set.</p></div>
+        <div class="field" style="margin-left:auto"><label>Location</label><select id="matLoc" style="min-width:170px"><option value="">All locations</option><option value="central">🏭 Central warehouse</option></select></div>
+      </div>
+      <div id="matList" style="margin-top:10px"><span class="empty">Loading…</span></div>
     </div>
   </section>
 
@@ -294,7 +284,8 @@
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Team-held materials — audit &amp; returns</h2><p class="desc" style="margin:0">What each team currently holds — drop materials, CPE (not yet installed), and FOC reels — and returning them to the central warehouse. Every return shows in the ledger and movements.</p></div>
-        <button class="btn" id="audExport" style="margin-left:auto">⬇ Export Excel</button>
+        <div class="field" style="margin-left:auto"><label>Team</label><select id="audTeam" style="min-width:150px"><option value="">All teams</option></select></div>
+        <button class="btn" id="audExport">⬇ Export Excel</button>
       </div>
       <div id="audTable" style="margin-top:12px"><span class="empty">Loading…</span></div>
     </div>
@@ -327,7 +318,7 @@
   try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
   // paint the issuance material grid agad (fallback list) para hindi naka-"Loading…"
   document.addEventListener('DOMContentLoaded', function(){ renderIssueMats();
-    var d1=$('#impDate'), d2=$('#rcvDate'); if(d1&&!d1.value) d1.value=todayLocal(); if(d2&&!d2.value) d2.value=todayLocal(); });
+    var d1=$('#impDate'); if(d1&&!d1.value) d1.value=todayLocal(); });
   // standalone fallback (opened directly, not in console): allow window.WIMS_CFG
   if(window.WIMS_CFG){ CFG=Object.assign(CFG,window.WIMS_CFG); boot(); }
   setTimeout(function(){ if(!CFG.url){ setConn('off','not connected'); $('#who').textContent='open from the AHBA console'; } },2500);
@@ -777,7 +768,15 @@
   }
   function renderMatList(){
     var el=$('#matList'); if(!el) return;
+    var lSel=$('#matLoc');
+    if(lSel && lSel.options.length<=2 && teams.length){
+      lSel.innerHTML='<option value="">All locations</option><option value="central">🏭 Central warehouse</option>'+
+        teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join('');
+    }
     var rows=stkMatFiltered();
+    var loc=lSel?lSel.value:'';
+    if(loc==='central') rows=rows.filter(function(r){return !r.team_code;});
+    else if(loc) rows=rows.filter(function(r){return r.team_code===loc;});
     if(!rows.length){el.innerHTML='<span class="empty">'+(stockView==='team'?'No team-held materials.':'No material stock yet.')+'</span>';return;}
     el.innerHTML='<table><thead><tr><th>Material</th><th>Location</th><th>Balance</th><th>Level</th><th>✏️ Manual override</th></tr></thead><tbody>'+
       rows.map(function(r){var pct=stockLevel(r);
@@ -885,10 +884,6 @@
   }
 
   // ---- actions ----
-  function genSerial(cat,i){
-    var stamp=(Date.now().toString(36)+i.toString(36)).toUpperCase().replace(/[^0-9A-Z]/g,'').slice(-7);
-    return cat==='iptv' ? 'ZTE'+stamp : '48575443'+stamp.padStart(8,'0').slice(-8);
-  }
 
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-tab]');
@@ -904,7 +899,6 @@
 
     if(e.target.id==='doRelease'){doRelease();return;}
     if(e.target.id==='doIssueMats'){doIssueMats();return;}
-    if(e.target.id==='doReceive'){doReceive();return;}
     if(e.target.id==='doMat'){doMat();return;}
     if(e.target.id==='syncTeams'){doSync();return;}
     if(e.target.id==='doImport'){doImport();return;}
@@ -931,6 +925,7 @@
     var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
     var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
     var rc=e.target.closest('[data-retcpe]'); if(rc){doReturnCpe(rc);return;}
+    var br=e.target.closest('[data-bulkret]'); if(br){doBulkCpe(br);return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
   document.addEventListener('change',function(e){
@@ -942,6 +937,8 @@
     if(e.target.id==='crFrom'||e.target.id==='crTo')loadCpeReturns();
     if(e.target.id==='dfFrom'||e.target.id==='dfTo')loadDefective();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
+    if(e.target.id==='matLoc')renderMatList();
+    if(e.target.id==='audTeam')loadTeamAudit();
     if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
     if((e.target.id==='stkFrom'||e.target.id==='stkTo')&&stockView==='team'){renderCpeStats();}
   });
@@ -985,17 +982,6 @@
     renderFocReels();
   }
 
-  function doReceive(){
-    var dr=$('#rcvDr').value.trim(), cat=$('#rcvModel').value, count=Math.max(1,parseInt($('#rcvCount').value,10)||0);
-    // Guard: this generates FAKE serials into LIVE stock — confirm before polluting real inventory.
-    if(!window.confirm('Generate '+count+' DEMO '+cat+' serials into LIVE stock?\n\nFor real deliveries, use the Excel/CSV import above instead.')) return;
-    var rows=[]; for(var i=0;i<count;i++){ rows.push({box_no:Math.floor(i/20)+1,category:cat,serial:genSerial(cat,i),model:CATLABEL[cat]}); }
-    var btn=$('#doReceive');btn.disabled=true;btn.textContent='Receiving…';
-    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:(($('#rcvDate')||{}).value||null),p_rows:rows})
-      .then(function(){toast('✓ Received '+count+' CPE into stock');return loadStock();})
-      .catch(function(e){toast('Receive failed: '+e.message,true);})
-      .then(function(){btn.disabled=false;btn.textContent='📥 Receive into stock';});
-  }
 
   function doMat(){
     var key=$('#matKey').value, qty=Math.max(1,parseFloat($('#matQty').value)||0);
@@ -1064,6 +1050,14 @@
       audReels=res[1]||[];
       audCpe=res[2]||[];
       var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
+      var aSel=$('#audTeam');
+      if(aSel && aSel.options.length<=1 && teams.length){ aSel.innerHTML='<option value="">All teams</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
+      var only=aSel?aSel.value:'';
+      if(only){
+        audRows=audRows.filter(function(r){return r.team_code===only;});
+        audReels=audReels.filter(function(r){return teamCode(r.team_id)===only;});
+        audCpe=audCpe.filter(function(r){return teamCode(r.owner_team_id)===only;});
+      }
       var byTeam={};
       audRows.forEach(function(r){ (byTeam[r.team_code]=byTeam[r.team_code]||{mats:[],reels:[],cpe:[],tid:r.team_id}).mats.push(r); });
       audReels.forEach(function(r){ var c=teamCode(r.team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],cpe:[],tid:r.team_id}).reels.push(r); });
@@ -1091,14 +1085,16 @@
         }).join('');
         var cpeRows=(g.cpe||[]).map(function(r){
           var ic=r.category==='iptv'?'📺':'📶';
-          return '<tr><td>'+ic+' <b class="tnum">'+r.serial+'</b> <span style="font-size:10px;color:#9aa8a3">'+(r.model||CATLABEL[r.category]||r.category)+'</span></td>'+
+          return '<tr><td><label style="cursor:pointer"><input type="checkbox" data-cpesel="'+r.serial+'" style="vertical-align:middle;margin-right:8px">'+ic+' <b class="tnum">'+r.serial+'</b> <span style="font-size:10px;color:#9aa8a3">'+(r.model||CATLABEL[r.category]||r.category)+'</span></label></td>'+
             '<td style="font-size:11px;color:#9aa8a3">issued '+(r.released_at?new Date(r.released_at).toLocaleDateString():'—')+'</td>'+
-            '<td style="width:340px"><select data-retreason style="padding:6px;font-size:11px">'+
-              '<option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option></select> '+
-            '<input data-retnote placeholder="remarks" style="width:110px;padding:6px;font-size:11px"> '+
-            '<button class="chip" data-retcpe="'+r.serial+'">↩ Return</button></td></tr>';
+            '<td style="width:340px;font-size:10.5px;color:#9aa8a3">tick → isama sa bulk return sa itaas</td></tr>';
         }).join('');
-        return '<div class="lbl">'+c+'</div><table><thead><tr><th>Item</th><th>Currently held</th><th>Return to warehouse</th></tr></thead><tbody>'+matRows+cpeRows+reelRows+'</tbody></table>';
+        var bulkBar=(g.cpe&&g.cpe.length)?('<tr style="background:#f3fbf7"><td colspan="3" style="padding:9px">'+
+          '<label style="font-size:11.5px;font-weight:700;color:#102925;cursor:pointer"><input type="checkbox" data-cpeall style="vertical-align:middle"> Select all CPE ('+g.cpe.length+')</label>'+
+          '<select data-bulkreason style="padding:6px;font-size:11px;margin-left:12px"><option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option></select> '+
+          '<input data-bulknote placeholder="remarks" style="width:150px;padding:6px;font-size:11px"> '+
+          '<button class="chip" data-bulkret data-team="'+g.tid+'">↩ Return selected (<span data-bulkcnt>0</span>)</button></td></tr>'):'';
+        return '<div class="lbl">'+c+'</div><div data-audteam><table><thead><tr><th>Item</th><th>Currently held</th><th>Return to warehouse</th></tr></thead><tbody>'+matRows+bulkBar+cpeRows+reelRows+'</tbody></table></div>';
       }).join('');
     }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
   }
@@ -1139,6 +1135,36 @@
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-CPE-reason STEP1 + STEP2 in the SQL Editor first',true);
         else toast('Return failed: '+m,true);
         btn.disabled=false; btn.textContent='↩ Return';
+      });
+  }
+  // bulk CPE return: select-all + count + isang tawag sa return_cpe (array)
+  document.addEventListener('change',function(e){
+    var t=e.target; if(!t||!t.matches) return;
+    if(t.matches('[data-cpeall]')){
+      var bx=t.closest('[data-audteam]');
+      if(bx) bx.querySelectorAll('[data-cpesel]').forEach(function(cb){cb.checked=t.checked;});
+    }
+    if(t.matches('[data-cpeall]')||t.matches('[data-cpesel]')){
+      var box=t.closest('[data-audteam]');
+      var n=box?box.querySelectorAll('[data-cpesel]:checked').length:0;
+      var c=box?box.querySelector('[data-bulkcnt]'):null; if(c) c.textContent=n;
+    }
+  });
+  function doBulkCpe(btn){
+    var box=btn.closest('[data-audteam]');
+    var serials=[].slice.call(box.querySelectorAll('[data-cpesel]:checked')).map(function(cb){return cb.getAttribute('data-cpesel');});
+    if(!serials.length){ toast('Tick at least one CPE first',true); return; }
+    var reason=((box.querySelector('[data-bulkreason]')||{}).value||'');
+    var note=((box.querySelector('[data-bulknote]')||{}).value||'').trim();
+    if(!reason){ toast('Select the return REASON first (defective / excess)',true); return; }
+    var eff=(reason==='defective')?'They will be marked DEFECTIVE — no longer issuable.':'They return to issuable stock.';
+    if(!window.confirm('Return '+serials.length+' CPE as '+reason.toUpperCase()+'?\n\n'+serials.join('\n')+(note?('\nRemarks: '+note):'')+'\n'+eff)) return;
+    btn.disabled=true; btn.textContent='Returning…';
+    rpc('return_cpe',{p_serials:serials,p_reason:reason,p_note:note||null})
+      .then(function(n){ toast('✓ Returned '+(n!=null?n:serials.length)+' CPE · '+reason); loadTeamAudit(); return loadStock(); })
+      .catch(function(err){
+        var m=String(err.message||'');
+        toast('Bulk return failed: '+m,true); btn.disabled=false; btn.innerHTML='↩ Return selected (<span data-bulkcnt>'+serials.length+'</span>)';
       });
   }
   function doReturnReel(btn){
