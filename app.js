@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-05.31';
+const APP_VERSION='2026-08-07.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1680,6 +1680,8 @@ function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
   $('#valTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.updated_at)}`;
+  // Resubmitted order? Ipakita sa validator kung sino ang UNANG nag-check at ang remarks noon.
+  const vpc=$('#valPrevCheck'); if(vpc) vpc.innerHTML=valCheckBanner(j,'Resubmitted order — previously checked');
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
@@ -1767,6 +1769,34 @@ function encoderLabel(j){
 }
 // The GC Validator stores the rejection reason in special_note as "REJECTED: <reason>".
 function rejectionReason(j){ const s=((j&&j.special_note)||'').trim(); if(/^REJECTED/i.test(s)) return s.replace(/^REJECTED:?\s*/i,'').trim()||'No reason given'; return s; }
+// Every validation decision leaves a history line: "[Aug 5, 2:14 PM] Rejected by X: reason"
+// or "[Aug 5, 2:14 PM] Approved at intake by X (JO ... · IBAS ...)". Parse them all so we
+// can show WHO FIRST checked a JO and what their remarks were (plus the latest, if different).
+function valChecks(j){
+  const out=[];
+  String((j&&j.history)||'').split('\n').forEach(ln=>{
+    const m=ln.match(/^\[([^\]]+)\]\s+(Rejected by|Approved at intake by)\s+(.+)$/i);
+    if(!m) return;
+    const rej=/^Rejected/i.test(m[2]); let who=m[3].trim(), remarks='';
+    if(rej){ const i=who.indexOf(':'); if(i>=0){ remarks=who.slice(i+1).trim(); who=who.slice(0,i).trim(); } remarks=remarks||'No reason given'; }
+    else { who=who.replace(/\s*\(JO .*$/i,'').trim(); remarks='APPROVED → sent to dispatch'; }
+    out.push({when:m[1], who, remarks});
+  });
+  // Old records from before the audit line existed: fall back to validated_by + special_note.
+  if(!out.length && j && j.validated_by) out.push({when:(j.validated_at?fmtWhen(j.validated_at):''), who:j.validated_by, remarks:rejectionReason(j)||'—'});
+  return out;
+}
+// Banner HTML for the Edit&resubmit form and the Validator review modal (GC and Subcon alike).
+function valCheckBanner(j,title){
+  const cs=valChecks(j); if(!cs.length) return '';
+  const f=cs[0], l=cs[cs.length-1];
+  let h=`<div class="vfc-t">🔎 ${title}</div>`
+    +`<div class="vfc-row"><b>First checked for validation by:</b> ${esc(f.who)}${f.when?` <span class="vfc-when">· ${esc(f.when)}</span>`:''}</div>`
+    +`<div class="vfc-row"><b>JO remarks:</b> ${esc(f.remarks)}</div>`;
+  if(cs.length>1) h+=`<div class="vfc-row vfc-sep"><b>Latest check by:</b> ${esc(l.who)}${l.when?` <span class="vfc-when">· ${esc(l.when)}</span>`:''}</div>`
+    +`<div class="vfc-row"><b>Latest remarks:</b> ${esc(l.remarks)}</div>`;
+  return `<div class="val-first-check">${h}</div>`;
+}
 // Current user's own org (from the JWT app_metadata) — used to scope own-org-only views (e.g. Remittance).
 function myOrgId(){ try{ return (JSON.parse(atob(dashTok().split('.')[1])).app_metadata||{}).org_id||''; }catch(_){ return ''; } }
 const TZ='Asia/Manila';
@@ -2447,6 +2477,9 @@ function editRejectedOrder(jobId){
   const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId); if(!j){ showToast('Order not found — refresh and try again'); return; }
   ordEditId=jobId; ordDocs={id:[],billing:[],premise:[]};
   openModal($('#orderModal'));
+  // Ipakita sa encoder (GC o Subcon) kung SINO ang unang nag-check for validation at ANO ang remarks.
+  const ovb=$('#ordValBanner');
+  if(ovb){ const h=valCheckBanner(j,'Validation check — this order was reviewed'); ovb.innerHTML=h; ovb.style.display=h?'':'none'; }
   const type=j.load_type||'SLI'; setOrderType(type);
   const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
   const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
@@ -2538,6 +2571,7 @@ async function submitOrder(e){
     const wasEdit=!!ordEditId; ordEditId=null;
     ordDocs={id:[],billing:[],premise:[]};
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
+    const ovb2=$('#ordValBanner'); if(ovb2){ovb2.style.display='none';ovb2.innerHTML='';}
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
     closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
@@ -3460,7 +3494,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));

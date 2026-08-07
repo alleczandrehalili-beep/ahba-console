@@ -148,3 +148,12 @@ html,body{overflow-x:hidden;max-width:100%}
 .tl-sd-empty{font-size:10px;color:#9aa6a2;padding:8px}
 
 /* build: cross-date JO search · redeploy trigger 2026-07-03 */
+
+/* Validation-check banner — who FIRST checked a JO for validation + their remarks.
+   Shown to encoder (Edit & resubmit form) and validator (review modal), GC and Subcon alike. */
+.val-first-check{margin:14px 25px 0;padding:11px 14px;border:1px solid #f0c3ba;border-left:4px solid #c2503a;border-radius:10px;background:#fdf3f0}
+.val-first-check .vfc-t{font:800 9px Manrope,system-ui;letter-spacing:.09em;text-transform:uppercase;color:#c2503a;margin-bottom:5px}
+.val-first-check .vfc-row{font:500 12px/1.55 system-ui;color:#3c4a46}
+.val-first-check .vfc-row b{font-weight:800;color:#082c28}
+.val-first-check .vfc-when{color:#8a9894;font-size:11px}
+.val-first-check .vfc-sep{margin-top:6px;padding-top:6px;border-top:1px dashed #f0c3ba}

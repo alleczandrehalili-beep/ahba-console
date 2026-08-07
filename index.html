@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-08-03.20" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-07.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -542,6 +542,7 @@
   <dialog id="orderModal" class="modal">
     <form method="dialog" id="orderForm">
       <div class="modal-head"><div><span class="eyebrow">SALES INTAKE</span><h2>Add job order</h2><p>Same requirements as the sales-agent app. Goes to the Validator for review.</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+      <div id="ordValBanner" style="display:none"></div>
       <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button></div></div>
 
       <div class="form-grid">
@@ -688,6 +689,7 @@
 
   <dialog id="valModal" class="modal">
     <div class="modal-head"><div><span class="eyebrow">VALIDATOR · REVIEW</span><h2 id="valTitle">Job order review</h2><p id="valSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div id="valPrevCheck"></div>
     <div style="padding:18px 25px 4px"><div class="info-grid" id="valInfo"></div></div>
     <div id="valDocs"></div>
     <div style="padding:6px 25px 4px"><div class="form-grid" style="padding:0;grid-template-columns:1fr 1fr;gap:12px">
@@ -717,8 +719,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-03.20"></script>
+  <script src="app.js?v=2026-08-07.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-03.20"></script>
+  <script src="ahba-cloud.js?v=2026-08-07.1"></script>
 </body>
 </html>
