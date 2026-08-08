@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-07.2';
+const APP_VERSION='2026-08-07.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1614,8 +1614,10 @@ async function renderValidation(){
   const ds=(today+'T00:00:00+08:00').replace('+','%2B'), de=(today+'T23:59:59.999+08:00').replace('+','%2B');
   // "today" counters are scoped on the SERVER (bounded) so this never pulls the whole table.
   const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
+  // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
+  // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=*&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,updated_at,status&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1636,28 +1638,77 @@ async function renderValidation(){
 }
 // Rejected orders the viewer can see (subcon = own via RLS, GC = all). Shows the rejection
 // reason + an "Edit & resubmit" action so the owner can fix and send it back for validation.
+let rejFilter='';                 // search text sa Rejected panel (uppercased)
+const rejSelected=new Set();      // mga naka-check para sa bulk delete
+function rejMatches(j){
+  if(!rejFilter) return true;
+  return [j.id,j.subscriber,rejectionReason(j),j.validated_by,j.created_by,j.ref_no]
+    .some(v=>String(v||'').toUpperCase().includes(rejFilter));
+}
 async function renderValRejected(){
-  const panel=$('#valRejectedPanel'), rb=$('#valRejectedBody'); if(!rb) return;
+  const rb=$('#valRejectedBody'); if(!rb) return;
   try{
     // Bound to the recent window — this used to pull every rejected order ever (all orgs).
+    // LITE columns lang (dating select=* = ~227 KB / 1.1s; ngayon ~33 KB / 0.2s).
     const rjCut=new Date(Date.now()-60*24*3600*1000).toISOString();
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=*&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.rejected&deleted_at=is.null&updated_at=gte.${rjCut}&select=id,ref_no,created_by,subscriber,special_note,validated_by,updated_at,status&order=updated_at.desc&limit=200`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     valRejected=r.ok?await r.json():[];
   }catch(e){ valRejected=[]; }
+  rejSelected.clear();
+  // I-wire ang search + bulk controls nang isang beses lang.
+  const inp=$('#rejSearch');
+  if(inp&&!inp._wired){ inp._wired=true; inp.oninput=()=>{ rejFilter=(inp.value||'').trim().toUpperCase(); paintValRejected(); }; }
+  const bd=$('#rejBulkDel'); if(bd&&!bd._wired){ bd._wired=true; bd.onclick=bulkDeleteRejected; }
+  paintValRejected();
+}
+function paintValRejected(){
+  const panel=$('#valRejectedPanel'), rb=$('#valRejectedBody'); if(!rb) return;
   if(!valRejected.length){ if(panel) panel.style.display='none'; rb.innerHTML=''; return; }
   if(panel) panel.style.display='';
   // Only the GC Validator (edit access on Validation) — and superadmin — may delete a
   // rejected order. Subcons can VIEW Validation but have no edit access, so they only get
   // Edit & resubmit; they can never delete.
   const canDelRej=dashCanEdit('validation');
-  rb.innerHTML=valRejected.map(j=>{
+  const shown=valRejected.filter(rejMatches);
+  const selAll=$('#rejSelAll'); if(selAll){ selAll.parentElement.style.display=canDelRej?'':'none'; selAll.checked=!!shown.length&&shown.every(j=>rejSelected.has(j.id)); }
+  rb.innerHTML=shown.length?shown.map(j=>{
     const reason=rejectionReason(j);
     const by=j.validated_by?`<div style="font-size:8px;color:#9aa6a2;margin-top:2px">Rejected by ${esc(j.validated_by)}</div>`:'';
     const delBtn=canDelRej?` <button class="assign-btn" data-delrej="${j.id}" style="color:#c2503a;border-color:#f0c3ba" title="Soft-delete this rejected order (kept in records)">🗑 Delete</button>`:'';
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}${by}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
-  }).join('');
+    const chk=canDelRej?`<td><input type="checkbox" data-rjsel="${j.id}" ${rejSelected.has(j.id)?'checked':''}></td>`:'<td></td>';
+    return `<tr>${chk}<td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td style="color:#c2503a;font-weight:600">${esc(reason||'—')}${by}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-editrej="${j.id}">✏️ Edit &amp; resubmit</button>${delBtn}</td></tr>`;
+  }).join(''):`<tr><td colspan="7" class="empty-cell">Walang tugma sa "${esc(rejFilter)}"</td></tr>`;
   rb.querySelectorAll('[data-editrej]').forEach(b=>b.onclick=()=>editRejectedOrder(b.dataset.editrej));
   rb.querySelectorAll('[data-delrej]').forEach(b=>b.onclick=()=>softDeleteRejectedOrder(b.dataset.delrej));
+  rb.querySelectorAll('[data-rjsel]').forEach(c=>c.onchange=()=>{ c.checked?rejSelected.add(c.dataset.rjsel):rejSelected.delete(c.dataset.rjsel); updateRejBulkBar(); });
+  const sa=$('#rejSelAll');
+  if(sa) sa.onchange=()=>{ const s=valRejected.filter(rejMatches); s.forEach(j=>sa.checked?rejSelected.add(j.id):rejSelected.delete(j.id)); paintValRejected(); updateRejBulkBar(); };
+  updateRejBulkBar();
+}
+function updateRejBulkBar(){
+  const bd=$('#rejBulkDel'); if(!bd) return;
+  const n=rejSelected.size;
+  bd.style.display=(n>0&&dashCanEdit('validation'))?'':'none';
+  const ns=$('#rejSelN'); if(ns) ns.textContent=n;
+}
+// Bulk SOFT delete ng mga naka-check na rejected order — GC Validator lang. Ang mga record
+// at history ay NANANATILI (deleted_at/deleted_by lang ang nase-set) — hindi kailanman hard delete.
+async function bulkDeleteRejected(){
+  if(!dashCanEdit('validation')){ showToast('Only the GC Validator can delete rejected orders'); return; }
+  const ids=[...rejSelected]; if(!ids.length) return;
+  const u=window.dashUser||{}; const who=u.display_name||u.username||'GC Validator';
+  if(!confirm(`Delete ${ids.length} rejected order(s)?\n\nThey will disappear from every list and query. The records and their history are KEPT (soft delete).\n\nOK = Delete   ·   Cancel = Keep`)) return;
+  try{
+    const now=new Date().toISOString();
+    // status=eq.rejected guard: kahit magkamali ng id, rejected lang ang maaapektuhan.
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=in.(${ids.map(encodeURIComponent).join(',')})&status=eq.rejected`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({deleted_at:now,deleted_by:who,updated_at:now})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    ids.forEach(id=>histLog(id,`🗑 Rejected order deleted by ${who} (GC Validator) — bulk soft delete, record kept`));
+    valRejected=valRejected.filter(x=>!rejSelected.has(x.id));
+    jobs=jobs.filter(x=>!rejSelected.has(x.id));
+    rejSelected.clear(); paintValRejected();
+    showToast(`${ids.length} deleted (kept in records)`);
+  }catch(e){ showToast('Bulk delete failed: '+(e.message||e)); }
 }
 // GC Validator (or superadmin) soft-deletes a rejected order that will never be resubmitted
 // (e.g. a true duplicate / cancelled account). SOFT delete only — sets deleted_at/deleted_by,
@@ -1678,6 +1729,14 @@ async function softDeleteRejectedOrder(jobId){
     showToast(`${jobId} deleted (kept in records)`);
   }catch(e){ showToast('Delete failed: '+(e.message||e)); }
 }
+// Kunin ang BUONG record ng isang JO on demand — ang mga listahan ng Validation tab ay
+// LITE columns na lang, kaya ang mga modal (Review / Edit & resubmit) ang kumukuha nito.
+async function fetchFullJob(jobId){
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&select=*&limit=1`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const rows=r.ok?await r.json():[]; return rows[0]||null;
+  }catch(e){ return null; }
+}
 async function fetchDocsFor(ids){
   if(!ids.length)return{};
   try{
@@ -1686,8 +1745,11 @@ async function fetchDocsFor(ids){
     const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push(x)}); return m;
   }catch(e){return{}}
 }
-function openValidate(jobId){
+async function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
+  // Lite na ang listahan — kunin ang buong record (lahat ng field + history para sa banner).
+  // Object.assign sa mismong valJobs item para gumana rin ang decideValidation pagkatapos.
+  const _full=await fetchFullJob(jobId); if(_full) Object.assign(j,_full);
   $('#valTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.updated_at)}`;
   // Resubmitted order? Ipakita sa validator kung sino ang UNANG nag-check at ang remarks noon.
@@ -2488,8 +2550,12 @@ function compressImage(file,maxDim=1000,targetKB=90){
 }
 let ordEditId=null;   // when set, submitOrder UPDATES this rejected order (resubmit) instead of inserting a new one
 // Open the New Work Order form PRE-FILLED from a rejected order, in resubmit mode.
-function editRejectedOrder(jobId){
-  const j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId); if(!j){ showToast('Order not found — refresh and try again'); return; }
+async function editRejectedOrder(jobId){
+  let j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId);
+  // Lite na ang Rejected list — kunin ang buong record para kumpleto ang form pre-fill + banner.
+  const _full=await fetchFullJob(jobId);
+  if(_full){ if(j) Object.assign(j,_full); else j=_full; }
+  if(!j){ showToast('Order not found — refresh and try again'); return; }
   ordEditId=jobId; ordDocs={id:[],billing:[],premise:[]};
   openModal($('#orderModal'));
   // Ipakita sa encoder (GC o Subcon) kung SINO ang unang nag-check for validation at ANO ang remarks.
