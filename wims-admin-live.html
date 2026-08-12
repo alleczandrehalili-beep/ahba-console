@@ -133,8 +133,8 @@
       <div class="note warn" style="margin-top:10px"><span>🔐</span><div><b>Dalawang approval bago tumakbo ang issuance:</b> ang bawat release ay nagiging REQUEST muna — kailangang aprubahan ni <b>AHBA_Warehouse01</b> at ni <b>AHBA_Property</b> bago gumalaw ang stock at makita ng team.</div></div>
     </div>
     <div class="panel">
-      <h2>⏳ Pending issuance approvals</h2>
-      <p class="desc">Requests waiting for AHBA_Warehouse01 + AHBA_Property. Stock moves only when BOTH have approved.</p>
+      <h2>⏳ Pending approvals — issuance · receiving · returns</h2>
+      <p class="desc">Every stock movement (issue, receive, return, deduction) waits here for AHBA_Warehouse01 + AHBA_Property. Nothing moves until BOTH approve.</p>
       <div id="apprList"><span class="empty">Loading…</span></div>
     </div>
   </section>
@@ -925,6 +925,8 @@
     if(e.target.id==='defExport'){exportDef();return;}
     if(e.target.id==='matMonExport'){exportMatMon();return;}
     if(e.target.id==='repExportAll'){exportAllReports();return;}
+    var ap2=e.target.closest('[data-appr2]'); if(ap2){doApprove2(ap2);return;}
+    var rj2=e.target.closest('[data-rejr2]'); if(rj2){doRejectReq2(rj2);return;}
     var ap=e.target.closest('[data-appr]'); if(ap){doApprove(ap);return;}
     var rj=e.target.closest('[data-rejr]'); if(rj){doRejectReq(rj);return;}
     if(e.target.id==='tmCpeGo'){doTmCpeUpload(e.target);return;}
@@ -940,7 +942,7 @@
     var ov=e.target.closest('[data-ovbtn]'); if(ov){doOverrideMat(ov);return;}
     var rb=e.target.closest('[data-retbtn]'); if(rb){doReturnMat(rb);return;}
     var rr=e.target.closest('[data-retreel]'); if(rr){doReturnReel(rr);return;}
-    var rc=e.target.closest('[data-retcpe]'); if(rc){doReturnCpe(rc);return;}
+    var kd=e.target.closest('[data-kitded]'); if(kd){doKitDeduct(kd);return;}
     var br=e.target.closest('[data-bulkret]'); if(br){doBulkCpe(br);return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
@@ -1102,7 +1104,7 @@
         }).join('');
         var reelRows=g.reels.map(function(r){
           return '<tr><td>📏 FOC Reel <b class="tnum">'+r.reel_no+'</b></td><td style="font-size:11px;color:#9aa8a3">issued '+new Date(r.issued_at).toLocaleDateString()+'</td>'+
-            '<td style="width:230px"><button class="chip" data-retreel="'+r.reel_no+'">↩ Return reel</button></td></tr>';
+            '<td style="width:230px"><button class="chip" data-retreel="'+r.reel_no+'" data-team="'+(g.tid||'')+'">↩ Return reel</button></td></tr>';
         }).join('');
         var cpeRows=(g.cpe||[]).map(function(r){
           var ic=r.category==='iptv'?'📺':'📶';
@@ -1116,7 +1118,10 @@
           '<input data-bulknote placeholder="remarks" style="width:150px;padding:6px;font-size:11px"> '+
           '<button class="chip" data-bulkret data-team="'+g.tid+'">↩ Return selected (<span data-bulkcnt>0</span>)</button></td></tr>'):'';
         var kitsN=kitTot[g.tid]||0;
-        var kitRow=kitsN?('<tr><td>🧰 Standard kits issued (total)</td><td class="tnum"><b>'+kitsN+'</b> kit(s)</td><td style="font-size:10.5px;color:#9aa8a3">informational — kits are consumed per JO, not returnable</td></tr>'):'';
+        var kitRow=kitsN?('<tr><td>🧰 Standard kits issued (total)</td><td class="tnum"><b>'+kitsN+'</b> kit(s)</td>'+
+          '<td style="width:340px"><input type="number" inputmode="numeric" min="1" max="'+kitsN+'" value="1" data-kitdq style="width:70px;padding:6px;text-align:center"> '+
+          '<input data-kitdn placeholder="remarks" style="width:140px;padding:6px;font-size:11px"> '+
+          '<button class="chip" data-kitded data-team="'+g.tid+'" data-max="'+kitsN+'">↩ Deduct kits</button></td></tr>'):'';
         return '<div class="lbl">'+c+'</div><div data-audteam><table><thead><tr><th>Item</th><th>Currently held</th><th>Return to warehouse</th></tr></thead><tbody>'+matRows+kitRow+bulkBar+cpeRows+reelRows+'</tbody></table></div>';
       }).join('');
     }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
@@ -1129,36 +1134,18 @@
     if(isDef && !note){ toast('Remarks are REQUIRED when declaring materials defective',true); return; }
     var mats={}; mats[btn.getAttribute('data-key')]=qty;
     if(isDef && !window.confirm('Declare '+qty+' '+(btn.getAttribute('data-unit')||'')+' as DEFECTIVE?\n\nIt will be written OFF — removed from circulation, NOT returned to usable stock.\nReason: '+note)) return;
-    btn.disabled=true; btn.textContent=isDef?'Writing off…':'Returning…';
-    (isDef
-      ? rpc('defect_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_remarks:note})
-      : rpc('return_materials',{p_team_id:btn.getAttribute('data-team'),p_materials_base:mats,p_note:note||'return via audit panel'}))
-      .then(function(){ toast(isDef?('✓ Written off as defective: '+qty+' '+(btn.getAttribute('data-unit')||'')):('✓ Returned to warehouse: '+qty+' '+(btn.getAttribute('data-unit')||''))); loadTeamAudit(); loadInventory(); loadMatBalances(); })
+    btn.disabled=true; btn.textContent='Filing request…';
+    var kindM=isDef?'defect_materials':'return_materials';
+    var payl=isDef?{materials_base:mats,remarks:note}:{materials_base:mats,note:note||'return via audit panel'};
+    rpc('request_action',{p_kind:kindM,p_payload:payl,p_team_id:btn.getAttribute('data-team'),
+        p_summary:(isDef?'DEFECT ':'RETURN ')+qty+' '+(btn.getAttribute('data-unit')||'')+' '+btn.getAttribute('data-key'),p_requested_name:(CFG.name||null)})
+      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
       .catch(function(e){
         var m=String(e.message||'');
-        if(/could not find the function|schema cache/i.test(m)) toast(isDef?'Run wims-DEFECT STEP1 + STEP2 in the SQL Editor first':'Run wims-RETURN-materials.sql in the SQL Editor first',true);
-        else toast((isDef?'Write-off':'Return')+' failed: '+m,true);
-        btn.disabled=false; btn.textContent='↩ Return';
-      });
-  }
-  function doReturnCpe(btn){
-    var serial=btn.getAttribute('data-retcpe');
-    var reason=((btn.parentElement.querySelector('[data-retreason]')||{}).value||'');
-    var note=((btn.parentElement.querySelector('[data-retnote]')||{}).value||'').trim();
-    if(!reason){ toast('Select the return REASON first (defective / excess)',true); return; }
-    var eff=(reason==='defective')
-      ? 'It will be marked DEFECTIVE — no longer issuable.'
-      : 'It returns to issuable stock; the box unlocks once nothing remains issued from it.';
-    if(!window.confirm('Return CPE '+serial+'?\n\nReason: '+reason.toUpperCase()+(note?('\nRemarks: '+note):'')+'\n'+eff)) return;
-    btn.disabled=true; btn.textContent='Returning…';
-    rpc('return_cpe',{p_serials:[serial],p_reason:reason,p_note:note||null})
-      .then(function(){ toast('✓ CPE '+serial+' returned · '+reason); loadTeamAudit(); return loadStock(); })
-      .catch(function(e){
-        var m=String(e.message||'');
-        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-CPE-reason STEP1 + STEP2 in the SQL Editor first',true);
-        else toast('Return failed: '+m,true);
-        btn.disabled=false; btn.textContent='↩ Return';
-      });
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
+      .then(function(){ btn.disabled=false; btn.textContent='↩ Return'; });
   }
   // bulk CPE return: select-all + count + isang tawag sa return_cpe (array)
   document.addEventListener('change',function(e){
@@ -1182,21 +1169,49 @@
     if(!reason){ toast('Select the return REASON first (defective / excess)',true); return; }
     var eff=(reason==='defective')?'They will be marked DEFECTIVE — no longer issuable.':'They return to issuable stock.';
     if(!window.confirm('Return '+serials.length+' CPE as '+reason.toUpperCase()+'?\n\n'+serials.join('\n')+(note?('\nRemarks: '+note):'')+'\n'+eff)) return;
-    btn.disabled=true; btn.textContent='Returning…';
-    rpc('return_cpe',{p_serials:serials,p_reason:reason,p_note:note||null})
-      .then(function(n){ toast('✓ Returned '+(n!=null?n:serials.length)+' CPE · '+reason); loadTeamAudit(); return loadStock(); })
-      .catch(function(err){
-        var m=String(err.message||'');
-        toast('Bulk return failed: '+m,true); btn.disabled=false; btn.innerHTML='↩ Return selected (<span data-bulkcnt>'+serials.length+'</span>)';
-      });
+    btn.disabled=true; btn.textContent='Filing request…';
+    rpc('request_action',{p_kind:'return_cpe',p_payload:{serials:serials,reason:reason,note:note||null},
+        p_team_id:(box.querySelector('[data-bulkret]')||{}).getAttribute?box.querySelector('[data-bulkret]').getAttribute('data-team'):null,
+        p_summary:'RETURN '+serials.length+' CPE · '+reason,p_requested_name:(CFG.name||null)})
+      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); loadTeamAudit(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
+      .then(function(){ btn.disabled=false; btn.innerHTML='↩ Return selected (<span data-bulkcnt>0</span>)'; });
+  }
+  function doKitDeduct(btn){
+    var row=btn.parentElement;
+    var q=parseInt((row.querySelector('[data-kitdq]')||{}).value,10)||0;
+    var note=((row.querySelector('[data-kitdn]')||{}).value||'').trim();
+    var mx=parseInt(btn.getAttribute('data-max'),10)||0;
+    if(q<=0||q>mx){ toast('Enter 1–'+mx+' kits to deduct',true); return; }
+    if(!note){ toast('Remarks are REQUIRED when deducting kits',true); return; }
+    btn.disabled=true; btn.textContent='Filing request…';
+    rpc('request_action',{p_kind:'deduct_kits',p_payload:{kits:q,note:note},p_team_id:btn.getAttribute('data-team'),
+        p_summary:'DEDUCT '+q+' kit(s)',p_requested_name:(CFG.name||null)})
+      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
+      .then(function(){ btn.disabled=false; btn.textContent='↩ Deduct kits'; });
   }
   function doReturnReel(btn){
     var reel=btn.getAttribute('data-retreel');
     if(!window.confirm('Return FOC reel '+reel+' to the warehouse? It becomes issuable again to any team.')) return;
-    btn.disabled=true; btn.textContent='Returning…';
-    apiDel('/foc_reels?reel_no=eq.'+encodeURIComponent(reel))
-      .then(function(){ toast('✓ Reel '+reel+' returned — issuable again'); loadTeamAudit(); })
-      .catch(function(e){ toast('Return failed: '+e.message,true); btn.disabled=false; btn.textContent='↩ Return reel'; });
+    btn.disabled=true; btn.textContent='Filing request…';
+    rpc('request_action',{p_kind:'return_reel',p_payload:{reels:[reel]},p_team_id:(btn.getAttribute('data-team')||null),
+        p_summary:'RETURN FOC reel '+reel,p_requested_name:(CFG.name||null)})
+      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
+      .then(function(){ btn.disabled=false; btn.textContent='↩ Return reel'; });
   }
   function exportAud(){
     if(!audRows.length && !audReels.length && !audCpe.length){ toast('Nothing to export',true); return; }
@@ -1326,15 +1341,19 @@
   var apprRows=[];
   function loadApprovals(){
     var el=$('#apprList'); if(!el) return;
-    api('/issuance_requests?select=*&status=eq.pending&order=requested_at.asc&limit=100')
-      .then(function(rows){
-        apprRows=rows||[];
-        if(!apprRows.length){ el.innerHTML='<span class="empty">No pending requests — all clear.</span>'; return; }
-        var tcode=function(tid){return (teams.filter(function(t){return t.id===tid;})[0]||{}).code||'—';};
+    Promise.all([
+      api('/issuance_requests?select=*&status=eq.pending&order=requested_at.asc&limit=100').catch(function(){return null;}),
+      api('/action_requests?select=*&status=eq.pending&order=requested_at.asc&limit=100').catch(function(){return null;})
+    ]).then(function(res){
+        apprRows=res[0]||[]; var acts=res[1]||[];
+        var tcode=function(tid){return tid?((teams.filter(function(t){return t.id===tid;})[0]||{}).code||'—'):'—';};
         var bno=function(bid){return bid?((boxes.filter(function(b){return b.id===bid;})[0]||{}).box_no||'?'):'—';};
         var matSum=function(m){ if(!m) return '—'; var ks=Object.keys(m).filter(function(k){return +m[k]>0;});
           return ks.length?ks.map(function(k){return k+'×'+m[k];}).join(' · '):'—'; };
-        el.innerHTML='<table><thead><tr><th>Requested</th><th>By</th><th>Team</th><th>Box</th><th>CPE</th><th>Kits</th><th>Materials</th><th>Reels</th><th>W01</th><th>Property</th><th>Action</th></tr></thead><tbody>'+
+        var html='';
+        if(apprRows.length){
+          html+='<div class="lbl" style="margin-top:0">📤 Issuance requests</div>'+
+          '<table><thead><tr><th>Requested</th><th>By</th><th>Team</th><th>Box</th><th>CPE</th><th>Kits</th><th>Materials</th><th>Reels</th><th>W01</th><th>Property</th><th>Action</th></tr></thead><tbody>'+
           apprRows.map(function(r){
             var w=r.approve_warehouse?'✅':'⏳', pr=r.approve_property?'✅':'⏳';
             return '<tr><td style="font-size:11px">'+new Date(r.requested_at).toLocaleString()+'</td><td>'+(r.requested_name||'—')+'</td>'+
@@ -1343,10 +1362,41 @@
               '<td style="text-align:center">'+w+'</td><td style="text-align:center">'+pr+'</td>'+
               '<td style="white-space:nowrap"><button class="chip" data-appr="'+r.id+'">✓ Approve</button> <button class="chip" data-rejr="'+r.id+'" style="color:#8a2013">✕ Reject</button></td></tr>';
           }).join('')+'</tbody></table>';
+        }
+        if(acts.length){
+          html+='<div class="lbl">📥↩ Receiving · returns · deductions</div>'+
+          '<table><thead><tr><th>Requested</th><th>By</th><th>Type</th><th>Team</th><th>Details</th><th>W01</th><th>Property</th><th>Action</th></tr></thead><tbody>'+
+          acts.map(function(r){
+            var w=r.approve_warehouse?'✅':'⏳', pr=r.approve_property?'✅':'⏳';
+            return '<tr><td style="font-size:11px">'+new Date(r.requested_at).toLocaleString()+'</td><td>'+(r.requested_name||'—')+'</td>'+
+              '<td><b>'+r.kind.replace(/_/g,' ').toUpperCase()+'</b></td><td>'+tcode(r.team_id)+'</td>'+
+              '<td style="font-size:11px">'+(r.summary||'—')+'</td>'+
+              '<td style="text-align:center">'+w+'</td><td style="text-align:center">'+pr+'</td>'+
+              '<td style="white-space:nowrap"><button class="chip" data-appr2="'+r.id+'">✓ Approve</button> <button class="chip" data-rejr2="'+r.id+'" style="color:#8a2013">✕ Reject</button></td></tr>';
+          }).join('')+'</tbody></table>';
+        }
+        el.innerHTML=html||'<span class="empty">No pending requests — all clear.</span>';
       })
-      .catch(function(e){
-        el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-ISSUANCE-approval.sql first para sa approval queue.':e.message)+'</span>';
-      });
+      .catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
+  }
+  function doApprove2(btn){
+    btn.disabled=true; btn.textContent='…';
+    rpc('approve_action',{p_request_id:btn.getAttribute('data-appr2')})
+      .then(function(res){
+        if(res==='executed'){ toast('✓ APPROVED at NAI-EXECUTE na — kumpleto ang dalawang approval'); loadStock(); loadMatBalances(); loadTeamAudit(); }
+        else toast('✓ Approval recorded — waiting for the other approver');
+      })
+      .then(function(){ loadApprovals(); })
+      .catch(function(e){ toast(String(e.message||''),true); btn.disabled=false; btn.textContent='✓ Approve'; });
+  }
+  function doRejectReq2(btn){
+    var reason=window.prompt('Reject reason (required):','');
+    if(reason===null) return;
+    if(!reason.trim()){ toast('A reject reason is REQUIRED',true); return; }
+    btn.disabled=true;
+    rpc('reject_action',{p_request_id:btn.getAttribute('data-rejr2'),p_reason:reason.trim()})
+      .then(function(){ toast('Request rejected'); loadApprovals(); })
+      .catch(function(e){ toast(String(e.message||''),true); btn.disabled=false; });
   }
   function doApprove(btn){
     btn.disabled=true; btn.textContent='…';
@@ -1442,17 +1492,17 @@
     var ref=(($('#tmRef')||{}).value||'').trim()||'MIGRATION';
     var d=(($('#tmDate')||{}).value)||todayLocal();
     if(!window.confirm('Upload '+tmCpe.length+' CPE directly to '+tcode+' as ISSUED (held)?\n\nRef: '+ref+' · since '+d+'\nMigration only — bypasses issuance rules.')) return;
-    btn.disabled=true; btn.textContent='Uploading…';
-    var rows=tmCpe.map(function(u){return {serial:u.serial, model:u.model, category:u.category, status:'issued', owner_team_id:tid, released_at:d, date_received:d};});
-    apiPost('/cpe?on_conflict=serial', rows, 'resolution=ignore-duplicates,return=representation')
-      .then(function(ins){
-        var n=(ins||[]).length, dup=tmCpe.length-n;
-        return apiPost('/movements',{type:'issue',team_id:tid,title:'Manual team upload (migration) → '+tcode,detail:n+' CPE · '+ref+' · since '+d,amount:'+'+n+' CPE'},'return=minimal')
-          .catch(function(){return null;})
-          .then(function(){ toast('✓ '+n+' CPE uploaded to '+tcode+(dup>0?(' · '+dup+' duplicate(s) skipped'):'')); });
+    btn.disabled=true; btn.textContent='Filing request…';
+    var rows=tmCpe.map(function(u){return {serial:u.serial, model:u.model, category:u.category};});
+    rpc('request_action',{p_kind:'migrate_cpe',p_payload:{rows:rows,date:d,ref:ref},p_team_id:tid,
+        p_summary:'MIGRATE '+rows.length+' CPE → '+tcode+' · '+ref,p_requested_name:(CFG.name||null)})
+      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); tmCpe=[]; renderTmPreview(); var f=$('#tmCpeFile'); if(f) f.value=''; })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
       })
-      .then(function(){ tmCpe=[]; renderTmPreview(); var f=$('#tmCpeFile'); if(f) f.value=''; return loadStock(); })
-      .catch(function(e){ toast('Upload failed: '+e.message,true); btn.disabled=false; btn.textContent='⬆ Upload CPE to team'; });
+      .then(function(){ btn.disabled=false; btn.textContent='⬆ Upload CPE to team'; });
   }
   function doTmMatUpload(btn){
     var tid=$('#tmTeam').value; if(!tid){ toast('Select the team first',true); return; }
@@ -1460,25 +1510,19 @@
     var ref=(($('#tmRef')||{}).value||'').trim()||'MIGRATION';
     var d=(($('#tmDate')||{}).value)||todayLocal();
     if(!window.confirm('Upload '+tmMat.length+' material line(s) directly to '+tcode+' holdings?\n\nRef: '+ref+' · since '+d)) return;
-    btn.disabled=true; btn.textContent='Uploading…';
-    Promise.all([
-      api('/materials?select=key,unit_qty'),
-      api('/material_stock?select=material_key,qty_base&team_id=eq.'+encodeURIComponent(tid))
-    ]).then(function(res){
-      var uq={}; (res[0]||[]).forEach(function(m){ uq[m.key]=+m.unit_qty||1; });
-      var cur={}; (res[1]||[]).forEach(function(r){ cur[r.material_key]=(cur[r.material_key]||0)+(+r.qty_base||0); });
-      var chain=Promise.resolve(), ok=0;
-      tmMat.forEach(function(x){
-        chain=chain.then(function(){
-          var target=(cur[x.key]||0)+x.qty*(uq[x.key]||1);
-          cur[x.key]=target;
-          return rpc('adjust_material_stock',{p_key:x.key,p_new_qty_base:target,p_remarks:'[MIGRATION] manual team upload · '+ref+' · since '+d,p_team_id:tid}).then(function(){ok++;});
-        });
-      });
-      return chain.then(function(){ toast('✓ '+ok+' material line(s) uploaded to '+tcode); });
+    btn.disabled=true; btn.textContent='Filing request…';
+    api('/materials?select=key,unit_qty').then(function(ms){
+      var uq={}; (ms||[]).forEach(function(m){ uq[m.key]=+m.unit_qty||1; });
+      var lines=tmMat.map(function(x){ return {key:x.key, qty_base:x.qty*(uq[x.key]||1)}; });
+      return rpc('request_action',{p_kind:'migrate_materials',p_payload:{lines:lines,ref:ref+' · since '+d},p_team_id:tid,
+        p_summary:'MIGRATE '+lines.length+' material line(s) → '+tcode+' · '+ref,p_requested_name:(CFG.name||null)});
     })
-    .then(function(){ tmMat=[]; renderTmPreview(); var f=$('#tmMatFile'); if(f) f.value=''; loadMatBalances(); return loadStock(); })
-    .catch(function(e){ toast('Upload failed: '+e.message,true); })
+    .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); tmMat=[]; renderTmPreview(); var f=$('#tmMatFile'); if(f) f.value=''; })
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
     .then(function(){ btn.disabled=false; btn.textContent='⬆ Upload materials to team'; });
   }
 
@@ -1591,10 +1635,15 @@
       rows.push(row);
     });
     if(!rows.length){toast('No serials found in that column',true);return;}
-    var btn=$('#doImport');btn.disabled=true;btn.textContent='Importing '+rows.length+'…';
-    rpc('import_delivery',{p_dr:dr,p_file:dr,p_date:(($('#impDate')||{}).value||null),p_rows:rows})
-      .then(function(){toast('✓ Imported '+rows.length+' serials into stock');$('#impPreview').innerHTML='<div class="note info">✓ Imported <b>'+rows.length+'</b> serials into stock (boxes of 20). See the Stock &amp; Issuance tabs.</div>';impRows=[];return loadStock();})
-      .catch(function(e){toast('Import failed: '+e.message,true);var b=$('#doImport');if(b){b.disabled=false;b.textContent='📥 Retry import';}});
+    var btn=$('#doImport');btn.disabled=true;btn.textContent='Filing request…';
+    rpc('request_action',{p_kind:'receive_cpe',p_payload:{dr:dr,file:dr,date:(($('#impDate')||{}).value||null),rows:rows},p_team_id:null,p_summary:'RECEIVE '+rows.length+' CPE · MTIF '+dr,p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval');$('#impPreview').innerHTML='<div class="note warn">⏳ <b>'+rows.length+'</b> serials waiting for dual approval (Issuance tab → Pending approvals).</div>';impRows=[];loadApprovals();})
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
+      .then(function(){var b=$('#doImport');if(b){b.disabled=false;b.textContent='📥 Import serials';}});
   }
 
   // ---- CSV templates + drop-material bulk import ----
@@ -1659,10 +1708,13 @@
     var batch=(($('#matBatch')||{}).value||'').trim()||('MAT-'+todayLocal());
     var mdate=(($('#matDate')||{}).value||todayLocal());
     var note='MTIF '+batch+' · imported '+mdate+(matImpFile?(' · '+matImpFile):'');
-    var chain=Promise.resolve(), ok=0;
-    matImp.forEach(function(x){ chain=chain.then(function(){return rpc('receive_materials',{p_key:x.key,p_issue_qty:x.qty,p_note:note}).then(function(){ok++;});}); });
-    chain.then(function(){toast('✓ Received '+ok+' material lines · batch '+batch);$('#matImpPreview').innerHTML='<div class="note info">✓ Received <b>'+ok+'</b> material lines into stock · batch <b>'+batch+'</b>. See the Stock tab ledger.</div>';matImp=[];return loadStock();})
-      .catch(function(e){toast('Import stopped: '+e.message,true);});
+    rpc('request_action',{p_kind:'receive_materials',p_payload:{lines:matImp.map(function(x){return {key:x.key,qty:x.qty};}),note:note},p_team_id:null,p_summary:'RECEIVE '+matImp.length+' material line(s) · MTIF '+batch,p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval');$('#matImpPreview').innerHTML='<div class="note warn">⏳ <b>'+matImp.length+'</b> material line(s) waiting for dual approval.</div>';matImp=[];loadApprovals();})
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      });
   }
 })();
 </script>
