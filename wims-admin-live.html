@@ -130,6 +130,12 @@
       </div>
       <button class="btn lime block" id="doRelease" disabled>📤 Release CPE</button>
       <button class="btn block" id="doIssueMats">📦 Issue kits / materials only — no CPE</button>
+      <div class="note warn" style="margin-top:10px"><span>🔐</span><div><b>Dalawang approval bago tumakbo ang issuance:</b> ang bawat release ay nagiging REQUEST muna — kailangang aprubahan ni <b>AHBA_Warehouse01</b> at ni <b>AHBA_Property</b> bago gumalaw ang stock at makita ng team.</div></div>
+    </div>
+    <div class="panel">
+      <h2>⏳ Pending issuance approvals</h2>
+      <p class="desc">Requests waiting for AHBA_Warehouse01 + AHBA_Property. Stock moves only when BOTH have approved.</p>
+      <div id="apprList"><span class="empty">Loading…</span></div>
     </div>
   </section>
 
@@ -350,7 +356,7 @@
 
   function boot(){
     setConn('ok','connected');
-    loadMaterials(); loadTeams(); loadStock(); loadMatBalances();
+    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals();
   }
 
   // ---- individual-item issuance: central balances + qty grid sa Issuance tab ----
@@ -919,6 +925,8 @@
     if(e.target.id==='defExport'){exportDef();return;}
     if(e.target.id==='matMonExport'){exportMatMon();return;}
     if(e.target.id==='repExportAll'){exportAllReports();return;}
+    var ap=e.target.closest('[data-appr]'); if(ap){doApprove(ap);return;}
+    var rj=e.target.closest('[data-rejr]'); if(rj){doRejectReq(rj);return;}
     if(e.target.id==='tmCpeGo'){doTmCpeUpload(e.target);return;}
     if(e.target.id==='tmMatGo'){doTmMatUpload(e.target);return;}
     if(e.target.id==='stkExport'){exportStk();return;}
@@ -959,11 +967,14 @@
     var kits=Math.max(0,parseInt(($('#issKits')||{}).value,10)||0);
     var im=collectIssueMats();
     if(im.err){ toast(im.err,true); return; }
-    var btn=$('#doRelease');btn.disabled=true;btn.textContent='Releasing…';
-    reserveFocReels(im)
-      .then(function(){ return rpc('release_cpe',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats}); })
-      .then(function(){toast('✓ Released '+serials.length+' CPE · '+kits+' kit(s)'+(im.any?' + materials':''));pick={};curBox=null;resetIssueInputs();return loadStock();})
-      .catch(function(e){toast('Release failed: '+e.message,true);})
+    var btn=$('#doRelease');btn.disabled=true;btn.textContent='Filing request…';
+    rpc('request_issuance',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — waiting for AHBA_Warehouse01 + AHBA_Property approval');pick={};curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
+      .catch(function(e){
+        var m=String(e.message||'');
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
+      })
       .then(function(){updateRelease();loadMatBalances();});
   }
 
@@ -975,14 +986,13 @@
     var im=collectIssueMats();
     if(im.err){ toast(im.err,true); return; }
     if(!im.any && kits<=0){ toast('No kits or materials set',true); return; }
-    var btn=$('#doIssueMats');btn.disabled=true;btn.textContent='Issuing…';
-    reserveFocReels(im)
-      .then(function(){ return rpc('issue_materials',{p_team_id:teamId,p_kits:kits,p_materials:im.mats}); })
-      .then(function(){toast('✓ Issued '+kits+' kit(s)'+(im.any?' + '+Object.keys(im.mats).length+' material line(s)':''));resetIssueInputs();return loadStock();})
+    var btn=$('#doIssueMats');btn.disabled=true;btn.textContent='Filing request…';
+    rpc('request_issuance',{p_team_id:teamId,p_box_id:null,p_serials:null,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — waiting for AHBA_Warehouse01 + AHBA_Property approval');resetIssueInputs();loadApprovals();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
-        if(/function|schema cache|not exist|404/i.test(m)) toast('Kailangang i-run muna ang wims-ISSUE-materials.sql sa Supabase SQL Editor',true);
-        else toast('Issue failed: '+m,true);
+        if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
+        else toast('Request failed: '+m,true);
       })
       .then(function(){btn.disabled=false;btn.textContent='📦 Issue kits / materials only — no CPE';loadMatBalances();});
   }
@@ -1044,13 +1054,15 @@
     Promise.all([
       api('/v_material_balance?select=material_key,name,team_id,team_code,qty_base,consume_unit&team_id=not.is.null&order=team_code,name'),
       api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];}),
-      api('/cpe?select=serial,category,model,owner_team_id,released_at&status=eq.issued&owner_team_id=not.is.null&order=serial').catch(function(){return [];})
+      api('/cpe?select=serial,category,model,owner_team_id,released_at&status=eq.issued&owner_team_id=not.is.null&order=serial').catch(function(){return [];}),
+      api('/issuances?select=team_id,kits&limit=10000').catch(function(){return [];})
     ]).then(function(res){
       // != 0: ang NEGATIVE balance ay mahalagang audit signal — konsumo ng
       // technician nang WALANG naitalang issuance sa team (paper-trail gap).
       audRows=(res[0]||[]).filter(function(r){return +r.qty_base!==0;});
       audReels=res[1]||[];
       audCpe=res[2]||[];
+      var kitTot={}; (res[3]||[]).forEach(function(r){ var k=r.team_id; kitTot[k]=(kitTot[k]||0)+(+r.kits||0); });
       var teamCode=function(tid){var t=teams.filter(function(x){return x.id===tid;})[0];return t?t.code:'—';};
       var aSel=$('#audTeam');
       if(aSel && aSel.options.length<=1 && teams.length){ aSel.innerHTML='<option value="">All teams</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
@@ -1096,7 +1108,9 @@
           '<select data-bulkreason style="padding:6px;font-size:11px;margin-left:12px"><option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option></select> '+
           '<input data-bulknote placeholder="remarks" style="width:150px;padding:6px;font-size:11px"> '+
           '<button class="chip" data-bulkret data-team="'+g.tid+'">↩ Return selected (<span data-bulkcnt>0</span>)</button></td></tr>'):'';
-        return '<div class="lbl">'+c+'</div><div data-audteam><table><thead><tr><th>Item</th><th>Currently held</th><th>Return to warehouse</th></tr></thead><tbody>'+matRows+bulkBar+cpeRows+reelRows+'</tbody></table></div>';
+        var kitsN=kitTot[g.tid]||0;
+        var kitRow=kitsN?('<tr><td>🧰 Standard kits issued (total)</td><td class="tnum"><b>'+kitsN+'</b> kit(s)</td><td style="font-size:10.5px;color:#9aa8a3">informational — kits are consumed per JO, not returnable</td></tr>'):'';
+        return '<div class="lbl">'+c+'</div><div data-audteam><table><thead><tr><th>Item</th><th>Currently held</th><th>Return to warehouse</th></tr></thead><tbody>'+matRows+kitRow+bulkBar+cpeRows+reelRows+'</tbody></table></div>';
       }).join('');
     }).catch(function(e){ el.innerHTML='<span class="empty">'+e.message+'</span>'; });
   }
@@ -1299,6 +1313,52 @@
     if(ledRows.length) sheets.push({name:'Deduction Ledger', aoa:[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];}))});
     if(!sheets.length){ toast('Reports are still loading — try again in a moment',true); return; }
     downloadXlsxSheets('wims-ALL-reports.xlsx',sheets);
+  }
+
+  // ---- two-approver issuance queue ----
+  var apprRows=[];
+  function loadApprovals(){
+    var el=$('#apprList'); if(!el) return;
+    api('/issuance_requests?select=*&status=eq.pending&order=requested_at.asc&limit=100')
+      .then(function(rows){
+        apprRows=rows||[];
+        if(!apprRows.length){ el.innerHTML='<span class="empty">No pending requests — all clear.</span>'; return; }
+        var tcode=function(tid){return (teams.filter(function(t){return t.id===tid;})[0]||{}).code||'—';};
+        var bno=function(bid){return bid?((boxes.filter(function(b){return b.id===bid;})[0]||{}).box_no||'?'):'—';};
+        var matSum=function(m){ if(!m) return '—'; var ks=Object.keys(m).filter(function(k){return +m[k]>0;});
+          return ks.length?ks.map(function(k){return k+'×'+m[k];}).join(' · '):'—'; };
+        el.innerHTML='<table><thead><tr><th>Requested</th><th>By</th><th>Team</th><th>Box</th><th>CPE</th><th>Kits</th><th>Materials</th><th>Reels</th><th>W01</th><th>Property</th><th>Action</th></tr></thead><tbody>'+
+          apprRows.map(function(r){
+            var w=r.approve_warehouse?'✅':'⏳', pr=r.approve_property?'✅':'⏳';
+            return '<tr><td style="font-size:11px">'+new Date(r.requested_at).toLocaleString()+'</td><td>'+(r.requested_name||'—')+'</td>'+
+              '<td><b>'+tcode(r.team_id)+'</b></td><td>'+bno(r.box_id)+'</td><td class="tnum">'+(r.serials?r.serials.length:0)+'</td><td class="tnum">'+(r.kits||0)+'</td>'+
+              '<td style="font-size:11px">'+matSum(r.materials)+'</td><td style="font-size:11px">'+((r.foc_reels&&r.foc_reels.join(', '))||'—')+'</td>'+
+              '<td style="text-align:center">'+w+'</td><td style="text-align:center">'+pr+'</td>'+
+              '<td style="white-space:nowrap"><button class="chip" data-appr="'+r.id+'">✓ Approve</button> <button class="chip" data-rejr="'+r.id+'" style="color:#8a2013">✕ Reject</button></td></tr>';
+          }).join('')+'</tbody></table>';
+      })
+      .catch(function(e){
+        el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-ISSUANCE-approval.sql first para sa approval queue.':e.message)+'</span>';
+      });
+  }
+  function doApprove(btn){
+    btn.disabled=true; btn.textContent='…';
+    rpc('approve_issuance',{p_request_id:btn.getAttribute('data-appr')})
+      .then(function(res){
+        if(res==='executed'){ toast('✓ APPROVED at NAILABAS na — kumpleto ang dalawang approval'); return loadStock(); }
+        toast('✓ Approval recorded — waiting for the other approver');
+      })
+      .then(function(){ loadApprovals(); loadMatBalances(); })
+      .catch(function(e){ toast(String(e.message||''),true); btn.disabled=false; btn.textContent='✓ Approve'; });
+  }
+  function doRejectReq(btn){
+    var reason=window.prompt('Reject reason (required):','');
+    if(reason===null) return;
+    if(!reason.trim()){ toast('A reject reason is REQUIRED',true); return; }
+    btn.disabled=true;
+    rpc('reject_issuance',{p_request_id:btn.getAttribute('data-rejr'),p_reason:reason.trim()})
+      .then(function(){ toast('Request rejected'); loadApprovals(); })
+      .catch(function(e){ toast(String(e.message||''),true); btn.disabled=false; });
   }
 
   // ==== TEMPORARY · manual per-team upload (go-live migration) ====
