@@ -1076,8 +1076,15 @@
       audRows.forEach(function(r){ (byTeam[r.team_code]=byTeam[r.team_code]||{mats:[],reels:[],cpe:[],tid:r.team_id}).mats.push(r); });
       audReels.forEach(function(r){ var c=teamCode(r.team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],cpe:[],tid:r.team_id}).reels.push(r); });
       audCpe.forEach(function(r){ var c=teamCode(r.owner_team_id); (byTeam[c]=byTeam[c]||{mats:[],reels:[],cpe:[],tid:r.owner_team_id}).cpe.push(r); });
+      // teams na KITS LANG ang na-issue — dapat lumabas din sa audit
+      Object.keys(kitTot).forEach(function(tid){
+        if(!(kitTot[tid]>0)) return;
+        var kc=teamCode(tid);
+        if(only && kc!==only) return;
+        byTeam[kc]=byTeam[kc]||{mats:[],reels:[],cpe:[],tid:tid};
+      });
       var codes=Object.keys(byTeam).sort();
-      if(!codes.length){ el.innerHTML='<span class="empty">No team currently holds materials, CPE, or FOC reels.</span>'; return; }
+      if(!codes.length){ el.innerHTML='<span class="empty">No team currently holds materials, CPE, kits, or FOC reels.</span>'; return; }
       el.innerHTML=codes.map(function(c){
         var g=byTeam[c];
         var matRows=g.mats.map(function(r){
