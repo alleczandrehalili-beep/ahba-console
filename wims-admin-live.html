@@ -221,6 +221,10 @@
       </div>
       <div id="matList" style="margin-top:10px"><span class="empty">Loading…</span></div>
     </div>
+    <div class="panel">
+      <div><h2>🏷 Task-type visibility</h2><p class="desc" style="margin:0">Which JO task types see each drop material on the technician report. All unchecked = visible on ALL tasks. Editable by SUPERADMIN, AHBA_Warehouse01 and AHBA_Property only.</p></div>
+      <div id="taskTypeList" style="margin-top:10px"><span class="empty">Loading…</span></div>
+    </div>
   </section>
 
   <!-- TECHNICIANS -->
@@ -324,6 +328,7 @@
     var d=e.data||{};
     if(d.type==='wims-auth'&&d.url&&d.key){
       CFG.url=d.url.replace(/\/$/,''); CFG.key=d.key; CFG.token=d.token||d.key;
+      if(d.name) CFG.name=d.name;
       if(d.role) $('#who').textContent=(d.name||'')+' · '+d.role;
       boot();
     }
@@ -356,7 +361,7 @@
 
   function boot(){
     setConn('ok','connected');
-    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals();
+    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals(); loadTaskTypes();
   }
 
   // ---- individual-item issuance: central balances + qty grid sa Issuance tab ----
@@ -438,6 +443,46 @@
         renderIssueMats();
       }).catch(function(){ /* fallback list stays */ });
   }
+
+  // ---- task-type visibility (SDU / MDU / MDU DOCSIS) ----
+  var TT_EDITORS=['SUPERADMIN','AHBA_WAREHOUSE01','AHBA_PROPERTY'];
+  var TT_OPTS=[['sdu','SDU'],['mdu','MDU'],['mdu_docsis','MDU DOCSIS']];
+  var ttRows=null;
+  // unknown name (standalone open) → leave enabled; the server gate decides
+  function ttCanEdit(){ return !CFG.name || TT_EDITORS.indexOf(String(CFG.name).toUpperCase())>=0; }
+  function loadTaskTypes(){
+    api('/materials?select=key,name,item_code,task_types&order=sort')
+      .then(function(rows){ ttRows=rows||[]; renderTaskTypes(); })
+      .catch(function(){ var el=$('#taskTypeList');
+        if(el) el.innerHTML='<span class="empty">Task-type column not found — run wims-TASK-types.sql first.</span>'; });
+  }
+  function renderTaskTypes(){
+    var el=$('#taskTypeList'); if(!el||!ttRows) return;
+    var can=ttCanEdit();
+    el.innerHTML='<table><thead><tr><th>Material</th><th>Code</th>'+TT_OPTS.map(function(o){return '<th style="text-align:center">'+o[1]+'</th>';}).join('')+'<th>Now</th><th></th></tr></thead><tbody>'+
+      ttRows.map(function(m){
+        var tags=m.task_types||[];
+        return '<tr data-ttrow="'+m.key+'"><td>'+m.name+'</td><td style="font-size:11px;color:#8a9a94">'+(m.item_code||'')+'</td>'+
+          TT_OPTS.map(function(o){ return '<td style="text-align:center"><input type="checkbox" data-ttk="'+m.key+'" value="'+o[0]+'"'+(tags.indexOf(o[0])>=0?' checked':'')+(can?'':' disabled')+'></td>'; }).join('')+
+          '<td>'+(tags.length
+            ?tags.map(function(t){return '<span class="pill" style="background:#e9f8f1;color:#0f6f53;border:1px solid #bfe6d5">'+t.toUpperCase().replace('_',' ')+'</span>';}).join(' ')
+            :'<span class="pill" style="background:#f1f4f2;color:#8a9894;border:1px solid var(--line)">All tasks</span>')+'</td>'+
+          '<td>'+(can?'<button class="btn" style="font-size:11px;padding:5px 12px" data-ttsave="'+m.key+'">Save</button>':'')+'</td></tr>';
+      }).join('')+'</tbody></table>'+
+      (can?'':'<p class="desc" style="margin-top:6px">Read-only — sign in as SUPERADMIN, AHBA_Warehouse01 or AHBA_Property to edit.</p>');
+  }
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('[data-ttsave]'); if(!b) return;
+    var key=b.getAttribute('data-ttsave');
+    var tasks=[].slice.call(document.querySelectorAll('input[data-ttk="'+key+'"]:checked')).map(function(c){return c.value;});
+    b.disabled=true; b.textContent='…';
+    rpc('set_material_tasks',{p_key:key,p_tasks:tasks})
+      .then(function(res){ toast('✓ '+res); loadTaskTypes(); })
+      .catch(function(err){
+        toast(/could not find the function|schema cache/i.test(err.message)?'Run wims-TASK-types.sql first':('Save failed: '+err.message),true);
+      })
+      .then(function(){ b.disabled=false; b.textContent='Save'; });
+  });
 
   function loadTeams(){
     api('/teams?select=id,code,category,active&active=eq.true&order=code')
