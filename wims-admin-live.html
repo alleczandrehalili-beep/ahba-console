@@ -581,7 +581,8 @@
           (reels[u.foc_reel_no]=reels[u.foc_reel_no]||{uses:[]}).uses.push({when:u.completed_at,team:u.team,jo:u.jo_number,sub:u.subscriber,from:+u.foc_start_m,to:+u.foc_end_m,used:used});
         }
         if(u.foc2_reel_no&&u.foc2_reel_no.indexOf(q)>=0){
-          (reels[u.foc2_reel_no]=reels[u.foc2_reel_no]||{uses:[]}).uses.push({when:u.completed_at,team:u.team,jo:u.jo_number,sub:u.subscriber,from:0,to:+u.foc2_end_m,used:(+u.foc2_end_m||0)});
+          var REELM=2000;   // reel counts DOWN from 2000 → usage = 2000 − end
+          (reels[u.foc2_reel_no]=reels[u.foc2_reel_no]||{uses:[]}).uses.push({when:u.completed_at,team:u.team,jo:u.jo_number,sub:u.subscriber,from:REELM,to:+u.foc2_end_m,used:Math.max(0,REELM-(+u.foc2_end_m||0))});
         }
       });
       var names=Object.keys(reels).sort();
