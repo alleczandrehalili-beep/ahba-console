@@ -448,9 +448,19 @@
   var TT_EDITORS=['SUPERADMIN','AHBA_WAREHOUSE01','AHBA_PROPERTY'];
   var TT_OPTS=[['sdu','SDU'],['mdu','MDU'],['mdu_docsis','MDU DOCSIS']];
   var ttRows=null;
-  // unknown name (standalone open) → leave enabled; the server gate decides
-  function ttCanEdit(){ return !CFG.name || TT_EDITORS.indexOf(String(CFG.name).toUpperCase())>=0; }
+  // gate on the CONSOLE USERNAME from the server (my_console_user — the same
+  // value the RPC's gate checks); CFG.name is the display name, not the
+  // username, kaya hindi siya maaasahan dito. Unknown → leave enabled, the
+  // server gate decides.
+  function ttCanEdit(){
+    var n=CFG.ttUser||null;
+    return !n || TT_EDITORS.indexOf(String(n).toUpperCase())>=0;
+  }
   function loadTaskTypes(){
+    if(CFG.ttUser===undefined){
+      CFG.ttUser=null;
+      rpc('my_console_user',{}).then(function(u){ CFG.ttUser=u||null; renderTaskTypes(); }).catch(function(){ CFG.ttUser=null; });
+    }
     api('/materials?select=key,name,item_code,task_types&order=sort')
       .then(function(rows){ ttRows=rows||[]; renderTaskTypes(); })
       .catch(function(){ var el=$('#taskTypeList');
