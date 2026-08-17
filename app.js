@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-14.2';
+const APP_VERSION='2026-08-15.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -548,6 +548,7 @@ function openJobDetail(jobId){
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
     F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
+    F('New address (transfer)',j.new_address),F('CPE (transfer)',j.cpe_option),
     F('Team',j.team),F('Status',statusLabel(j.status||'')),F('Priority',j.priority),
     F('Source / Referral',[j.source_of_sales,j.referral_name].filter(Boolean).join(' · ')),
     F('Account',j.work_account||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].account:'')),
@@ -1617,7 +1618,7 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,updated_at,status&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,updated_at,status,validated_by&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1628,13 +1629,29 @@ async function renderValidation(){
   const rows=Array.isArray(cntRows)?cntRows:[];
   $('#valApproved').textContent=rows.filter(x=>x.status==='pending'&&x.validated_at&&new Date(x.validated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
   $('#valRejected').textContent=rows.filter(x=>x.status==='rejected'&&x.updated_at&&new Date(x.updated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
-  if(!valJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No job orders awaiting validation.</td></tr>`;refreshValBadge();return}
-  body.innerHTML=valJobs.map(j=>{
+  // SEPARATE TABS: bagong encode vs FSOI (dating na-reject, in-edit at ni-resubmit).
+  // Ang FSOI ay may validated_by na (ang unang nag-check); ang tunay na bago ay wala pa.
+  valNewJ=valJobs.filter(j=>!j.validated_by); valFsoiJ=valJobs.filter(j=>!!j.validated_by);
+  const nc=$('#valNewCount'); if(nc) nc.textContent=`(${valNewJ.length})`;
+  const fc=$('#valFsoiCount'); if(fc) fc.textContent=`(${valFsoiJ.length})`;
+  const tabs=$('#valQueueTabs');
+  if(tabs&&!tabs._wired){ tabs._wired=true; tabs.querySelectorAll('[data-vq]').forEach(b=>b.onclick=()=>{ valQueueView=b.dataset.vq; tabs.querySelectorAll('[data-vq]').forEach(x=>x.classList.toggle('active',x===b)); paintValQueue(); }); }
+  paintValQueue();
+  refreshValBadge();
+}
+let valQueueView='new', valNewJ=[], valFsoiJ=[];
+function paintValQueue(){
+  const body=$('#validationBody'); if(!body) return;
+  const list=valQueueView==='fsoi'?valFsoiJ:valNewJ;
+  const hint=$('#valQueueHint');
+  if(hint) hint.textContent=valQueueView==='fsoi'
+    ? 'Dating na-reject at in-edit na ng encoder — buksan para makita kung sino ang unang nag-check at ang remarks.'
+    : 'Unang beses pa lang na-submit — check the ID, Proof of Billing, and Premise photos before approving.';
+  body.innerHTML=list.length?list.map(j=>{
     const docs=valDocs[j.id]||[];
     return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
-  }).join('');
+  }).join(''):`<tr><td colspan="7" class="empty-cell">${valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.'}</td></tr>`;
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
-  refreshValBadge();
 }
 // Rejected orders the viewer can see (subcon = own via RLS, GC = all). Shows the rejection
 // reason + an "Edit & resubmit" action so the owner can fix and send it back for validation.
@@ -2514,6 +2531,14 @@ function ordPopulatePlans(){
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
 function ordToggleAddonCount(){ const on=($('#ord_play')&&$('#ord_play').value)==='2-PLAY'; const w=$('#ord_addon_count_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_addon_count')) $('#ord_addon_count').value=''; }
+// IPTV Only: isang VAS Number input bawat piniling count (2 VAS = 2 espasyo).
+function iptvRenderVas(){
+  const n=Number(($('#iptv_vas_count')||{}).value)||0;
+  const w=$('#iptvVasWrap'), box=$('#iptvVasInputs'); if(!w||!box) return;
+  w.style.display=n?'':'none';
+  const keep=[...box.querySelectorAll('.iptvVas')].map(i=>i.value);   // huwag mawala ang na-type na
+  box.innerHTML=Array.from({length:n}).map((_,i)=>`<label class="field"><span>VAS Number ${i+1} *</span><input class="iptvVas" autocapitalize="characters" value="${(keep[i]||'').replace(/"/g,'&quot;')}"></label>`).join('');
+}
 // New Job Order has 3 types: SLI (full + docs), Migration (current/new plan, amount, ref · no docs),
 // SLR (ticket no. only · no service, no docs). Subscriber + Address are shared by all.
 function setOrderType(t){
@@ -2524,6 +2549,8 @@ function setOrderType(t){
   show('ordSecService', t==='SLI');
   show('ordSecMigration', t==='Migration');
   show('ordSecSlr', t==='SLR');
+  show('ordSecTransfer', t==='Transfer');
+  show('ordSecIptv', t==='IPTV');
   show('ordSecDocs', t==='SLI');
   const btn=$('#orderSubmit'); if(btn) btn.textContent=(t==='SLI')?'Submit for validation':'Dispatch Load';
 }
@@ -2596,8 +2623,10 @@ async function submitOrder(e){
   // Email is NOT uppercased (emails are case-sensitive in the local part) — read raw, lowercased.
   const email=(f.email||'').trim().toLowerCase();
   if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
-  if(!email){ err('Email address is required.'); return; }
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err('Enter a valid email address (name@email.com).'); return; }
+  // Transfer/IPTV = existing subscriber na — optional ang email doon; required pa rin sa iba.
+  const emailOptional=(ordType==='Transfer'||ordType==='IPTV');
+  if(!email && !emailOptional){ err('Email address is required.'); return; }
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err('Enter a valid email address (name@email.com).'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
   if(ordType==='SLI'){
@@ -2605,13 +2634,27 @@ async function submitOrder(e){
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
   if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
+  if(ordType==='Transfer'){
+    if(!t(f.trf_ibas)){ err('IBAS Number is required for Transfer SDU–MDU.'); return; }
+    if(!t(f.trf_jo)){ err('JO Number is required for Transfer SDU–MDU.'); return; }
+    if(!t(f.trf_new_address)){ err('New Address is required for Transfer SDU–MDU.'); return; }
+    if(!f.trf_cpe){ err('Select CPE — Same or New.'); return; }
+    if(await joTaken(t(f.trf_jo),null)){ err('JO Number already used by another job order.'); return; }
+  }
+  if(ordType==='IPTV'){
+    if(!t(f.iptv_plan)){ err('Plan is required for IPTV Only.'); return; }
+    if(!f.iptv_vas_count){ err('Select the Count of VAS.'); return; }
+    const vasVals=$$('.iptvVas').map(i=>i.value.trim().toUpperCase());
+    if(!vasVals.length||vasVals.some(v=>!v)){ err('Enter all VAS Number(s) — one per VAS.'); return; }
+  }
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
-  const svcType={SLI:'Installation',Migration:'Migration',SLR:'SLR'}[ordType];
-  // SLI goes to the Validator first; Migration & SLR go straight to For Dispatch.
+  const svcType={SLI:'Installation',Migration:'Migration',SLR:'SLR',Transfer:'Transfer SDU-MDU',IPTV:'IPTV Only'}[ordType];
+  // SLI goes to the Validator first; Migration, SLR, Transfer & IPTV go straight to For
+  // Dispatch — ang mga Dispatcher mismo ang nagsisilbing validator ng mga ito.
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,email:email,
@@ -2626,6 +2669,16 @@ async function submitOrder(e){
   } else if(ordType==='Migration'){
     Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
       amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),special_note:t(f.mig_note)});
+  } else if(ordType==='Transfer'){
+    // TRANSFER TO sa special_note para agad kitang-kita ng Dispatcher at ng technician
+    // sa mga umiiral na card/detail view — ang malinis na value ay nasa new_address column.
+    const newAddr=t(f.trf_new_address);
+    Object.assign(job,{ibass_acct_no:t(f.trf_ibas),job_order_no:t(f.trf_jo),new_address:newAddr,
+      cpe_option:f.trf_cpe,special_note:('TRANSFER TO: '+newAddr+(t(f.trf_note)?' — '+t(f.trf_note):''))});
+  } else if(ordType==='IPTV'){
+    Object.assign(job,{plan:t(f.iptv_plan),addon_count:Number(f.iptv_vas_count),
+      vas_no:$$('.iptvVas').map(i=>i.value.trim().toUpperCase()).filter(Boolean).join(', '),
+      special_note:t(f.iptv_note)});
   } else { // SLR
     Object.assign(job,{ticket_no:t(f.ticket_no),special_note:t(f.slr_note)});
   }
@@ -3575,11 +3628,12 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
+  $('#iptv_vas_count')?.addEventListener('change',iptvRenderVas);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);
   $('#modalBackdrop').onclick=closeModals;

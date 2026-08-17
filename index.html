@@ -376,7 +376,12 @@
           <div class="small-stat"><span>Sales agents</span><strong id="valAgents">—</strong></div>
         </div>
         <article class="panel full-table">
-          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For validation</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Check the ID, Proof of Billing, and Premise photos before approving.</p></div></div>
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">For validation</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0" id="valQueueHint">Check the ID, Proof of Billing, and Premise photos before approving.</p></div>
+            <div class="filter-chips" id="valQueueTabs" style="margin-left:auto">
+              <button type="button" class="active" data-vq="new">🆕 NEW encoded <span id="valNewCount"></span></button>
+              <button type="button" data-vq="fsoi">✏️ FSOI — resubmitted <span id="valFsoiCount"></span></button>
+            </div>
+          </div>
           <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>Area</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
         </article>
         <article class="panel full-table" id="valRejectedPanel" style="margin-top:14px;display:none">
@@ -548,7 +553,7 @@
     <form method="dialog" id="orderForm">
       <div class="modal-head"><div><span class="eyebrow">SALES INTAKE</span><h2>Add job order</h2><p>Same requirements as the sales-agent app. Goes to the Validator for review.</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
       <div id="ordValBanner" style="display:none"></div>
-      <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button></div></div>
+      <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button><button type="button" data-ordtype="Transfer">Transfer SDU–MDU</button><button type="button" data-ordtype="IPTV">IPTV Only</button></div></div>
 
       <div class="form-grid">
         <div class="field full form-sec">Subscriber</div>
@@ -598,6 +603,23 @@
         <div class="field full form-sec">SLR</div>
         <label class="field full"><span>Ticket No. *</span><input name="ticket_no"></label>
         <label class="field full"><span>Special note</span><textarea name="slr_note" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-grid" id="ordSecTransfer" style="display:none">
+        <div class="field full form-sec">Transfer SDU–MDU</div>
+        <label class="field"><span>IBAS Number *</span><input name="trf_ibas" autocapitalize="characters"></label>
+        <label class="field"><span>JO Number *</span><input name="trf_jo" autocapitalize="characters"></label>
+        <label class="field full"><span>New Address * (kumpletong address ng lilipatan)</span><textarea name="trf_new_address" rows="2"></textarea></label>
+        <label class="field"><span>CPE *</span><select name="trf_cpe"><option value="">— Select —</option><option>SAME CPE</option><option>NEW CPE</option></select></label>
+        <label class="field full"><span>Special note</span><textarea name="trf_note" rows="2"></textarea></label>
+      </div>
+
+      <div class="form-grid" id="ordSecIptv" style="display:none">
+        <div class="field full form-sec">IPTV Only</div>
+        <label class="field"><span>Plan *</span><input name="iptv_plan" autocapitalize="characters"></label>
+        <label class="field"><span>Count of VAS *</span><select name="iptv_vas_count" id="iptv_vas_count"><option value="">— Select —</option><option>1</option><option>2</option><option>3</option></select></label>
+        <div class="field full" id="iptvVasWrap" style="display:none"><div class="form-grid" id="iptvVasInputs" style="padding:0;grid-template-columns:1fr 1fr;gap:10px"></div></div>
+        <label class="field full"><span>Special note</span><textarea name="iptv_note" rows="2"></textarea></label>
       </div>
 
       <div class="form-grid" id="ordSecDocs">
@@ -724,8 +746,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-14.2"></script>
+  <script src="app.js?v=2026-08-15.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-07.3"></script>
+  <script src="ahba-cloud.js?v=2026-08-15.1"></script>
 </body>
 </html>
