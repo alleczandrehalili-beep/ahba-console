@@ -1692,13 +1692,26 @@
     var catCol=pickCol(impHeaders,['category','type','device']);
     var macCol=pickCol(impHeaders,['mac']);
     var boxCol=pickCol(impHeaders,['box','batch']);
+    // Ang box column ay madalas SPARSE — isang label bawat grupo, nasa DULO ng
+    // grupo (format ng masterlist nila). Fill mula sa pinakamalapit na label sa
+    // IBABA, tapos pataas na fallback; kapag walang kahit isang label, positional
+    // boxes of 20. Dating bug: ang mga solong may-label na row ay tumatalon sa
+    // sarili nilang box habang positional ang lahat ng iba (tig-1 na boxes).
+    var boxFill=null;
+    if(boxCol){
+      boxFill=impRows.map(function(r){ var v=String(r[boxCol]==null?'':r[boxCol]).trim(); return v!==''?(parseInt(v,10)||null):null; });
+      var nxt=null, prv=null, bi;
+      for(bi=boxFill.length-1;bi>=0;bi--){ if(boxFill[bi]!=null) nxt=boxFill[bi]; else boxFill[bi]=nxt; }
+      for(bi=0;bi<boxFill.length;bi++){ if(boxFill[bi]!=null) prv=boxFill[bi]; else boxFill[bi]=prv; }
+      if(boxFill.every(function(v){return v==null;})) boxFill=null;
+    }
     var rows=[], seen={};
-    impRows.forEach(function(r){
+    impRows.forEach(function(r,ri){
       var serial=String(r[serCol]||'').trim(); if(!serial||seen[serial])return; seen[serial]=1;
       var model=modelCol?String(r[modelCol]||'').trim():'';
       var hay=(String(catCol?r[catCol]:'')+' '+model+' '+serial).toLowerCase();
       var cat=/iptv|zte|b866|set.?top|stb|tv box/.test(hay)?'iptv':'modem';
-      var box=(boxCol&&String(r[boxCol]).trim()!=='')?(parseInt(r[boxCol],10)||1):Math.floor(rows.length/20)+1;
+      var box=(boxFill&&boxFill[ri]!=null)?boxFill[ri]:Math.floor(rows.length/20)+1;
       var row={box_no:box,category:cat,serial:serial,model:model||CATLABEL[cat]};
       if(macCol&&r[macCol])row.mac=String(r[macCol]).trim();
       rows.push(row);
