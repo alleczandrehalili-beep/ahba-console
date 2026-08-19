@@ -130,11 +130,11 @@
       </div>
       <button class="btn lime block" id="doRelease" disabled>📤 Release CPE</button>
       <button class="btn block" id="doIssueMats">📦 Issue kits / materials only — no CPE</button>
-      <div class="note warn" style="margin-top:10px"><span>🔐</span><div><b>Dalawang approval bago tumakbo ang issuance:</b> ang bawat release ay nagiging REQUEST muna — kailangang aprubahan ni <b>AHBA_Warehouse01</b> at ni <b>AHBA_Property</b> bago gumalaw ang stock at makita ng team.</div></div>
+      <div class="note warn" style="margin-top:10px"><span>🔐</span><div><b>Approval before anything moves:</b> every release files a REQUEST first — <b>any ONE</b> of <b>SUPERADMIN</b>, <b>AHBA_Warehouse01</b>, or <b>AHBA_Property</b> approves (or rejects) and the stock moves immediately on that single approval.</div></div>
     </div>
     <div class="panel">
       <h2>⏳ Pending approvals — issuance · receiving · returns</h2>
-      <p class="desc">Every stock movement (issue, receive, return, deduction) waits here for AHBA_Warehouse01 + AHBA_Property. Nothing moves until BOTH approve.</p>
+      <p class="desc">Every stock movement (issue, receive, return, deduction) waits here. Any ONE of SUPERADMIN, AHBA_Warehouse01, or AHBA_Property approves — one approval executes it.</p>
       <div id="apprList"><span class="empty">Loading…</span></div>
     </div>
   </section>
@@ -1208,7 +1208,7 @@
     var payl=isDef?{materials_base:mats,remarks:note}:{materials_base:mats,note:note||'return via audit panel'};
     rpc('request_action',{p_kind:kindM,p_payload:payl,p_team_id:btn.getAttribute('data-team'),
         p_summary:(isDef?'DEFECT ':'RETURN ')+qty+' '+(btn.getAttribute('data-unit')||'')+' '+btn.getAttribute('data-key'),p_requested_name:(CFG.name||null)})
-      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
+      .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1242,7 +1242,7 @@
     rpc('request_action',{p_kind:'return_cpe',p_payload:{serials:serials,reason:reason,note:note||null},
         p_team_id:(box.querySelector('[data-bulkret]')||{}).getAttribute?box.querySelector('[data-bulkret]').getAttribute('data-team'):null,
         p_summary:'RETURN '+serials.length+' CPE · '+reason,p_requested_name:(CFG.name||null)})
-      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); loadTeamAudit(); })
+      .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); loadTeamAudit(); })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1260,7 +1260,7 @@
     btn.disabled=true; btn.textContent='Filing request…';
     rpc('request_action',{p_kind:'deduct_kits',p_payload:{kits:q,note:note},p_team_id:btn.getAttribute('data-team'),
         p_summary:'DEDUCT '+q+' kit(s)',p_requested_name:(CFG.name||null)})
-      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
+      .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1274,7 +1274,7 @@
     btn.disabled=true; btn.textContent='Filing request…';
     rpc('request_action',{p_kind:'return_reel',p_payload:{reels:[reel]},p_team_id:(btn.getAttribute('data-team')||null),
         p_summary:'RETURN FOC reel '+reel,p_requested_name:(CFG.name||null)})
-      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); })
+      .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1565,7 +1565,7 @@
     var rows=tmCpe.map(function(u){return {serial:u.serial, model:u.model, category:u.category};});
     rpc('request_action',{p_kind:'migrate_cpe',p_payload:{rows:rows,date:d,ref:ref},p_team_id:tid,
         p_summary:'MIGRATE '+rows.length+' CPE → '+tcode+' · '+ref,p_requested_name:(CFG.name||null)})
-      .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); tmCpe=[]; renderTmPreview(); var f=$('#tmCpeFile'); if(f) f.value=''; })
+      .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); tmCpe=[]; renderTmPreview(); var f=$('#tmCpeFile'); if(f) f.value=''; })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1586,7 +1586,7 @@
       return rpc('request_action',{p_kind:'migrate_materials',p_payload:{lines:lines,ref:ref+' · since '+d},p_team_id:tid,
         p_summary:'MIGRATE '+lines.length+' material line(s) → '+tcode+' · '+ref,p_requested_name:(CFG.name||null)});
     })
-    .then(function(){ toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval'); loadApprovals(); tmMat=[]; renderTmPreview(); var f=$('#tmMatFile'); if(f) f.value=''; })
+    .then(function(){ toast('✓ Request filed — waiting for approval (any one approver)'); loadApprovals(); tmMat=[]; renderTmPreview(); var f=$('#tmMatFile'); if(f) f.value=''; })
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1745,7 +1745,7 @@
     });
     var btn=$('#doImport');btn.disabled=true;btn.textContent='Filing request…';
     rpc('request_action',{p_kind:'receive_cpe',p_payload:{dr:dr,file:dr,date:(($('#impDate')||{}).value||null),rows:rows},p_team_id:null,p_summary:'RECEIVE '+rows.length+' CPE ('+cnt.modem+' modem · '+cnt.iptv+' IPTV) · MTIF '+dr,p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval');$('#impPreview').innerHTML='<div class="note warn">⏳ <b>'+rows.length+'</b> serials waiting for dual approval (Issuance tab → Pending approvals).</div>';impRows=[];loadApprovals();})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');$('#impPreview').innerHTML='<div class="note warn">⏳ <b>'+rows.length+'</b> serials waiting for approval (Issuance tab → Pending approvals).</div>';impRows=[];loadApprovals();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
@@ -1817,7 +1817,7 @@
     var mdate=(($('#matDate')||{}).value||todayLocal());
     var note='MTIF '+batch+' · imported '+mdate+(matImpFile?(' · '+matImpFile):'');
     rpc('request_action',{p_kind:'receive_materials',p_payload:{lines:matImp.map(function(x){return {key:x.key,qty:x.qty};}),note:note},p_team_id:null,p_summary:'RECEIVE '+matImp.length+' material line(s) · MTIF '+batch,p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval');$('#matImpPreview').innerHTML='<div class="note warn">⏳ <b>'+matImp.length+'</b> material line(s) waiting for dual approval.</div>';matImp=[];loadApprovals();})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');$('#matImpPreview').innerHTML='<div class="note warn">⏳ <b>'+matImp.length+'</b> material line(s) waiting for dual approval.</div>';matImp=[];loadApprovals();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ACTION-approval.sql in the SQL Editor first',true);
