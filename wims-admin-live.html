@@ -143,9 +143,9 @@
   <section id="tab-receive" hidden>
     <div class="panel">
       <h2>Import serials — Excel / CSV</h2>
-      <p class="desc">Upload the real Converge masterlist (.xlsx or .csv). The serial column is auto-detected; serials pack into boxes of 20. Modem vs IPTV is inferred (ZTE/B866 = IPTV).</p>
+      <p class="desc">One upload — MODEM vs IPTV is detected per row (model + serial pattern: 4857/EG80/GN630 = modem · ZTEV/B866 = IPTV). Each category gets its OWN box numbering (boxes of 20). The preview shows the split before you import.</p>
       <div class="row" style="align-items:flex-end">
-        <div class="field"><label>Masterlist file</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
+        <div class="field"><label>Masterlist file (auto-detect)</label><input type="file" id="rcvFile" accept=".csv,.xlsx,.xls" style="padding:9px 10px"></div>
         <div class="field"><label>MTIF No.</label><input id="impDr" placeholder="e.g. 4901339925" style="width:150px"></div>
         <div class="field"><label>Date imported</label><input type="date" id="impDate" style="width:150px"></div>
         <button class="chip" id="dlTemplate" style="margin-bottom:2px">⬇ Download template (.xlsx)</button>
@@ -1676,12 +1676,27 @@
       rd.readAsArrayBuffer(file);
     });
   }
+  // per-row category: model text ang pangunahing signal, serial prefix pang-segunda;
+  // ambiguous → null (mapupunta sa majority ng file). Ito ang pumalit sa lumang
+  // one-regex inference na nagkakamali sa halo-halong files.
+  function rowCategory(serial,model,catTxt){
+    var hay=(String(catTxt||'')+' '+String(model||'')+' '+String(serial||'')).toLowerCase();
+    var s=String(serial||'').toLowerCase();
+    var ip=/iptv|b866|set.?top|stb|tv box/.test(hay)||s.indexOf('ztev')===0;
+    var mo=/modem|gpon|eg80|gn630|huawei/.test(hay)||s.indexOf('4857')===0;
+    if(ip&&!mo) return 'iptv';
+    if(mo&&!ip) return 'modem';
+    return null;
+  }
   function renderImportPreview(){
     var el=$('#impPreview');
     var guess=pickCol(impHeaders,['serial','sn','s/n','serialno'])||impHeaders[0];
     var opts=impHeaders.map(function(h){return '<option value="'+h+'"'+(h===guess?' selected':'')+'>'+h+'</option>';}).join('');
     var sample=impRows.slice(0,4).map(function(r){return '<tr>'+impHeaders.map(function(h){return '<td>'+String(r[h]).slice(0,20)+'</td>';}).join('')+'</tr>';}).join('');
-    el.innerHTML='<div class="note info">Found <b class="tnum">'+impRows.length+'</b> rows · '+impHeaders.length+' columns. Confirm the serial column, then import.</div>'+
+    var mc=pickCol(impHeaders,['model','description','item','product']), cc=pickCol(impHeaders,['category','type','device']);
+    var nm=0,ni=0,na=0;
+    impRows.forEach(function(r){ var c=rowCategory(r[guess],mc?r[mc]:'',cc?r[cc]:''); if(c==='modem')nm++; else if(c==='iptv')ni++; else na++; });
+    el.innerHTML='<div class="note info">Detected: <b>📶 '+nm+' modem</b> · <b>📺 '+ni+' IPTV</b>'+(na?(' · '+na+' unclear (isasama sa nakararami)'):'')+' — separate box numbering per category. Confirm the serial column, then import.</div>'+
       '<div class="row" style="margin-top:10px;align-items:flex-end"><div class="field"><label>Serial column</label><select id="impSerCol">'+opts+'</select></div>'+
       '<button class="btn lime" id="doImport" style="margin-left:auto">📥 Import '+impRows.length+' serials</button></div>'+
       '<div style="overflow:auto;margin-top:10px"><table><thead><tr>'+impHeaders.map(function(h){return '<th>'+String(h).slice(0,16)+'</th>';}).join('')+'</tr></thead><tbody>'+sample+'</tbody></table></div>';
@@ -1705,20 +1720,31 @@
       for(bi=0;bi<boxFill.length;bi++){ if(boxFill[bi]!=null) prv=boxFill[bi]; else boxFill[bi]=prv; }
       if(boxFill.every(function(v){return v==null;})) boxFill=null;
     }
-    var rows=[], seen={};
+    // unang pasada: alamin ang category bawat row; ambiguous → majority ng file
+    var pre=[], seen={}, nm=0, ni=0;
     impRows.forEach(function(r,ri){
       var serial=String(r[serCol]||'').trim(); if(!serial||seen[serial])return; seen[serial]=1;
       var model=modelCol?String(r[modelCol]||'').trim():'';
-      var hay=(String(catCol?r[catCol]:'')+' '+model+' '+serial).toLowerCase();
-      var cat=/iptv|zte|b866|set.?top|stb|tv box/.test(hay)?'iptv':'modem';
-      var box=(boxFill&&boxFill[ri]!=null)?boxFill[ri]:Math.floor(rows.length/20)+1;
-      var row={box_no:box,category:cat,serial:serial,model:model||CATLABEL[cat]};
-      if(macCol&&r[macCol])row.mac=String(r[macCol]).trim();
+      var c=rowCategory(serial,model,catCol?r[catCol]:'');
+      if(c==='modem')nm++; else if(c==='iptv')ni++;
+      pre.push({serial:serial,model:model,cat:c,ri:ri});
+    });
+    if(!pre.length){toast('No serials found in that column',true);return;}
+    var majority=(ni>nm)?'iptv':'modem';
+    // pangalawang pasada: HIWALAY na box numbering bawat category (boxes of 20);
+    // ang box-label fill (kung may box column) ay nirerespeto pa rin
+    var rows=[], cnt={modem:0,iptv:0};
+    pre.forEach(function(x){
+      var cat=x.cat||majority;
+      var box=(boxFill&&boxFill[x.ri]!=null)?boxFill[x.ri]:(Math.floor(cnt[cat]/20)+1);
+      cnt[cat]++;
+      var row={box_no:box,category:cat,serial:x.serial,model:x.model||CATLABEL[cat]};
+      var r0=impRows[x.ri];
+      if(macCol&&r0[macCol])row.mac=String(r0[macCol]).trim();
       rows.push(row);
     });
-    if(!rows.length){toast('No serials found in that column',true);return;}
     var btn=$('#doImport');btn.disabled=true;btn.textContent='Filing request…';
-    rpc('request_action',{p_kind:'receive_cpe',p_payload:{dr:dr,file:dr,date:(($('#impDate')||{}).value||null),rows:rows},p_team_id:null,p_summary:'RECEIVE '+rows.length+' CPE · MTIF '+dr,p_requested_name:(CFG.name||null)})
+    rpc('request_action',{p_kind:'receive_cpe',p_payload:{dr:dr,file:dr,date:(($('#impDate')||{}).value||null),rows:rows},p_team_id:null,p_summary:'RECEIVE '+rows.length+' CPE ('+cnt.modem+' modem · '+cnt.iptv+' IPTV) · MTIF '+dr,p_requested_name:(CFG.name||null)})
       .then(function(){toast('✓ Request filed — needs AHBA_Warehouse01 + AHBA_Property approval');$('#impPreview').innerHTML='<div class="note warn">⏳ <b>'+rows.length+'</b> serials waiting for dual approval (Issuance tab → Pending approvals).</div>';impRows=[];loadApprovals();})
       .catch(function(e){
         var m=String(e.message||'');
