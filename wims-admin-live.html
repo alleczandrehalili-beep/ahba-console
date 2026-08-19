@@ -106,7 +106,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. A MODEM box locks to the first team it's issued to; an IPTV box can be SHARED by up to 4 teams (5 pcs each). Each team can hold up to 10 modems + 10 IPTV in-field at a time.</p>
+      <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. A MODEM box locks to the first team it's issued to; an IPTV box can be SHARED by up to 4 teams (5 pcs each). (The 10-per-type in-field cap is currently LIFTED per owner's instruction.)</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">CPE category</div>
@@ -583,7 +583,7 @@
     var el=$('#capInfo'); if(!el)return; var tid=$('#issTeam').value;
     if(!tid){el.style.display='none';return;}
     el.style.display='';
-    el.innerHTML='In-field cap for this team · <b>📶 Modem '+teamInField('modem')+'/'+CAP+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'/'+CAP+'</b>';
+    el.innerHTML='In-field now for this team · <b>📶 Modem '+teamInField('modem')+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'</b> <span style="color:#8a9a94">(cap lifted)</span>';
   }
   function updateRelease(){
     var n=Object.keys(pick).filter(function(s){return pick[s];}).length;
@@ -592,7 +592,7 @@
     var boxObj=boxes.filter(function(b){return b.id===curBox;})[0];
     var cat=boxObj?boxObj.category:null;
     var have=cat?teamInField(cat):0;
-    var exceeds=cat&&(have+n)>CAP;
+    var exceeds=false;   // 10-per-type cap LIFTED per owner (2026-08-19) — restore with wims-IPTV-share.sql + revert this
     $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox&&!exceeds);
     $('#doRelease').textContent=exceeds?('⚠ Max '+CAP+' '+cat+' per team — '+have+' already in-field'):('📤 Release '+n+' CPE');
   }
