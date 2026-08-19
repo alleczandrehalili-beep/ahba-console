@@ -327,12 +327,19 @@
   window.addEventListener('message',function(e){
     var d=e.data||{};
     if(d.type==='wims-auth'&&d.url&&d.key){
+      var already=!!CFG.url;   // token REFRESH lang kapag booted na — huwag i-reload ang UI
       CFG.url=d.url.replace(/\/$/,''); CFG.key=d.key; CFG.token=d.token||d.key;
       if(d.name) CFG.name=d.name;
       if(d.role) $('#who').textContent=(d.name||'')+' · '+d.role;
-      boot();
+      if(!already) boot();
     }
   });
+  // JWT lifetime ~1h pero ang parent ay laging may sariwang token (supabase-js
+  // auto-refresh) — humingi tayo ng bago bawat 10 min para hindi ma-"JWT expired"
+  // ang matagal nang nakabukas na tab (nangyari kay Warehouse01 sa approvals).
+  setInterval(function(){
+    try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
+  }, 10*60*1000);
   // request auth from parent
   try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
   // paint the issuance material grid agad (fallback list) para hindi naka-"Loading…"
@@ -363,7 +370,12 @@
   function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
   function apiDel(path){return fetch(CFG.url+'/rest/v1'+path,{method:'DELETE',headers:H(true)}).then(chk);}
   function apiPost(path,body,prefer){var h=H(true); if(prefer) h.Prefer=prefer; return fetch(CFG.url+'/rest/v1'+path,{method:'POST',headers:h,body:JSON.stringify(body)}).then(chk);}
-  function chk(r){return r.text().then(function(t){var j=null;try{j=t?JSON.parse(t):null;}catch(_){/* non-JSON body (proxy/network error page) */}if(!r.ok){var msg=(j&&(j.message||j.hint))||(t&&t.slice(0,120))||('HTTP '+r.status);throw new Error(msg);}return j;});}
+  function chk(r){return r.text().then(function(t){var j=null;try{j=t?JSON.parse(t):null;}catch(_){/* non-JSON body (proxy/network error page) */}if(!r.ok){var msg=(j&&(j.message||j.hint))||(t&&t.slice(0,120))||('HTTP '+r.status);
+    if(/jwt expired|pgrst301|jwsinvalid|jwserror/i.test(String(msg))){
+      try{ if(window.parent&&window.parent!==window) window.parent.postMessage({type:'wims-ready'},'*'); }catch(_){}
+      throw new Error('Session token expired — refreshed automatically, please click again');
+    }
+    throw new Error(msg);}return j;});}
 
   var CATLABEL={modem:'Huawei EG8041X6',iptv:'ZTE B866 V2F'};
   // Sales-agent accounts (XXX_SA01…SAxx) don't use materials — exclude them everywhere in WIMS.
