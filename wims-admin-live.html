@@ -345,6 +345,19 @@
   // ---- REST helpers (wims schema) ----
   function H(write){var h={'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)};h[write?'Content-Profile':'Accept-Profile']='wims';if(write)h['Content-Type']='application/json';return h;}
   function api(path){return fetch(CFG.url+'/rest/v1'+path,{headers:H(false)}).then(chk);}
+  // fetch ALL rows past the server's 1000-row cap — Range-paged, 1000/page.
+  // KAILANGAN may &order= ang path para stable ang pagination.
+  function apiAll(path){
+    var page=1000;
+    function go(from,acc){
+      var h=H(false); h['Range-Unit']='items'; h.Range=from+'-'+(from+page-1);
+      return fetch(CFG.url+'/rest/v1'+path,{headers:h}).then(chk).then(function(rows){
+        rows=rows||[]; acc=acc.concat(rows);
+        return rows.length<page?acc:go(from+page,acc);
+      });
+    }
+    return go(0,[]);
+  }
   // read a table in the DEFAULT (public) schema — no wims profile header
   function apiPublic(path){return fetch(CFG.url+'/rest/v1'+path,{headers:{'apikey':CFG.key,'Authorization':'Bearer '+(CFG.token||CFG.key)}}).then(chk);}
   function rpc(fn,body){return fetch(CFG.url+'/rest/v1/rpc/'+fn,{method:'POST',headers:H(true),body:JSON.stringify(body||{})}).then(chk);}
@@ -504,7 +517,7 @@
   // load in-stock CPE + boxes, derive box list with counts
   function loadStock(){
     return Promise.all([
-      api('/cpe?select=id,serial,model,category,box_id,status,owner_team_id,date_received,released_at&order=serial'),
+      apiAll('/cpe?select=id,serial,model,category,box_id,status,owner_team_id,date_received,released_at&order=serial'),
       api('/boxes?select=id,box_no,category,owner_team_id,deliveries(dr_number,date_received)&order=box_no')
     ]).then(function(res){
       stock=res[0]||[]; boxes=res[1]||[];
@@ -694,8 +707,8 @@
     // material balance (stored for the view filter + export) + total received
     // per material (denominator ng 25% low-stock warning)
     Promise.all([
-      api('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code,team_id&order=name'),
-      api('/material_movements?select=material_key,delta_base&kind=eq.receive&team_id=is.null&limit=10000').catch(function(){return [];})
+      apiAll('/v_material_balance?select=material_key,name,qty_issue,issue_unit,qty_base,consume_unit,team_code,team_id&order=name'),
+      apiAll('/material_movements?select=material_key,delta_base&kind=eq.receive&team_id=is.null&order=id').catch(function(){return [];})
     ]).then(function(res){
       stkMatRows=res[0]||[];
       stkRecv={}; (res[1]||[]).forEach(function(m){ stkRecv[m.material_key]=(stkRecv[m.material_key]||0)+(+m.delta_base||0); });
@@ -709,9 +722,9 @@
     if(tfLoaded||tfLoading) return Promise.resolve();
     tfLoading=true;
     return Promise.all([
-      api('/issuances?select=team_id,cpe_count,released_at,boxes(category)&order=released_at.desc&limit=10000').catch(function(){return [];}),
-      api('/v_install_report?select=team,completed_at,modem_serial,iptv_count&order=completed_at.desc&limit=10000').catch(function(){return [];}),
-      api('/material_movements?select=material_key,team_id,kind,delta_base,created_at&team_id=not.is.null&order=created_at.desc&limit=10000').catch(function(){return [];})
+      apiAll('/issuances?select=team_id,cpe_count,released_at,boxes(category)&order=released_at.desc').catch(function(){return [];}),
+      apiAll('/v_install_report?select=team,completed_at,modem_serial,iptv_count&order=completed_at.desc').catch(function(){return [];}),
+      apiAll('/material_movements?select=material_key,team_id,kind,delta_base,created_at&team_id=not.is.null&order=created_at.desc').catch(function(){return [];})
     ]).then(function(res){ tfIss=res[0]||[]; tfInst=res[1]||[]; tfMv=res[2]||[]; tfLoaded=true; tfLoading=false; });
   }
   function stkInRange(ts){
@@ -1112,8 +1125,8 @@
     Promise.all([
       api('/v_material_balance?select=material_key,name,team_id,team_code,qty_base,consume_unit&team_id=not.is.null&order=team_code,name'),
       api('/foc_reels?select=reel_no,team_id,issued_at&order=reel_no').catch(function(){return [];}),
-      api('/cpe?select=serial,category,model,owner_team_id,released_at&status=eq.issued&owner_team_id=not.is.null&order=serial').catch(function(){return [];}),
-      api('/issuances?select=team_id,kits&limit=10000').catch(function(){return [];})
+      apiAll('/cpe?select=serial,category,model,owner_team_id,released_at&status=eq.issued&owner_team_id=not.is.null&order=serial').catch(function(){return [];}),
+      apiAll('/issuances?select=team_id,kits&order=id').catch(function(){return [];})
     ]).then(function(res){
       // != 0: ang NEGATIVE balance ay mahalagang audit signal — konsumo ng
       // technician nang WALANG naitalang issuance sa team (paper-trail gap).
@@ -1282,7 +1295,7 @@
   var cretRows=[];
   function loadCpeReturns(){
     var el=$('#cretTable'); if(!el) return;
-    api('/v_cpe_returns?select=*&order=returned_at.desc&limit=1000'+dateRange('returned_at','crFrom','crTo')).then(function(rows){
+    apiAll('/v_cpe_returns?select=*&order=returned_at.desc'+dateRange('returned_at','crFrom','crTo')).then(function(rows){
       cretRows=rows||[];
       if(!cretRows.length){ el.innerHTML='<span class="empty">No CPE returned yet.</span>'; return; }
       var pill=function(rsn){ var red=(rsn==='defective'); return '<span class="pill '+(red?'':'installed')+'" style="'+(red?'background:#fdeeea;color:#8a2013;border:1px solid #f4c4b7':'')+'">'+rsn+'</span>'; };
@@ -1321,8 +1334,8 @@
     if(c) c.innerHTML='<span class="empty">Loading…</span>';
     if(m) m.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
-      api('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc&limit=1000'+dateRange('returned_at','dfFrom','dfTo')),
-      api('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc&limit=1000'+dateRange('created_at','dfFrom','dfTo')),
+      apiAll('/v_cpe_returns?select=*&reason=eq.defective&order=returned_at.desc'+dateRange('returned_at','dfFrom','dfTo')),
+      apiAll('/v_material_ledger?select=*&kind=eq.defective&order=created_at.desc'+dateRange('created_at','dfFrom','dfTo')),
       api('/cpe?select=id&status=eq.defective&limit=1').then(function(){return null;}).catch(function(){return null;})
     ]).then(function(res){
       defCpe=res[0]||[]; defMat=res[1]||[];
@@ -1352,8 +1365,8 @@
     var el=$('#matMonTable'); if(!el) return;
     el.innerHTML='<span class="empty">Loading…</span>';
     Promise.all([
-      api('/v_material_balance?select=material_key,name,qty_base,consume_unit,team_code&limit=5000'),
-      api('/material_movements?select=material_key,delta_base,created_at&kind=eq.consume&limit=10000'+dateRange('created_at','mmFrom','mmTo'))
+      apiAll('/v_material_balance?select=material_key,name,qty_base,consume_unit,team_code&order=name'),
+      apiAll('/material_movements?select=material_key,delta_base,created_at&kind=eq.consume&order=id'+dateRange('created_at','mmFrom','mmTo'))
     ]).then(function(res){
       var bal=res[0]||[], cons=res[1]||[];
       var agg={};
@@ -1589,7 +1602,7 @@
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
     $('#repTable').innerHTML='<span class="empty">Loading…</span>';
-    api('/v_install_report?select=*&order=completed_at.desc&limit=2000'+(team?('&team=eq.'+encodeURIComponent(team)):'')+dateRange('completed_at','cpeFrom','cpeTo')).then(function(rows){
+    apiAll('/v_install_report?select=*&order=completed_at.desc'+(team?('&team=eq.'+encodeURIComponent(team)):'')+dateRange('completed_at','cpeFrom','cpeTo')).then(function(rows){
       repRows=rows||[];
       var foc=0,iptv=0,modems=0; repRows.forEach(function(r){foc+=(+r.foc_m||0);iptv+=(+r.iptv_count||0);if(r.modem_serial)modems++;});
       $('#repStats').innerHTML=
@@ -1601,7 +1614,7 @@
       $('#repTable').innerHTML='<table><thead><tr>'+REPCOLS.map(function(c){return '<th>'+c[1]+'</th>';}).join('')+'</tr></thead><tbody>'+
         repRows.map(function(r){return '<tr>'+REPCOLS.map(function(c){var v=r[c[0]];if(c[0]==='completed_at'&&v)v=new Date(v).toLocaleString();return '<td>'+(v==null||v===''?'—':v)+'</td>';}).join('')+'</tr>';}).join('')+'</tbody></table>';
     }).catch(function(e){$('#repTable').innerHTML='<span class="empty">'+e.message+'</span>';});
-    api('/v_material_ledger?select=*&order=created_at.desc&limit=2000'+dateRange('created_at','mmFrom','mmTo')).then(function(rows){
+    apiAll('/v_material_ledger?select=*&order=created_at.desc'+dateRange('created_at','mmFrom','mmTo')).then(function(rows){
       ledRows=rows||[];   // panel replaced by Materials monitoring; kept for the Export ALL 'Deduction Ledger' tab
     }).catch(function(){ ledRows=[]; });
     loadMatMonitoring();
@@ -1615,7 +1628,7 @@
   function downloadXlsxSheets(name,sheets){ loadXLSX(function(){ try{ var fn=wimsFileName(name); var wb=XLSX.utils.book_new(); sheets.forEach(function(s){ XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(s.aoa), s.name); }); XLSX.writeFile(wb,fn); toast('Exported '+fn); }catch(e){ toast('Export failed: '+e.message,true); } }); }
   function loadInventory(){
     $('#invTable').innerHTML='<span class="empty">Loading…</span>';
-    Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*'), api('/v_cpe_onhand_detail?select=*&limit=5000') ]).then(function(res){
+    Promise.all([ api('/v_inventory_onhand?select=*'), api('/v_cpe_onhand?select=*'), apiAll('/v_cpe_onhand_detail?select=*&order=serial') ]).then(function(res){
       invRows=res[0]||[]; cpeOnhand=res[1]||[]; cpeDetail=res[2]||[];
       var cpeHtml=cpeOnhand.map(function(c){return '<div class="sc'+(c.category==='iptv'?' b':' d')+'"><b class="tnum">'+c.total_on_hand+'</b><span>'+(c.category==='modem'?'📶 Modems':'📺 IPTV')+' on hand ('+c.in_warehouse+' wh · '+c.team_held+' team)</span></div>';}).join('');
       var serHtml = cpeDetail.length
