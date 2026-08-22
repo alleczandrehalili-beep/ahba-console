@@ -144,9 +144,18 @@
       'load_date.gte.' + cutoffDate + ',' +
       'scheduled_at.gte.' + cutoff +
       ')';
-    const path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc&limit=5000';
-    const rows = await request(path);
-    return rows ? rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob) : [];
+    // PostgREST caps every request at 1,000 rows no matter the limit — the live window
+    // passed that size (jobs table ~4k), silently dropping JOs from every dashboard.
+    // Same pagination fix as Billing Validation: pull 1,000-row pages until short page.
+    const path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
+    const rows = [];
+    for (let off = 0; off < 10000; off += 1000) {
+      const page = await request(path + '&limit=1000&offset=' + off);
+      if (!page || !page.length) break;
+      rows.push.apply(rows, page);
+      if (page.length < 1000) break;
+    }
+    return rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob);
   }
 
   async function upsertJobs(items) {

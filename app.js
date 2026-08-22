@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-19.2';
+const APP_VERSION='2026-08-22.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1604,6 +1604,7 @@ async function refreshValBadge(){
 async function renderValidation(){
   const body=$('#validationBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
+  await ensureFreshTok();   // buhayin ang token bago mag-fetch — dito pinaka-ramdam ang dead-JWT hang
   // The rejected list is independent of the for-validation queue — render it right away so it
   // ALWAYS shows (even when nothing is awaiting validation, which is the normal case for a subcon).
   renderValRejected();
@@ -2737,6 +2738,32 @@ function startDashAuth(){
 function _dashTouch(){ try{ localStorage.setItem('ahba_dash_active', String(Date.now())); }catch(_){} }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) _dashTouch(); });
 setInterval(_dashTouch, 5*60*1000);
+// ---- Session revival ----
+// supabase-js refreshes the JWT on an internal TIMER, which browsers throttle/kill in
+// long-idle background tabs. When that happens every fetch silently 401s ("JWT expired")
+// and the page hangs on "Loading…" — the recurring "sobrang bagal ang Validation tab"
+// report. getSession() refreshes via the refresh token on demand, so we revive the token
+// whenever the tab wakes up, every 10 minutes, and right before the Validation render.
+async function ensureFreshTok(){
+  try{
+    if(!dashAuth) return false;
+    const {data:s}=await dashAuth.auth.getSession();
+    const tok=s&&s.session?s.session.access_token:null;
+    if(tok && tok!==window.__ahbaTok){ window.__ahbaTok=tok; setRealtimeAuth(tok); }
+    if(!tok && window.dashUser) sessionDeadNudge();   // refresh token din ay patay na — kailangang mag-login muli
+    return !!tok;
+  }catch(e){ return false; }
+}
+// Malinaw na paalala sa halip na walang-hanggang "Loading…" kapag tuluyang patay ang session.
+function sessionDeadNudge(){
+  if(document.getElementById('sessDeadBar')) return;
+  const b=document.createElement('div'); b.id='sessDeadBar';
+  b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;background:#c2503a;color:#fff;padding:12px 16px;font:700 13px system-ui;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.25)';
+  b.innerHTML='⚠ Session expired — the page can no longer load data. <button onclick="location.reload()" style="margin-left:10px;border:0;background:#fff;color:#c2503a;border-radius:8px;padding:7px 14px;font:800 12px system-ui;cursor:pointer">Reload &amp; log in</button>';
+  document.body.appendChild(b);
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) ensureFreshTok(); });
+setInterval(ensureFreshTok, 10*60*1000);
 // Apply the user token to realtime clients so live updates work under authenticated-only RLS
 function setRealtimeAuth(tok){
   try{ if(window.AHBACloud&&AHBACloud.realtime) AHBACloud.realtime.realtime.setAuth(tok||SUPA_KEY); }catch(e){}
