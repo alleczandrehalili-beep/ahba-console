@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-22.1';
+const APP_VERSION='2026-08-22.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2764,6 +2764,26 @@ function sessionDeadNudge(){
 }
 document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) ensureFreshTok(); });
 setInterval(ensureFreshTok, 10*60*1000);
+// ---- Ops health surface ----
+// Ang pg_cron daily check (supabase-ops-health.sql) ay nagsusulat sa ops_health_log at
+// nagpu-push ng alert kapag may sira. Backup channel ito: kapag ang superadmin ay nag-login
+// at ang HULING run ay may pumalya, ipakita ang amber banner (kahit di dumating ang push).
+async function opsHealthBanner(){
+  try{
+    const u=window.dashUser; if(!u||!u.is_super) return;
+    const r=await fetch(`${SUPA_URL}/rest/v1/ops_health_log?select=run_at,ok,issues&order=run_at.desc&limit=1`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) return;   // wala pa ang table — hindi pa na-install ang health SQL
+    const rows=await r.json(); const h=rows[0];
+    if(!h||h.ok) return;
+    if(Date.now()-new Date(h.run_at).getTime()>48*3600*1000) return;   // luma na — huwag nang i-banner
+    if(document.getElementById('opsHealthBar')) return;
+    const b=document.createElement('div'); b.id='opsHealthBar';
+    b.style.cssText='position:fixed;left:12px;right:12px;bottom:14px;z-index:9998;background:#7a4a00;color:#ffe9c7;padding:12px 44px 12px 16px;border-radius:12px;font:600 12px system-ui;box-shadow:0 10px 26px rgba(0,0,0,.3)';
+    const list=(Array.isArray(h.issues)?h.issues:[]).map(x=>esc(String(x))).join(' · ')||'may pumalyang check';
+    b.innerHTML=`🩺 Daily health check (${esc(fmtWhen(h.run_at))}): ${list} <button onclick="this.parentElement.remove()" style="position:absolute;right:10px;top:10px;border:0;background:transparent;color:#ffe9c7;font-weight:800;cursor:pointer">✕</button>`;
+    document.body.appendChild(b);
+  }catch(e){}
+}
 // Apply the user token to realtime clients so live updates work under authenticated-only RLS
 function setRealtimeAuth(tok){
   try{ if(window.AHBACloud&&AHBACloud.realtime) AHBACloud.realtime.realtime.setAuth(tok||SUPA_KEY); }catch(e){}
@@ -2782,6 +2802,7 @@ async function onDashLogin(email){
   fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(u.username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({last_login:new Date().toISOString()})}).catch(()=>{});
   if(u.must_change){ showDashGate('#dashPwGate'); return; }
   hideDashGates(); applyAccess(u); loadOrgMap();   // load orgs AFTER auth so the GC org filter can populate
+  opsHealthBanner();   // superadmin: ipakita kung may pumalyang daily ops health check
 }
 // Can the logged-in user EDIT this page? Superadmin = always; others need the page in edit_pages.
 function dashCanEdit(page){ const u=window.dashUser; if(!u) return false; if(u.is_super) return true; return Array.isArray(u.edit_pages)&&u.edit_pages.includes(page); }
