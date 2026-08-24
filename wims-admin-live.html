@@ -106,7 +106,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 4 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
+      <p class="desc">Pick a team (subcon releases go to the subcon COMPANY warehouse — AVELINE / J2 / RIA TECH / ALLY'S 88), pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 4 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">CPE category</div>
@@ -523,10 +523,14 @@
       .then(function(){ b.disabled=false; b.textContent='Save'; });
   });
 
+  function esc(x){ return String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function loadTeams(){
     api('/teams?select=id,code,category,active&active=eq.true&order=code')
       .then(function(rows){ teams=(rows||[]).filter(function(t){return !isSalesAcct(t.code);});
-        $('#issTeam').innerHTML=teams.map(function(t){return '<option value="'+t.id+'">'+t.code+'</option>';}).join('')||'<option>No teams</option>';
+        // SUBCON = warehouse-to-warehouse: company entities lang (walang '_') ang
+        // lumalabas dito; ang individual subcon tech teams ay itinatago (owner, 2026-08-22)
+        var issList=teams.filter(function(t){ return !(t.category==='subcon' && t.code.indexOf('_')>=0); });
+        $('#issTeam').innerHTML=issList.map(function(t){return '<option value="'+t.id+'">'+esc(t.code)+'</option>';}).join('')||'<option>No teams</option>';
       }).catch(function(e){ setConn('off','error'); toast('Load teams failed: '+e.message,true); });
   }
 
