@@ -106,11 +106,15 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 2 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
+      <p class="desc">Pick a team, pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 4 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">CPE category</div>
       <div class="row" id="issCatRow">
+        <div class="field" style="min-width:260px"><label>🔎 Find CPE — last 6 digits of the serial</label><input id="issFind" placeholder="e.g. F762B8" autocapitalize="characters" style="text-transform:uppercase"></div>
+      </div>
+      <div id="issFindOut"></div>
+      <div class="row">
         <button class="chip on" data-isscat="modem">📶 MODEM</button>
         <button class="chip" data-isscat="iptv">📺 IPTV</button>
       </div>
@@ -121,7 +125,7 @@
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
       <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
       <div class="lbl">🧰 Kits to issue</div>
-      <div class="row"><div class="field"><label>Standard install kits</label><input id="issKits" type="number" inputmode="numeric" min="0" value="1" style="width:110px"></div></div>
+      <div class="row"><div class="field"><label>Standard install kits</label><input id="issKits" type="number" inputmode="numeric" min="0" value="0" style="width:110px"></div></div>
       <div class="lbl">🧵 Individual items · optional <span style="text-transform:none;letter-spacing:0;font-weight:600">— per issue unit, from central stock</span></div>
       <div id="issMats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:7px"><span class="empty">Loading…</span></div>
       <div id="focReelWrap" style="display:none;margin-top:10px;border:1.5px solid #f0d9a8;background:#fff8eb;border-radius:11px;padding:11px 13px">
@@ -555,10 +559,10 @@
         var sh=Object.keys(owners).length;
         tag=sh?(' · 👥 '+sh+'/4 teams'):'';
       } else {
-        // TEMPORARY: modem boxes shared by up to 2 teams (owner order 2026-08-19)
+        // TEMPORARY: modem boxes shared by up to 4 teams (owner order 2026-08-22)
         var mOwners={}; stock.forEach(function(u){ if(u.box_id===b.id&&u.owner_team_id) mOwners[u.owner_team_id]=1; });
         var msh=Object.keys(mOwners).length;
-        tag=msh?(' · 👥 '+msh+'/2 teams'):'';
+        tag=msh?(' · 👥 '+msh+'/4 teams'):'';
       }
       var imp='';
       if(b.deliveries&&b.deliveries.date_received){
@@ -987,6 +991,16 @@
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
       ['issue','receive','stock','techs','reports','audit'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='receive'){fillTmTeams(); var td=$('#tmDate'); if(td&&!td.value)td.value=todayLocal();} if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); return;}
 
+    var fp=e.target.closest('[data-findpick]');
+    if(fp){
+      var fs=fp.getAttribute('data-findpick'), fb=fp.getAttribute('data-findbox'), fc=fp.getAttribute('data-findcat');
+      issCat=fc; $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-isscat')===fc);});
+      curBox=fb; pick={}; pick[fs]=true;
+      renderBoxes(); renderCap(); renderUnits(); updateRelease();
+      var fo=$('#issFindOut'); if(fo) fo.innerHTML='<div class="note info" style="margin:6px 0">✓ <b>'+fs+'</b> selected — box and category set. Tick more serials below if needed.</div>';
+      var fi=$('#issFind'); if(fi) fi.value='';
+      return;
+    }
     var ct=e.target.closest('[data-isscat]');
     if(ct){ issCat=ct.getAttribute('data-isscat');
       $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b===ct);});
@@ -1030,6 +1044,20 @@
     var br=e.target.closest('[data-bulkret]'); if(br){doBulkCpe(br);return;}
     var tech=e.target.closest('[data-tech]'); if(tech){toggleTech(tech.getAttribute('data-tech'),tech.getAttribute('data-on')==='1');return;}
   });
+  document.addEventListener('input', function(e){
+    if(e.target.id!=='issFind') return;
+    var out=$('#issFindOut'); if(!out) return;
+    var q=e.target.value.trim().toUpperCase();
+    if(q.length<3){ out.innerHTML=q.length?'<div style="font-size:11px;color:#8a9a94;padding:4px 0">Type at least 3 characters…</div>':''; return; }
+    var ms=stock.filter(function(u){ return u.status==='in_stock' && u.serial.toUpperCase().indexOf(q)>=0; });
+    ms.sort(function(a,b){ var ae=a.serial.toUpperCase().slice(-q.length)===q?0:1, be=b.serial.toUpperCase().slice(-q.length)===q?0:1; return ae-be; });
+    var bmap={}; boxes.forEach(function(b){ bmap[b.id]=b; });
+    out.innerHTML=ms.length?ms.slice(0,8).map(function(u){
+      var b=bmap[u.box_id]||{};
+      return '<button type="button" class="chip" data-findpick="'+u.serial+'" data-findbox="'+u.box_id+'" data-findcat="'+u.category+'" style="display:block;width:100%;text-align:left;margin-top:6px">'+(u.category==='iptv'?'📺':'📶')+' <b>'+u.serial+'</b> · '+(u.model||u.category)+' · Box '+(b.box_no!=null?b.box_no:'?')+(b.deliveries&&b.deliveries.dr_number?(' · '+b.deliveries.dr_number):'')+'</button>';
+    }).join(''):'<div style="font-size:11px;color:#c2503a;font-weight:700;padding:6px 0">No IN-STOCK serial matches "'+q+'" — baka naka-issue na o wala sa stock.</div>';
+  });
+
   document.addEventListener('change',function(e){
     if(e.target.id==='issTeam')updateRelease();
     if(e.target.id==='rcvFile'&&e.target.files&&e.target.files[0])onFile(e.target.files[0]);
@@ -1055,7 +1083,7 @@
     if(im.err){ toast(im.err,true); return; }
     var btn=$('#doRelease');btn.disabled=true;btn.textContent='Filing request…';
     rpc('request_issuance',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — waiting for AHBA_Warehouse01 + AHBA_Property approval');pick={};curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');pick={};curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
@@ -1074,7 +1102,7 @@
     if(!im.any && kits<=0){ toast('No kits or materials set',true); return; }
     var btn=$('#doIssueMats');btn.disabled=true;btn.textContent='Filing request…';
     rpc('request_issuance',{p_team_id:teamId,p_box_id:null,p_serials:null,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — waiting for AHBA_Warehouse01 + AHBA_Property approval');resetIssueInputs();loadApprovals();return loadStock();})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');resetIssueInputs();loadApprovals();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
@@ -1083,7 +1111,7 @@
       .then(function(){btn.disabled=false;btn.textContent='📦 Issue kits / materials only — no CPE';loadMatBalances();});
   }
   function resetIssueInputs(){
-    var k=$('#issKits'); if(k) k.value=1;
+    var k=$('#issKits'); if(k) k.value=0;
     $$('#issMats [data-imat]').forEach(function(i){ i.value=0; });
     renderFocReels();
   }
@@ -1770,7 +1798,7 @@
   }
 
   // ---- CSV templates + drop-material bulk import ----
-  var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (bag)'],['clip7','Cable Clip 7mm (bag)'],['tie','Cable Tie (bag)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)'],
+  var MATS=[['foc','FOC drop fiber (spool)'],['clip5','Cable Clip 5mm (pc)'],['clip7','Cable Clip 7mm (pc)'],['tie','Cable Tie (pc)'],['dtape','Double-Sided Tape (roll)'],['etape','Electrical Tape (roll)'],
             ['patchupc','Patchcord SC/UPC–SC/APC 1.5m (pc)'],['jumper10','Jumper ILU SC/APC 10m (pc)'],['jumper20','Jumper ILU SC/APC 20m (pc)'],['jumper30','Jumper ILU SC/APC 30m (pc)'],['jumper40','Jumper ILU SC/APC 40m (pc)'],['clipa','Clip A w/ adhesive (pc)'],['clipb','Clip B w/ adhesive (pc)'],
             ['f17','F-17 Anchor Clamp (pc)'],['f19','F-19 House Bracket (pc)'],['f20','F-20 Mid-Span Hook (pc)'],
             ['conn','Fast Connector SC/APC buffer (pc)'],['patch','Patch Cord 1.5m buffer (pc)'],['tbox','Terminal Box FTTH buffer (pc)'],['sar','SAR form (pc)'],['saf','SAF form (pc)']];
