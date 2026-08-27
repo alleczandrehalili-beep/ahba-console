@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-22.4';
+const APP_VERSION='2026-08-28.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -135,6 +135,48 @@ function startHealthWidget(){
   renderHealthWidget();
   _healthTimer=setInterval(()=>{ if(document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
   const rb=document.getElementById('healthRefresh'); if(rb) rb.onclick=renderHealthWidget;
+  const ob=document.getElementById('opsCheckBtn'); if(ob) ob.onclick=opsSystemCheck;
+}
+// ---- 🩺 One-click system check (superadmin) ----
+// Sinusukat ang app + database + internet nang sabay, may malinaw na hatol sa Tagalog,
+// at nire-refresh ang JO data — para makita agad kung SAAN ang problema kapag "bumagal"
+// (madalas: internet ang mabagal, hindi ang system — ito ang nagsasabi nang tiyak).
+async function opsSystemCheck(){
+  let ov=document.getElementById('opsCheckOverlay');
+  if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='opsCheckOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(8,44,40,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML='<div id="opsCheckCard" style="background:#fff;border-radius:16px;max-width:530px;width:100%;padding:22px;font:500 13px system-ui;color:#2a3a36;box-shadow:0 24px 60px rgba(0,0,0,.35)"></div>';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  const card=ov.querySelector('#opsCheckCard');
+  card.innerHTML='<b style="font:800 15px Manrope">🩺 Check system</b><div style="margin-top:10px;color:#6b7772">Sinusukat ang app, database, at internet… (~10 segundo)</div>';
+  const t=async(url,opts)=>{ const s=performance.now(); try{ const r=await fetch(url,opts); await r.text(); return {ms:Math.round(performance.now()-s),http:r.status}; }catch(e){ return {ms:Math.round(performance.now()-s),http:0}; } };
+  const tokenOk=await ensureFreshTok();
+  const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
+  const api=[]; for(let i=0;i<3;i++) api.push(await t(`${SUPA_URL}/rest/v1/jobs?select=id&limit=1`,{headers:H}));
+  const st=[]; for(let i=0;i<2;i++) st.push(await t('version.json?cb='+Date.now(),{cache:'no-store'}));
+  const avg=a=>Math.round(a.reduce((x,y)=>x+y.ms,0)/a.length);
+  const apiAvg=avg(api), stAvg=avg(st), api401=api.some(x=>x.http===401);
+  let h=null; try{ h=await fetch(`${SUPA_URL}/rest/v1/rpc/system_health`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null); }catch(e){}
+  let jobsN='—', jobsMs=0;
+  try{ const s=performance.now(); const rows=await AHBACloud.getJobs(); jobsMs=Math.round(performance.now()-s); jobsN=rows.length; jobs=rows; try{ localStorage.setItem('fieldflow_jobs',JSON.stringify(rows)); }catch(e){} renderJobs(); }catch(e){}
+  const dbBad=h && (h.connections>=h.max_connections*0.8 || h.long_running>0);
+  let verdict, tone;
+  if(api401){ verdict='⚠ Patay ang session kahit sinubukang buhayin — pindutin ang HARD RELOAD sa ibaba para mag-login muli.'; tone='#c2503a'; }
+  else if(dbBad){ verdict=`⚠ May pressure ang database ngayon (${h.connections}/${h.max_connections} connections · ${h.long_running} mabagal na query) — bantayan; kapag tumagal, ipa-check kay Claude.`; tone='#b8860b'; }
+  else if(apiAvg>500 && stAvg>400){ verdict=`🌐 MALUSOG ang app at database — ang INTERNET CONNECTION ang mabagal ngayon (${apiAvg}ms bawat tawag; normal ~180ms). Walang aayusin sa app; babalik sa normal kapag gumanda ang koneksyon.`; tone='#b8860b'; }
+  else if(apiAvg>500){ verdict=`⚠ Mabagal ang daan papunta sa database API (${apiAvg}ms) pero mabilis ang ibang sites — pansamantalang network issue sa pagitan; subukan ulit mamaya.`; tone='#b8860b'; }
+  else { verdict='✅ MALUSOG ANG LAHAT — mabilis ang app, database, at koneksyon.'; tone='#0e7a55'; }
+  const row=(l,v)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f0f3f1"><span style="color:#6b7772">${l}</span><b style="text-align:right">${v}</b></div>`;
+  card.innerHTML='<b style="font:800 15px Manrope">🩺 Check system</b>'
+    +`<div style="margin:12px 0;padding:11px 13px;border-radius:10px;background:${tone==='#0e7a55'?'#e9f6f0':'#fff6e0'};color:${tone};font-weight:700">${verdict}</div>`
+    +row('Session token', tokenOk&&!api401?'✅ OK':'⚠ kailangang mag-login')
+    +row('Bilis ng server (3 tawag)', apiAvg+'ms '+(apiAvg<=350?'✅':'🐌'))
+    +row('Bilis ng site / internet', stAvg+'ms '+(stAvg<=400?'✅':'🐌'))
+    +row('Database', h?`${h.connections}/${h.max_connections} conn · ${h.long_running} slow · ${(h.db_size_bytes/1073741824).toFixed(2)} GB`:'—')
+    +row('JO data', jobsN+' rows · '+jobsMs+'ms · na-refresh ✅')
+    +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="location.reload()" style="flex:1;border:0;background:#082c28;color:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">🔄 Hard reload</button><button onclick="document.getElementById(&quot;opsCheckOverlay&quot;).remove()" style="flex:1;border:1px solid #dfe5df;background:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">Isara</button></div>';
 }
 
 // Data comes PURELY from the DB (org-scoped by RLS) — no hardcoded/demo seed and no cross-user
