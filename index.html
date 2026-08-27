@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-08-28.2" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-28.3" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -699,7 +699,7 @@
   <dialog id="announceModal" class="modal small-modal">
     <div class="modal-head"><div><span class="eyebrow">BROADCAST</span><h2>Post announcement</h2><p>Visible to teams in the mobile app (based on the audience).</p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div class="form-grid" style="grid-template-columns:1fr">
-      <label class="field"><span>Audience</span><select id="annAudience"><option value="all">All teams (Technician + Sales)</option><option value="technician">Technicians only</option><option value="sales">Sales agents only</option></select></label>
+      <label class="field"><span>Audience</span><select id="annAudience"><option value="all">All teams (Technician + Sales)</option><option value="technician">Technicians only</option><option value="sales">Sales agents only</option><option value="ahba">AHBA only (no subcon)</option></select></label>
       <label class="field"><span>Title</span><input id="annTitle"></label>
       <label class="field"><span>Message</span><textarea id="annBody" rows="3"></textarea></label>
       <label class="field" id="annPhotoWrap" style="display:none"><span>🏆 Recognition photo (optional) — shown as a big banner</span><input type="file" id="annPhoto" accept="image/*"></label>
@@ -747,8 +747,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-28.2"></script>
+  <script src="app.js?v=2026-08-28.3"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-28.2"></script>
+  <script src="ahba-cloud.js?v=2026-08-28.3"></script>
 </body>
 </html>

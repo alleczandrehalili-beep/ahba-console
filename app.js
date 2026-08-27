@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-28.2';
+const APP_VERSION='2026-08-28.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3548,7 +3548,15 @@ async function postAnnounce(){
     const created_super=!!(window.dashUser&&window.dashUser.is_super);
     const photo_caption=photo_path?(($('#annCaption')&&$('#annCaption').value||'').trim()||null):null;
     await fetch(`${SUPA_URL}/rest/v1/announcements`,{method:'POST',headers:DH(),body:JSON.stringify({audience,title,body,created_by:who,photo_path,photo_caption,created_super})});
-    pushNotify({audience,title:'📢 '+(title||'Announcement'),body});
+    if(audience==='ahba'){
+      // AHBA only: ang send-push ay walang org filter, kaya per-team fan-out sa lahat ng
+      // AHBA_* na may push subscription — hindi maaabot (at hindi makikita) ng subcon.
+      try{
+        const subs=await fetch(`${SUPA_URL}/rest/v1/push_subscriptions?select=team`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}).then(r=>r.ok?r.json():[]);
+        const teams=[...new Set(subs.map(x=>x.team))].filter(t=>/^AHBA_/i.test(t));
+        await Promise.all(teams.map(team=>fetch(`${SUPA_URL}/functions/v1/send-push`,{method:'POST',headers:DH(),body:JSON.stringify({team,title:'📢 '+(title||'Announcement'),body})}).catch(()=>{})));
+      }catch(e){}
+    } else pushNotify({audience,title:'📢 '+(title||'Announcement'),body});
     $('#annTitle').value=''; $('#annBody').value=''; if($('#annPhoto'))$('#annPhoto').value=''; if($('#annCaption'))$('#annCaption').value=''; showToast('Announcement posted'); loadAnnRecent(); renderAnnounceBar();
   }catch(e){ showToast('Post failed'); }
   btn.disabled=false; btn.textContent='Post announcement';
@@ -3575,6 +3583,12 @@ async function renderAnnounceBar(){
     const r=await fetch(`${SUPA_URL}/rest/v1/announcements?select=*&order=created_at.desc&limit=1`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     const a=(r.ok?await r.json():[])[0];
     if(!a){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+    // AHBA-only announcements: itago sa mga subcon console user (org check vs GC org)
+    if(a.audience==='ahba'){
+      const u=window.dashUser||{};
+      const isAhba=!!(u.is_super || (typeof gcOrgId!=='undefined' && gcOrgId && u.org_id===gcOrgId));
+      if(!isAhba){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
+    }
     const esc=s=>(s||'').replace(/</g,'&lt;'); const rec=!!a.photo_path;
     const img=rec?`<img src="${photoBase(a.photo_path)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
     const rm=canRemoveAnn(a)?`<button id="annBarRm" data-id="${a.id}" style="flex:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 11px;font-weight:700;font-size:11px;cursor:pointer">✕ Remove</button>`:'';
