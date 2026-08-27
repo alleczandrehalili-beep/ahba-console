@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-28.1';
+const APP_VERSION='2026-08-28.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -130,18 +130,28 @@ async function renderHealthWidget(){
 }
 function startHealthWidget(){
   if(_healthTimer){ clearInterval(_healthTimer); _healthTimer=null; }
-  const u=window.dashUser;
-  if(!(u&&u.is_super)) return;
+  const u=window.dashUser; const isSuper=!!(u&&u.is_super);
+  // OPTION C: EVERY console user gets the 🩺 Check system button. Superadmin additionally
+  // sees the live DB summary + Refresh; regular users get the button only, at ang check
+  // card mismo ay nagtatago ng DB internals para sa kanila (see opsSystemCheck).
+  const box=document.getElementById('healthWidget'); if(box) box.style.display='';
+  const ob=document.getElementById('opsCheckBtn'); if(ob) ob.onclick=opsSystemCheck;
+  const rb=document.getElementById('healthRefresh');
+  if(!isSuper){
+    const sum=document.getElementById('healthSummary'); if(sum) sum.textContent='';
+    if(rb) rb.style.display='none';
+    return;
+  }
+  if(rb){ rb.style.display=''; rb.onclick=renderHealthWidget; }
   renderHealthWidget();
   _healthTimer=setInterval(()=>{ if(document.getElementById('overviewPage')?.classList.contains('active')) renderHealthWidget(); }, 60000);
-  const rb=document.getElementById('healthRefresh'); if(rb) rb.onclick=renderHealthWidget;
-  const ob=document.getElementById('opsCheckBtn'); if(ob) ob.onclick=opsSystemCheck;
 }
-// ---- 🩺 One-click system check (superadmin) ----
-// Sinusukat ang app + database + internet nang sabay, may malinaw na hatol sa Tagalog,
-// at nire-refresh ang JO data — para makita agad kung SAAN ang problema kapag "bumagal"
-// (madalas: internet ang mabagal, hindi ang system — ito ang nagsasabi nang tiyak).
+// ---- 🩺 One-click system check (LAHAT ng console user — Option C) ----
+// Measures the app + database + internet in one go, gives a plain-English verdict, and
+// refreshes the JO data. Regular users see a simplified card (no DB internals); superadmin
+// sees the full detail. Read-only + refresh lang — walang binubura o binabago kailanman.
 async function opsSystemCheck(){
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
   let ov=document.getElementById('opsCheckOverlay');
   if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='opsCheckOverlay';
@@ -150,7 +160,7 @@ async function opsSystemCheck(){
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   document.body.appendChild(ov);
   const card=ov.querySelector('#opsCheckCard');
-  card.innerHTML='<b style="font:800 15px Manrope">🩺 Check system</b><div style="margin-top:10px;color:#6b7772">Sinusukat ang app, database, at internet… (~10 segundo)</div>';
+  card.innerHTML='<b style="font:800 15px Manrope">🩺 Check system</b><div style="margin-top:10px;color:#6b7772">Measuring the app, database, and internet… (~10 seconds)</div>';
   const t=async(url,opts)=>{ const s=performance.now(); try{ const r=await fetch(url,opts); await r.text(); return {ms:Math.round(performance.now()-s),http:r.status}; }catch(e){ return {ms:Math.round(performance.now()-s),http:0}; } };
   const tokenOk=await ensureFreshTok();
   const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
@@ -158,25 +168,27 @@ async function opsSystemCheck(){
   const st=[]; for(let i=0;i<2;i++) st.push(await t('version.json?cb='+Date.now(),{cache:'no-store'}));
   const avg=a=>Math.round(a.reduce((x,y)=>x+y.ms,0)/a.length);
   const apiAvg=avg(api), stAvg=avg(st), api401=api.some(x=>x.http===401);
-  let h=null; try{ h=await fetch(`${SUPA_URL}/rest/v1/rpc/system_health`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null); }catch(e){}
+  // DB internals: superadmin lang ang kumukuha at nakakakita
+  let h=null; if(isSuper){ try{ h=await fetch(`${SUPA_URL}/rest/v1/rpc/system_health`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null); }catch(e){} }
   let jobsN='—', jobsMs=0;
   try{ const s=performance.now(); const rows=await AHBACloud.getJobs(); jobsMs=Math.round(performance.now()-s); jobsN=rows.length; jobs=rows; try{ localStorage.setItem('fieldflow_jobs',JSON.stringify(rows)); }catch(e){} renderJobs(); }catch(e){}
   const dbBad=h && (h.connections>=h.max_connections*0.8 || h.long_running>0);
   let verdict, tone;
-  if(api401){ verdict='⚠ Patay ang session kahit sinubukang buhayin — pindutin ang HARD RELOAD sa ibaba para mag-login muli.'; tone='#c2503a'; }
-  else if(dbBad){ verdict=`⚠ May pressure ang database ngayon (${h.connections}/${h.max_connections} connections · ${h.long_running} mabagal na query) — bantayan; kapag tumagal, ipa-check kay Claude.`; tone='#b8860b'; }
-  else if(apiAvg>500 && stAvg>400){ verdict=`🌐 MALUSOG ang app at database — ang INTERNET CONNECTION ang mabagal ngayon (${apiAvg}ms bawat tawag; normal ~180ms). Walang aayusin sa app; babalik sa normal kapag gumanda ang koneksyon.`; tone='#b8860b'; }
-  else if(apiAvg>500){ verdict=`⚠ Mabagal ang daan papunta sa database API (${apiAvg}ms) pero mabilis ang ibang sites — pansamantalang network issue sa pagitan; subukan ulit mamaya.`; tone='#b8860b'; }
-  else { verdict='✅ MALUSOG ANG LAHAT — mabilis ang app, database, at koneksyon.'; tone='#0e7a55'; }
+  if(api401){ verdict='⚠ Your session has expired — press HARD RELOAD below to log in again. Nothing is lost.'; tone='#c2503a'; }
+  else if(dbBad){ verdict=`⚠ The database is under pressure right now (${h.connections}/${h.max_connections} connections · ${h.long_running} slow queries) — keep an eye on it; report it if it persists.`; tone='#b8860b'; }
+  else if(apiAvg>500 && stAvg>400){ verdict=`🌐 The system is HEALTHY — your INTERNET CONNECTION is slow right now (${apiAvg}ms per call; normal ~180ms). Nothing to fix in the app; it will recover when the connection improves.`; tone='#b8860b'; }
+  else if(apiAvg>500){ verdict=`⚠ The route to the server is slow right now (${apiAvg}ms) but other sites are fast — a temporary network issue in between. The system itself is healthy; try again later.`; tone='#b8860b'; }
+  else { verdict='✅ ALL HEALTHY — the app, server, and connection are fast.'; tone='#0e7a55'; }
   const row=(l,v)=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f0f3f1"><span style="color:#6b7772">${l}</span><b style="text-align:right">${v}</b></div>`;
   card.innerHTML='<b style="font:800 15px Manrope">🩺 Check system</b>'
     +`<div style="margin:12px 0;padding:11px 13px;border-radius:10px;background:${tone==='#0e7a55'?'#e9f6f0':'#fff6e0'};color:${tone};font-weight:700">${verdict}</div>`
-    +row('Session token', tokenOk&&!api401?'✅ OK':'⚠ kailangang mag-login')
-    +row('Bilis ng server (3 tawag)', apiAvg+'ms '+(apiAvg<=350?'✅':'🐌'))
-    +row('Bilis ng site / internet', stAvg+'ms '+(stAvg<=400?'✅':'🐌'))
-    +row('Database', h?`${h.connections}/${h.max_connections} conn · ${h.long_running} slow · ${(h.db_size_bytes/1073741824).toFixed(2)} GB`:'—')
-    +row('JO data', jobsN+' rows · '+jobsMs+'ms · na-refresh ✅')
-    +'<div style="display:flex;gap:8px;margin-top:14px"><button onclick="location.reload()" style="flex:1;border:0;background:#082c28;color:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">🔄 Hard reload</button><button onclick="document.getElementById(&quot;opsCheckOverlay&quot;).remove()" style="flex:1;border:1px solid #dfe5df;background:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">Isara</button></div>';
+    +row('Session', tokenOk&&!api401?'✅ OK':'⚠ log in again')
+    +row('Server speed (3 calls)', apiAvg+'ms '+(apiAvg<=350?'✅':'🐌'))
+    +row('Site / internet speed', stAvg+'ms '+(stAvg<=400?'✅':'🐌'))
+    +(isSuper?row('Database', h?`${h.connections}/${h.max_connections} conn · ${h.long_running} slow · ${(h.db_size_bytes/1073741824).toFixed(2)} GB`:'—'):'')
+    +row('JO data', jobsN+' rows · '+jobsMs+'ms · refreshed ✅')
+    +'<div style="font-size:10.5px;color:#9aa6a2;margin-top:8px">Hard reload = a fresh page load. No data is ever deleted — only unsaved typing in an open form is lost.</div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px"><button onclick="location.reload()" style="flex:1;border:0;background:#082c28;color:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">🔄 Hard reload</button><button onclick="document.getElementById(&quot;opsCheckOverlay&quot;).remove()" style="flex:1;border:1px solid #dfe5df;background:#fff;border-radius:10px;padding:11px;font:700 12px system-ui;cursor:pointer">Close</button></div>';
 }
 
 // Data comes PURELY from the DB (org-scoped by RLS) — no hardcoded/demo seed and no cross-user
