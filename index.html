@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-08-28.3" />
+  <link rel="stylesheet" href="styles.css?v=2026-08-28.4" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -270,7 +270,7 @@
         <div id="dashHistNote" style="display:none;margin-bottom:12px;padding:9px 13px;border-radius:10px;background:#fff4e1;border:1px solid #f0d9a8;color:#8a5a10;font-size:11px;font-weight:700"></div>
 
         <div id="dashLoadsView" hidden>
-          <div class="page-toolbar" style="margin-bottom:12px"><div><h2 style="font-size:15px">Dispatch Board · load monitoring</h2><p>Assign jobs and balance the workload across teams.</p></div><div class="toolbar-actions"><div class="search-box" style="min-width:190px"><i data-icon="search"></i><input id="dispatchSearch" placeholder="Search subscriber name"></div><button class="secondary-btn" id="importTemplateBtn"><i data-icon="arrow"></i>Template</button><button class="secondary-btn" id="importXlsxBtn"><i data-icon="clipboard"></i>Import Excel</button><input type="file" id="importXlsxInput" accept=".xlsx,.xls,.csv" hidden><button class="secondary-btn" id="autoAssignBtn"><i data-icon="spark"></i>Suggest best team</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>Add job</button><button class="secondary-btn" id="clearLoadsBtn" style="display:none;border-color:#f0c3ba;color:#c2503a"><i data-icon="info"></i>Clear all loads</button></div></div>
+          <div class="page-toolbar" style="margin-bottom:12px"><div><h2 style="font-size:15px">Dispatch Board · load monitoring</h2><p>Assign jobs and balance the workload across teams.</p></div><div class="toolbar-actions"><span id="advSchedChip" style="display:none;background:#fff6e0;color:#8a6400;border:1px solid #eedca8;border-radius:20px;padding:7px 12px;font:700 11px system-ui;align-self:center"></span><div class="search-box" style="min-width:190px"><i data-icon="search"></i><input id="dispatchSearch" placeholder="Search subscriber name"></div><button class="secondary-btn" id="importTemplateBtn"><i data-icon="arrow"></i>Template</button><button class="secondary-btn" id="importXlsxBtn"><i data-icon="clipboard"></i>Import Excel</button><input type="file" id="importXlsxInput" accept=".xlsx,.xls,.csv" hidden><button class="secondary-btn" id="autoAssignBtn"><i data-icon="spark"></i>Suggest best team</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>Add job</button><button class="secondary-btn" id="clearLoadsBtn" style="display:none;border-color:#f0c3ba;color:#c2503a"><i data-icon="info"></i>Clear all loads</button></div></div>
           <div class="dispatch-stats" id="dispatchStats"></div>
           <div class="dispatch-board" id="dispatchBoard"></div>
         </div>
@@ -651,6 +651,7 @@
   <dialog id="assignModal" class="modal small-modal">
     <div class="modal-head"><div><span class="eyebrow">DISPATCH</span><h2>Assign a field team</h2><p id="assignJobLabel"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div style="padding:14px 20px 2px"><label class="field"><span>J.O. Number <em style="font-style:normal;color:#c2503a">*required</em> <em id="joLock" style="font-style:normal;color:#9aa6a2"></em></span><input id="assignJONum" required><span style="font-size:9px;color:#8a9894">Required before dispatch. Visible to the technician. Cannot be changed once set.</span></label></div>
+    <div style="padding:2px 20px 2px"><label class="field"><span>Load date</span><input id="assignLoadDate" type="date"><span style="font-size:9px;color:#8a9894">Default today. Pick a future date to dispatch in advance — the team sees it locked until that day.</span></label></div>
     <div style="padding:2px 20px 6px"><label class="field"><span>Dispatch remarks <em style="font-style:normal;color:#9aa6a2">(visible to the technician)</em></span><input id="assignRemarks"></label></div>
     <div class="assignment-list" id="assignmentList"></div>
   </dialog>
@@ -747,8 +748,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-28.3"></script>
+  <script src="app.js?v=2026-08-28.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-28.3"></script>
+  <script src="ahba-cloud.js?v=2026-08-28.4"></script>
 </body>
 </html>

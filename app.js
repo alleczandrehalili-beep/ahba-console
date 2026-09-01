@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-28.3';
+const APP_VERSION='2026-08-28.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -467,6 +467,10 @@ function renderJobs(){
     const pending=jobs.filter(j=>j.status==='pending');
     const _td=manilaToday();
     if($('#pendingBadge')) $('#pendingBadge').textContent=pending.filter(j=>!j.load_date||String(j.load_date).slice(0,10)===_td).length;
+    // Advance-scheduled chip: mga assigned na load sa hinaharap (wala sa today's board)
+    const _ac=$('#advSchedChip');
+    if(_ac){ const _n=jobs.filter(x=>x.team&&x.status==='assigned'&&x.load_date&&String(x.load_date).slice(0,10)>_td).length;
+      _ac.style.display=_n?'':'none'; _ac.textContent='📅 Advance-scheduled: '+_n+(_n===1?' load':' loads')+' → see Timeline'; }
     if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong></td><td>${j.type}</td><td>${esc(j.area)}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
     if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
   }
@@ -1518,10 +1522,13 @@ async function tlSchedule(jobId, team, date, hour, est){
     // Assigning to a (new) team needs a unique J.O. Number, same rule as the dispatch board.
     let jo=j.job_order_no;
     if(!jo){ jo=(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||'').trim(); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }
-    j.team=team; if(j.status==='pending') j.status='assigned'; j.load_date=manilaToday(); j.dispatch_count=(j.dispatch_count||0)+1;
-    histLog(j.id,`Scheduled to ${team} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
-    pushNotify&&pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)});
-    if(j.created_by) pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+' @ '+tlFmtHour(hour)});
+    // Ang tinitingnang araw sa Timeline ang nagiging load date (dati'y pilit na today,
+    // kahit sa ibang araw ka nag-i-schedule — advance dispatch na ngayon).
+    const _adv=date>manilaToday();
+    j.team=team; if(j.status==='pending') j.status='assigned'; j.load_date=date; j.dispatch_count=(j.dispatch_count||0)+1;
+    histLog(j.id,`Scheduled to ${team}${_adv?' for '+date:''} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
+    pushNotify&&pushNotify({team,title:_adv?('📅 New load for '+date):'New load assigned',body:(j.subscriber||jobId)});
+    if(j.created_by) pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+date:'')+' @ '+tlFmtHour(hour)});
   } else {
     histLog(j.id,`Rescheduled @ ${tlFmtHour(hour)}`);
     // Sabihan ang technician team na lumipat ang oras ng load nila.
@@ -1562,6 +1569,8 @@ async function openAssign(jobId){
   const job=jobs.find(j=>j.id===jobId); if(!job){showToast('Job no longer available');return;} $('#assignJobLabel').textContent=`${job.id} · ${job.subscriber} · ${job.area}`;$('#assignModal').dataset.job=jobId;
   const joEl=$('#assignJONum'); if(joEl){ joEl.value=job.job_order_no||''; joEl.readOnly=!!job.job_order_no; joEl.style.background=job.job_order_no?'#f1f3f1':''; if($('#joLock'))$('#joLock').textContent=job.job_order_no?'(locked)':''; }
   const remEl=$('#assignRemarks'); if(remEl) remEl.value=job.dispatched_remarks||'';
+  // Advance dispatch: default today, bawal ang nakaraan; kung may future load_date na, panatilihin
+  const ldEl=$('#assignLoadDate'); if(ldEl){ ldEl.min=manilaToday(); ldEl.value=(job.load_date&&String(job.load_date).slice(0,10)>manilaToday())?String(job.load_date).slice(0,10):manilaToday(); }
   openModal($('#assignModal'));
   $('#assignmentList').innerHTML='<div class="empty-row">Loading online teams…</div>';
   await Promise.all([fetchTechLocations(), loadTeamShifts(), syncTeamsFromDb()]);
@@ -1589,7 +1598,7 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} if(blockRejectedToDispatch(j))return; const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;j.team=team;j.status='assigned';j.load_date=manilaToday();j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at){let h=new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${manilaToday()}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:'New load assigned',body:(j.subscriber||jobId)});if(j.created_by)pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team})}
+async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} if(blockRejectedToDispatch(j))return; const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;const _ld=(($('#assignLoadDate')&&$('#assignLoadDate').value)||manilaToday());if(_ld<manilaToday()){showToast('Load date cannot be in the past');return;}const _adv=_ld>manilaToday();j.team=team;j.status='assigned';j.load_date=_ld;j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at||_adv){let h=_adv?TL_START:new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${_ld}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team}${_adv?' for '+_ld:''} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:_adv?('📅 New load for '+_ld):'New load assigned',body:(j.subscriber||jobId)});if(j.created_by)pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+_ld:'')})}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
