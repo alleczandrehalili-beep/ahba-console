@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-08-28.4" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-02.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -669,6 +669,7 @@
     <div class="modal-head"><div><span class="eyebrow">JOB ORDER</span><h2 id="jdTitle">Job order</h2><p id="jdSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
     <div style="padding:18px 25px 4px"><div class="info-grid" id="jdInfo"></div></div>
     <div style="padding:8px 25px 0"><label class="field"><span>Load priority</span><select id="jdPriority"><option>1st Load</option><option>2nd Load</option><option>3rd Load</option><option>4th Load</option><option>5th Load</option></select></label></div>
+    <div style="padding:8px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 4px">📦 WIMS materials used (CPE &amp; drops)</div><div id="jdWims"></div></div>
     <div style="padding:8px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 4px">Technician photos · proof of status</div><div class="photo-grid" id="jdPhotos" style="padding:0;max-height:44vh"></div></div>
     <div style="padding:8px 25px 0"><div class="form-sec" style="font:800 10px Manrope;letter-spacing:.08em;text-transform:uppercase;color:#107b5e;margin:8px 0 4px">Status history</div><pre id="jdHistory"></pre></div>
     <div style="padding:4px 25px 0"><label class="field"><span>Dispatcher status update</span><select id="jdStatus"><option value="">— Select status —</option><option value="completed">Completed</option><option value="incomplete">Incomplete (stays in Incomplete)</option><option value="redispatch">Re-dispatch → For Dispatch</option><option value="cancelled">Cancelled</option></select></label></div>
@@ -748,8 +749,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-08-28.4"></script>
+  <script src="app.js?v=2026-09-02.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-08-28.4"></script>
+  <script src="ahba-cloud.js?v=2026-09-02.1"></script>
 </body>
 </html>

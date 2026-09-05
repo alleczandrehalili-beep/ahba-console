@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-08-28.4';
+const APP_VERSION='2026-09-02.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -634,6 +634,38 @@ function openJobDetail(jobId){
       const list=m[jobId]||[];
       pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
+  }
+  // WIMS materials used sa JO na ito (wims.jo_materials RPC — read-only, any console user)
+  const wg=$('#jdWims');
+  if(wg){
+    const _wjo=(j.job_order_no||'').trim();
+    if(!_wjo){ wg.innerHTML='<div class="none" style="padding:10px;color:#8a9894">No J.O. number yet — WIMS materials appear once the JO is validated.</div>'; }
+    else{
+      wg.innerHTML='<div class="none" style="padding:10px">Loading materials…</div>';
+      fetch(`${SUPA_URL}/rest/v1/rpc/jo_materials`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Profile':'wims','Content-Type':'application/json'},body:JSON.stringify({p_jo:_wjo})})
+        .then(r=>r.ok?r.json():Promise.reject(r.status))
+        .then(rows=>{
+          if(!$('#jdTitle').textContent.startsWith(j.id)) return;   // ibang JO na ang bukas
+          if(!rows||!rows.length){ wg.innerHTML='<div class="none" style="padding:10px;color:#8a9894">No WIMS material report was filed for this JO.</div>'; return; }
+          const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
+          const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+          const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+          wg.innerHTML=rows.map(row=>{
+            const parts=[];
+            if(row.modem_serial) parts.push(`<div><b>📶 Modem serial</b>${esc(row.modem_serial)}</div>`);
+            ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) parts.push(`<div><b>📺 IPTV ${i+1}</b>${esc(row[k])}</div>`); });
+            Object.keys(row).forEach(k=>{
+              if(SKIP.includes(k)||k==='modem_serial'||/^iptv_[123]$/.test(k)||k==='kit_remarks') return;
+              const v=row[k];
+              if(v==null||v===''||v===0||v==='0') return;
+              parts.push(`<div><b>${esc(nice(k))}</b>${esc(v)}</div>`);
+            });
+            if(row.kit_remarks) parts.push(`<div><b>⚠ Kit remarks</b>${esc(row.kit_remarks)}</div>`);
+            return `<div class="info-grid">${parts.join('')||'<div class="none">Report filed, walang laman.</div>'}</div>`;
+          }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:8px 0">');
+        })
+        .catch(()=>{ wg.innerHTML='<div class="none" style="padding:10px;color:#c2503a">Could not load WIMS materials — run wims-JO-materials.sql first.</div>'; });
+    }
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
   $('#jdStatus').value='';
