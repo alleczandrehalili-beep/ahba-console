@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-02.1';
+const APP_VERSION='2026-09-07.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2688,7 +2688,8 @@ async function editRejectedOrder(jobId){
   const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit & resubmit order';
   const btn=$('#orderSubmit'); if(btn) btn.textContent='Resubmit for validation';
   const setv=(name,val)=>{ const el=$(`#orderForm [name="${name}"]`); if(el) el.value=(val==null?'':val); };
-  ['first_name','middle_name','last_name','primary_no','other_contact_no','email','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  ['first_name','middle_name','last_name','birth_date','primary_no','other_contact_no','email','house_no','street_name','village'].forEach(k=>setv(k,j[k]));
+  ordDupClear();
   if($('#ord_city')) $('#ord_city').value=j.city||'QUEZON CITY';
   if($('#ord_district')) $('#ord_district').value=j.district||''; populateOrdBrgys(j.district||'');
   // ALL CAPS ang options ngayon — itugma anuman ang pagkakasulat ng lumang record
@@ -2705,6 +2706,45 @@ async function editRejectedOrder(jobId){
     setv('current_plan',j.current_plan); setv('mig_plan',j.plan); setv('mig_amount',j.amount_to_collect!=null?j.amount_to_collect:''); setv('mig_ref',j.ref_no); setv('mig_note',note);
   } else { setv('ticket_no',j.ticket_no); setv('slr_note',note); }
   $$('#orderModal [data-cnt]').forEach(b=>b.textContent='keeping existing');
+}
+// ---------- Strict duplicate check on NEW encodes (2026-09-05) ----------
+// Server-side RPC scans ALL JOs all-time (any status, soft-deleted excluded) —
+// one logic shared with mobile, no client row caps. Fails OPEN if the RPC is
+// missing/unreachable (the insert itself would fail too if the API were down).
+let ordDupAck=null;   // set by "Proceed anyway" — allows a WARN-level match through once
+async function dupCheckJO(p,client){
+  try{
+    const {data,error}=await client.rpc('check_duplicate_jo',{
+      p_first:p.first,p_middle:p.middle||'',p_last:p.last,p_birth:p.birth||null,
+      p_primary:p.primary||'',p_ocn:p.ocn||'',p_email:p.email||'',
+      p_house:p.house||'',p_street:p.street||'',p_village:p.village||'',
+      p_brgy:p.brgy||'',p_district:p.district||'',p_order_type:p.orderType||'SLI',p_exclude_id:null});
+    if(error){ console.warn('duplicate check unavailable:',error.message); return null; }
+    return data;
+  }catch(err){ console.warn('duplicate check unavailable:',err); return null; }
+}
+function ordDupClear(){ ordDupAck=null; const p=$('#ordDupPanel'); if(p){p.style.display='none';p.innerHTML='';} }
+function renderDupPanel(dup){
+  const p=$('#ordDupPanel'); if(!p) return;
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const chip=(ok,label)=>`<span style="margin-right:10px;white-space:nowrap">${ok===null?'– ':(ok?'✓ ':'✗ ')}${label}</span>`;
+  const row=m=>`<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)">
+      <b>${m.pct}% match</b> — ${esc(m.id)} · ${esc(String(m.status||'').toUpperCase())} · encoded ${esc(m.encoded_on)} by ${esc(m.encoded_by)}<br>
+      ${esc(m.name)} — ${esc(m.address)}<br>
+      <span style="font-size:11px">${chip(m.same_name,'name '+m.name_pct+'%')}${chip(m.bday,'birthday')}${chip(m.contact,'contact')}${chip(m.email,'email')}${chip(m.same_address,'address '+m.addr_pct+'%')}</span>
+    </div>`;
+  const blocked=!!dup.blocked;
+  const head=blocked
+    ? '🚫 <b>Duplicate found — encoding not allowed.</b> This subscriber already exists in the system. If this is a mistake, correct the earlier JO’s details first.'
+    : '⚠️ <b>Possible duplicate found.</b> Review the match below before proceeding.';
+  p.innerHTML=`<div style="border:1px solid ${blocked?'#c2503a':'#b8860b'};background:${blocked?'#fdf0ee':'#fdf6e3'};color:#3a3a3a;border-radius:8px;padding:10px 12px;font-size:12px">
+      ${head}${(dup.matches||[]).slice(0,3).map(row).join('')}
+      ${blocked?'':'<div style="margin-top:9px"><button type="button" class="secondary-btn" id="ordDupProceed">Proceed anyway</button></div>'}
+    </div>`;
+  p.style.display='';
+  const go=$('#ordDupProceed');
+  if(go) go.onclick=()=>{ ordDupAck=(dup.matches&&dup.matches[0])||{pct:0,id:'?'}; $('#orderForm').requestSubmit($('#orderSubmit')); };
+  try{ p.scrollIntoView({block:'nearest'}); }catch(err){}
 }
 async function submitOrder(e){
   e.preventDefault();
@@ -2725,6 +2765,10 @@ async function submitOrder(e){
   if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err('Enter a valid email address (name@email.com).'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
+  // Date of birth: required on NEW encodes; optional on edit/resubmit (old JOs predate the field).
+  const bday=(f.birth_date||'').trim();
+  if(!ordEditId && !bday){ err('Date of birth is required.'); return; }
+  if(bday && bday>manilaToday()){ err('Date of birth cannot be in the future.'); return; }
   if(ordType==='SLI'){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
@@ -2745,6 +2789,20 @@ async function submitOrder(e){
   }
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
+  const restoreBtn=()=>{ btn.disabled=false; btn.textContent=(ordType==='SLI'?'Submit for validation':'Dispatch Load'); };
+  // Duplicate check — NEW encodes only, skipped once after "Proceed anyway" on a warning.
+  if(!ordEditId && !ordDupAck){
+    btn.textContent='Checking for duplicates…';
+    const dup=await dupCheckJO({first:fn,middle:t(f.middle_name),last:ln,birth:bday,primary:pno,ocn:ono,email:email,
+      house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:brgy,district:dist,orderType:ordType},client);
+    if(dup && dup.matches && dup.matches.length){
+      renderDupPanel(dup);
+      if(dup.blocked){ err('Encoding blocked — this subscriber already exists (see the details above).'); restoreBtn(); return; }
+      err('Possible duplicate — review the match above, then press "Proceed anyway" or correct the details.');
+      restoreBtn(); return;
+    }
+    ordDupClear();
+  }
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
@@ -2753,7 +2811,7 @@ async function submitOrder(e){
   // Dispatch — ang mga Dispatcher mismo ang nagsisilbing validator ng mga ito.
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
-    first_name:fn,middle_name:t(f.middle_name),last_name:ln,primary_no:pno,other_contact_no:ono,email:email,
+    first_name:fn,middle_name:t(f.middle_name),last_name:ln,birth_date:(bday||null),primary_no:pno,other_contact_no:ono,email:email,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
   if(ordType==='SLI'){
@@ -2784,11 +2842,14 @@ async function submitOrder(e){
       // Resubmit an edited REJECTED order — UPDATE (keep id/created_by/org), back to for_validation.
       const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
       const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time; delete patch.history;
+      if(!bday) delete patch.birth_date;   // blank on edit = keep whatever the record already has
       patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
       const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
       histLog(ordEditId, `Edited & resubmitted for validation by ${who}`);
     } else {
       const {error}=await client.from('jobs').insert(job); if(error) throw error;
+      // Leave a trace for the Validator when a warned duplicate was pushed through.
+      if(ordDupAck) histLog(jobId,`Encoded with duplicate warning: ${ordDupAck.pct}% match with ${ordDupAck.id}`);
     }
     if(ordType==='SLI') for(const cat of ['id','billing','premise']){
       for(let i=0;i<ordDocs[cat].length;i++){
@@ -2799,6 +2860,7 @@ async function submitOrder(e){
       }
     }
     const wasEdit=!!ordEditId; ordEditId=null;
+    ordDupClear();
     ordDocs={id:[],billing:[],premise:[]};
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
     const ovb2=$('#ordValBanner'); if(ovb2){ovb2.style.display='none';ovb2.innerHTML='';}
@@ -3785,7 +3847,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
@@ -3832,6 +3894,8 @@ function init(){
 
   // Forms
   $('#orderForm').onsubmit=submitOrder;
+  // Any edit to the form invalidates a pending "Proceed anyway" acknowledgement.
+  $('#orderForm').addEventListener('input',ordDupClear);
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...inp.files]; const b=$(`#orderModal [data-cnt="${cat}"]`); if(b)b.textContent=`${ordDocs[cat].length} file(s)`; });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
