@@ -1714,7 +1714,7 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,updated_at,status,validated_by&order=updated_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1745,7 +1745,7 @@ function paintValQueue(){
     : 'Unang beses pa lang na-submit — check the ID, Proof of Billing, and Premise photos before approving.';
   body.innerHTML=list.length?list.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.created_at||j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
   }).join(''):`<tr><td colspan="7" class="empty-cell">${valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.'}</td></tr>`;
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
 }
@@ -1864,7 +1864,7 @@ async function openValidate(jobId){
   // Object.assign sa mismong valJobs item para gumana rin ang decideValidation pagkatapos.
   const _full=await fetchFullJob(jobId); if(_full) Object.assign(j,_full);
   $('#valTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.updated_at)}`;
+  $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.created_at||j.updated_at)}`;
   // Resubmitted order? Ipakita sa validator kung sino ang UNANG nag-check at ang remarks noon.
   const vpc=$('#valPrevCheck'); if(vpc) vpc.innerHTML=valCheckBanner(j,'Resubmitted order — previously checked');
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
