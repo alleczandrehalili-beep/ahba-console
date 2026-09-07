@@ -155,7 +155,10 @@
       rows.push.apply(rows, page);
       if (page.length < 1000) break;
     }
-    return rows.filter(function (r) { return !r.deleted_at; }).map(normalizeJob);
+    // Tech-created SLR tickets (SLRT-…) ay HIWALAY na mundo — sariling "SLR Tickets"
+    // page ang nagpapakita sa kanila; kailanman HINDI sila sumasama sa jobs array
+    // para walang magalaw sa Job Orders / Timeline / Validation / extraction.
+    return rows.filter(function (r) { return !r.deleted_at && r.load_type !== 'SLR-TICKET'; }).map(normalizeJob);
   }
 
   async function upsertJobs(items) {

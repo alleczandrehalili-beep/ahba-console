@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-09-07.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-07.2" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -147,6 +147,7 @@
         <button class="nav-item" data-page="timeline"><i data-icon="clock"></i><span>Dashboard</span><b id="pendingBadge">0</b></button>
         <button class="nav-item" data-page="teams"><i data-icon="users"></i><span>Field Teams</span></button>
         <button class="nav-item" data-page="workorders"><i data-icon="clipboard"></i><span>Work Orders</span></button>
+        <button class="nav-item" data-page="slrtickets"><i data-icon="clipboard"></i><span>SLR Tickets</span><b id="slrBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="wims"><i data-icon="truck"></i><span>WIMS</span></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
         <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
@@ -309,6 +310,18 @@
       <section id="workordersPage" class="page">
         <div class="page-toolbar"><div><h2>Work orders</h2><p>All installation and repair requests.</p></div><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>New work order</button></div>
         <article class="panel full-table"><div class="filter-row"><div class="search-box"><i data-icon="search"></i><input id="jobSearch" placeholder="Search subscriber, ID, or area"></div><div class="filter-chips" id="jobFilters"><button class="active" data-filter="all">All</button><button data-filter="installation">Installation</button><button data-filter="repair">Repair</button><button data-filter="pending">Pending</button></div></div><div class="table-wrap"><table><thead><tr><th>Work order</th><th>Subscriber</th><th>Service</th><th>Location</th><th>Team</th><th>Status</th><th>Schedule</th></tr></thead><tbody id="workOrderBody"></tbody></table><div class="empty-row" id="workOrderEmpty" hidden>No work orders match your filters.</div></div></article>
+      </section>
+
+      <section id="slrticketsPage" class="page">
+        <div class="page-toolbar"><div><h2>SLR Tickets</h2><p>Repair tickets created by AHBA technician teams — separate from SLI job orders.</p></div><button class="secondary-btn" id="slrRefresh">↻ Refresh</button></div>
+        <article class="panel full-table">
+          <div class="filter-row">
+            <div class="search-box"><i data-icon="search"></i><input id="slrSearch" placeholder="Search ticket no., subscriber, IBAS, team, or address"></div>
+            <div class="filter-chips" id="slrStatusChips"><button class="active" data-slrst="open">Open</button><button data-slrst="completed">Completed</button><button data-slrst="closed">Cancelled / Negative</button><button data-slrst="all">All</button></div>
+          </div>
+          <div class="filter-row"><div class="filter-chips" id="slrTeamChips"></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Subscriber</th><th>IBAS</th><th>Contact</th><th>Address</th><th>Team</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="slrBody"></tbody></table><div class="empty-row" id="slrEmpty" hidden>No SLR tickets match your filters.</div></div>
+        </article>
       </section>
 
       <section id="expensesPage" class="page">
@@ -751,8 +764,8 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-09-07.1"></script>
+  <script src="app.js?v=2026-09-07.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-09-07.1"></script>
+  <script src="ahba-cloud.js?v=2026-09-07.2"></script>
 </body>
 </html>

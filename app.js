@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-07.1';
+const APP_VERSION='2026-09-07.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1669,7 +1669,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
@@ -2872,8 +2872,124 @@ async function submitOrder(e){
   btn.disabled=false; btn.textContent=(($('#orderForm').dataset.ordtype)==='SLI'?'Submit for validation':'Dispatch Load');
 }
 
+// ---------- 🎫 SLR Tickets (tech-created repairs) — SEPARATE monitoring ----------
+// Ang tickets ay nasa jobs table (load_type='SLR-TICKET') pero HINDI kasama sa jobs
+// array (sinasala sa getJobs) — ang page na ito ang tanging tanaw ng console sa kanila.
+let slrRows=[], slrSt='open', slrTeam='all', slrLoaded=false;
+const SLR_OPEN=['assigned','pending','en-route','on-site','in-progress'];
+const slrStatusOf=t=>SLR_OPEN.includes(t.status)?'open':(t.status==='completed'?'completed':'closed');
+const slrFmt=ts=>ts?new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—';
+async function slrFetch(){
+  const rows=[];
+  for(let off=0; off<10000; off+=1000){
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=*&load_type=eq.SLR-TICKET&deleted_at=is.null&order=created_at.desc&limit=1000&offset=${off}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const page=await r.json();
+    rows.push(...page);
+    if(page.length<1000) break;
+  }
+  slrRows=rows; slrLoaded=true;
+}
+async function renderSlrTickets(force){
+  const tb=$('#slrBody'); if(!tb) return;
+  if(!slrLoaded||force){
+    tb.innerHTML='<tr><td colspan="9" style="padding:14px;color:#8a9894">Loading tickets…</td></tr>';
+    try{ await slrFetch(); }
+    catch(e){ tb.innerHTML='<tr><td colspan="9" style="padding:14px;color:#c2503a">Could not load tickets: '+(e.message||e)+'</td></tr>'; return; }
+  }
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const teams=[...new Set(slrRows.map(t=>t.team).filter(Boolean))].sort();
+  const tc=$('#slrTeamChips');
+  if(tc){
+    tc.innerHTML=['all',...teams].map(t=>`<button class="${slrTeam===t?'active':''}" data-slrteam="${esc(t)}">${t==='all'?'All teams':esc(t)}</button>`).join('');
+    tc.querySelectorAll('[data-slrteam]').forEach(b=>b.onclick=()=>{slrTeam=b.dataset.slrteam;renderSlrTickets();});
+  }
+  $$('#slrStatusChips button').forEach(b=>b.classList.toggle('active',b.dataset.slrst===slrSt));
+  const q=(($('#slrSearch')&&$('#slrSearch').value)||'').trim().toUpperCase();
+  let list=slrRows.filter(t=>(slrSt==='all'||slrStatusOf(t)===slrSt)&&(slrTeam==='all'||t.team===slrTeam));
+  if(q) list=list.filter(t=>[t.ticket_no,t.subscriber,t.ibass_acct_no,t.team,t.address,t.id,t.service_remarks].join(' ').toUpperCase().includes(q));
+  const emp=$('#slrEmpty'); if(emp) emp.hidden=!!list.length;
+  tb.innerHTML=list.map(t=>`<tr>
+    <td><strong>${esc(t.ticket_no||'—')}</strong><span>${esc(t.id)}</span></td>
+    <td><strong>${esc(t.subscriber||'—')}</strong>${t.service_remarks?`<span>🛠 ${esc(t.service_remarks)}</span>`:''}</td>
+    <td>${esc(t.ibass_acct_no||'—')}</td>
+    <td>${esc(t.primary_no||'—')}</td>
+    <td>${esc(t.address||'—')}</td>
+    <td>${esc(t.team||'—')}</td>
+    <td><span class="status ${esc(t.status)}">${typeof statusLabel==='function'?statusLabel(t.status):esc(t.status)}</span></td>
+    <td>${slrFmt(t.created_at)}</td>
+    <td><button class="assign-btn" data-slrview="${esc(t.id)}">View</button></td></tr>`).join('');
+  tb.querySelectorAll('[data-slrview]').forEach(b=>b.onclick=()=>openSlrDetail(b.dataset.slrview));
+  slrBadgePaint();
+}
+function slrBadgePaint(){
+  const b=$('#slrBadge'); if(!b) return;
+  const n=slrRows.filter(t=>SLR_OPEN.includes(t.status)).length;
+  b.textContent=n; b.style.display=n?'':'none';
+}
+async function openSlrDetail(id){
+  let t=slrRows.find(x=>x.id===id); if(!t) t=await fetchFullJob(id);
+  if(!t){ showToast('Ticket not found — refresh and try again'); return; }
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  let ov=document.getElementById('slrDetailOv'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='slrDetailOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(8,30,26,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:18px';
+  const row=(l,v)=>v?`<div style="display:flex;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid #eef1ed;font-size:12.5px"><span style="color:#8a9894;white-space:nowrap">${l}</span><span style="text-align:right;font-weight:600">${esc(v)}</span></div>`:'';
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:640px;width:100%;max-height:88vh;overflow:auto;padding:20px 22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0;font-size:16px">🎫 Ticket ${esc(t.ticket_no||t.id)}</h3><button id="slrDetClose" class="secondary-btn">✕ Close</button></div>
+    ${row('Ticket ID',t.id)}${row('Status',t.status)}${row('Team',t.team)}${row('Subscriber',t.subscriber)}${row('IBAS Account',t.ibass_acct_no)}${row('Contact',t.primary_no)}${row('Address',t.address)}${row('Created',slrFmt(t.created_at))}${row('Completed',t.completed_at?slrFmt(t.completed_at):'')}${row('Service done',t.service_remarks)}
+    <div style="font-weight:800;font-size:12px;margin-top:14px">📦 WIMS materials used</div><div id="slrWims" style="font-size:12px;color:#5a6a66;margin-top:4px">Loading…</div>
+    <div style="font-weight:800;font-size:12px;margin-top:14px">📷 Photos</div><div id="slrPhotos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#8a9894">Loading…</div>
+    <div style="font-weight:800;font-size:12px;margin-top:14px">🕓 History</div><pre style="white-space:pre-wrap;font-size:11px;background:#f6f8f6;border-radius:10px;padding:10px;margin-top:6px">${esc(t.history||'—')}</pre>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('slrDetClose').onclick=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  fetch(`${SUPA_URL}/rest/v1/job_photos?select=path,label&job_id=eq.${encodeURIComponent(id)}&order=created_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}})
+    .then(r=>r.ok?r.json():[])
+    .then(ph=>{ const pw=document.getElementById('slrPhotos'); if(!pw) return;
+      pw.innerHTML=ph.length?ph.map(p=>`<a href="${SUPA_URL}/storage/v1/object/public/job-photos/${p.path}" target="_blank" rel="noopener"><img src="${SUPA_URL}/storage/v1/object/public/job-photos/${p.path}" style="width:86px;height:86px;object-fit:cover;border-radius:9px;border:1px solid #e3e8e2" alt="${esc(p.label||'')}" title="${esc(p.label||'')}"></a>`).join('')
+        :'<span style="color:#8a9894">No photos yet.</span>'; })
+    .catch(()=>{});
+  fetch(`${SUPA_URL}/rest/v1/rpc/jo_materials`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Profile':'wims','Content-Type':'application/json'},body:JSON.stringify({p_jo:id})})
+    .then(r=>r.ok?r.json():[])
+    .then(rows=>{ const wv=document.getElementById('slrWims'); if(!wv) return;
+      if(!rows||!rows.length){ wv.innerHTML='<span style="color:#8a9894">No WIMS usage report yet — appears once the ticket is closed with declared materials.</span>'; return; }
+      const SKIP=['jo_number','subscriber','account_no','team','technician','work_account','completed_at','photos','iptv_count'];
+      const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+      wv.innerHTML=rows.map(r0=>Object.entries(r0)
+        .filter(([k,v])=>v!=null&&v!==''&&v!==0&&!SKIP.includes(k))
+        .map(([k,v])=>`<div style="display:flex;justify-content:space-between;border-bottom:1px solid #eef1ed;padding:3px 0"><span>${nice(k)}</span><b>${esc(v)}</b></div>`).join(''))
+        .join('<hr style="border:0;border-top:1px dashed #dfe5df">'); })
+    .catch(()=>{ const wv=document.getElementById('slrWims'); if(wv) wv.textContent='Could not load materials.'; });
+}
+// Dispatcher notification: badge + toast — bawat 2 minuto habang bukas ang console.
+async function slrBadgeTick(){
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id,team,ticket_no,status&load_type=eq.SLR-TICKET&deleted_at=is.null&order=created_at.desc&limit=1000`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) return;
+    const rows=await r.json();
+    const total=rows.length;
+    const last=+(localStorage.getItem('slr_seen_count')||0);
+    if(last>0 && total>last){
+      const t0=rows[0];
+      showToast(`🎫 New SLR ticket${(total-last)>1?'s':''}${t0?(' — '+(t0.ticket_no||t0.id)+' from '+(t0.team||'?')):''}`);
+      if($('#slrticketsPage')?.classList.contains('active')) renderSlrTickets(true);
+    }
+    localStorage.setItem('slr_seen_count', String(total));
+    const open=rows.filter(t=>SLR_OPEN.includes(t.status)).length;
+    const b=$('#slrBadge'); if(b){ b.textContent=open; b.style.display=open?'':'none'; }
+  }catch(e){}
+}
+let slrTickTimer=null;
+function startSlrTicker(){
+  if(slrTickTimer) return;
+  slrBadgeTick();
+  slrTickTimer=setInterval(slrBadgeTick, 120000);
+}
+
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -2974,7 +3090,7 @@ function applyAccess(u){
   // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
   const canExp=(u.is_super||allowed.includes('expenses'));
@@ -2987,6 +3103,7 @@ function applyAccess(u){
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();
+  startSlrTicker();   // 🎫 dispatcher notification: SLR ticket badge + toast poll
 }
 // Any dispatcher (dispatch access OR superadmin): wipe ALL loads/job orders from the board.
 async function deleteAllLoads(){
@@ -3896,6 +4013,10 @@ function init(){
   $('#orderForm').onsubmit=submitOrder;
   // Any edit to the form invalidates a pending "Proceed anyway" acknowledgement.
   $('#orderForm').addEventListener('input',ordDupClear);
+  // 🎫 SLR Tickets page controls
+  const _ss=$('#slrSearch'); if(_ss) _ss.oninput=()=>renderSlrTickets();
+  $$('#slrStatusChips button').forEach(b=>b.onclick=()=>{ slrSt=b.dataset.slrst; renderSlrTickets(); });
+  const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...inp.files]; const b=$(`#orderModal [data-cnt="${cat}"]`); if(b)b.textContent=`${ordDocs[cat].length} file(s)`; });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
