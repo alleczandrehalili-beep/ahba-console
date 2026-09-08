@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-07.2';
+const APP_VERSION='2026-09-08.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -599,6 +599,7 @@ function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
   $('#jdSub').textContent=`${statusLabel(j.status||'—')}${j.team?' · '+j.team:''}${j.dispatch_count?' · ⟳ ×'+j.dispatch_count:''}`;
+  if(j.qa_status){ $('#jdSub').textContent+=' · QA: '+j.qa_status+(j.qa_assessment?' · '+j.qa_assessment:''); }   // mirror ng qa.audits (sync_job)
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
     F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
@@ -1669,11 +1670,23 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
 function initWims(){ const f=document.getElementById('wimsFrame'); if(f && !f.getAttribute('src')){ f.setAttribute('src','wims-admin-live.html?v='+APP_VERSION); } }
+// ===== QA AUDIT (field inspections) — module in console-qa.js; mounted lazily when the page opens =====
+let _qaMount=null;
+function initQA(){
+  const rootEl=document.getElementById('qaRoot'); if(!rootEl||_qaMount) return;
+  if(!window.dashAuthClient||!window.QaApi||!window.ConsoleQA){ rootEl.innerHTML='<div class="empty-cell">QA module not loaded — reload the page.</div>'; return; }
+  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
+  _qaMount=ConsoleQA.mount(rootEl,{api,user:window.dashUser||{},deps:{toast:showToast,canEdit:dashCanEdit('qaaudit'),L:window.L,ensureXLSX:(typeof ensureXLSX==='function'?ensureXLSX:null)},
+    onBadge:n=>{const b=document.getElementById('qaBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }},
+    onAssigned:({inspector,date,count})=>{ // push sa inspector (existing send-push Edge Function; team = inspector username)
+      try{ fetch(`${SUPA_URL}/functions/v1/send-push`,{method:'POST',headers:DH(),body:JSON.stringify({team:inspector,title:'New QA assignment',body:`${count} inspection(s) for ${date}`,url:'mobile.html'})}).catch(()=>{}); }catch(e){}
+    }});
+}
 // Hand the embedded WIMS admin our live Supabase session so it reuses this login
 // (no separate sign-in). We only ever answer OUR own iframe's request.
 window.addEventListener('message', function(e){
@@ -2989,7 +3002,7 @@ function startSlrTicker(){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -2997,6 +3010,7 @@ function dgErr(id,msg){const e=$(id); if(!e)return; e.textContent=msg||''; e.cla
 function startDashAuth(){
   if(!window.supabase?.createClient){ console.warn('supabase-js not loaded'); return; }
   dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+  window.dashAuthClient=dashAuth;   // QA Audit module (console-qa.js) reuses the same authenticated client
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
   dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
@@ -3203,7 +3217,7 @@ async function renderSubAccounts(){
     scFetch(`technicians?select=*&org_id=eq.${subSelId}&order=username.asc`),
     scFetch(`work_accounts?select=*&org_id=eq.${subSelId}&order=name.asc`)
   ]);
-  const roleLbl={technician:'Technician',sales_agent:'Sales agent',security:'Security'};
+  const roleLbl={technician:'Technician',sales_agent:'Sales agent',security:'Security',qa_inspector:'QA inspector'};
   const rows=[
     ...dash.map(u=>({u:u.username,type:'Console',role:(u.is_super?'Superadmin':(u.role_label||'Console user')),status:u.must_change?'Needs PW setup':'Active',target:'dash'})),
     ...techs.map(t=>({u:t.username,type:'Mobile',role:(roleLbl[t.role]||t.role||'Technician')+(t.area?(' · '+t.area):''),status:t.must_change?'Needs PW setup':'Active',target:'tech'}))
