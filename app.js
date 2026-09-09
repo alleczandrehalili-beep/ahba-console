@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-08.1';
+const APP_VERSION='2026-09-10.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1670,7 +1670,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
@@ -1686,6 +1686,15 @@ function initQA(){
     onAssigned:({inspector,date,count})=>{ // push sa inspector (existing send-push Edge Function; team = inspector username)
       try{ fetch(`${SUPA_URL}/functions/v1/send-push`,{method:'POST',headers:DH(),body:JSON.stringify({team:inspector,title:'New QA assignment',body:`${count} inspection(s) for ${date}`,url:'mobile.html'})}).catch(()=>{}); }catch(e){}
     }});
+}
+let _qaFindMount=null;
+function initQAFindings(){
+  const rootEl=document.getElementById('qaFindRoot'); if(!rootEl) return;
+  if(_qaFindMount){ _qaFindMount.refresh(); return; }
+  if(!window.dashAuthClient||!window.QaApi||!window.ConsoleQAFindings){ rootEl.innerHTML='<div class="empty-cell">QA module not loaded — reload the page.</div>'; return; }
+  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
+  _qaFindMount=ConsoleQAFindings.mount(rootEl,{api,user:window.dashUser||{},org:(window.dashUser||{}).org_id||null,deps:{toast:showToast,isVisible:()=>{const s=document.getElementById('qafindingsPage'); return !!(s&&s.classList.contains('active'));}},
+    onBadge:n=>{const b=document.getElementById('qaFindBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }}});
 }
 // Hand the embedded WIMS admin our live Supabase session so it reuses this login
 // (no separate sign-in). We only ever answer OUR own iframe's request.
@@ -3002,7 +3011,7 @@ function startSlrTicker(){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -3146,10 +3155,10 @@ function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is
 
 // ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
 // Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
-const SUBCON_CONSOLE_PAGES=['overview','validation','timeline','teams','workorders','attendance','completed','remittance','history'];
+const SUBCON_CONSOLE_PAGES=['overview','validation','timeline','teams','workorders','attendance','completed','remittance','history','qafindings'];
 // Editable pages for a subcontractor console user. Validator ('validation') + QA Validation ('completed')
 // are VIEW-ONLY — subcon can see the status of their JOs, but only GC validates/approves/rejects.
-const SUBCON_CONSOLE_EDIT=SUBCON_CONSOLE_PAGES.filter(p=>p!=='completed'&&p!=='validation');
+const SUBCON_CONSOLE_EDIT=SUBCON_CONSOLE_PAGES.filter(p=>p!=='completed'&&p!=='validation'&&p!=='qafindings');
 let subOrgs=[], subSelId=null, subSelCode='', subSelName='';
 async function scFetch(path){ try{ const r=await fetch(`${SUPA_URL}/rest/v1/${path}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); return r.ok?await r.json():[]; }catch(e){ return []; } }
 function scWrite(path,method,body){ return fetch(`${SUPA_URL}/rest/v1/${path}`,{method,headers:DH(),body:body?JSON.stringify(body):undefined}); }

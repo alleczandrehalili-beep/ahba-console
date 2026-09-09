@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-09-08.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-10.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -153,6 +153,7 @@
         <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
         <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>QA Validation</span></button>
         <button class="nav-item" data-page="qaaudit"><i data-icon="check"></i><span>QA Audit</span><b id="qaBadge" style="display:none">0</b></button>
+        <button class="nav-item" data-page="qafindings"><i data-icon="check"></i><span>QA Findings</span><b id="qaFindBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="remittance"><i data-icon="wallet"></i><span>Remittance</span></button>
         <button class="nav-item" data-page="history"><i data-icon="clipboard"></i><span>Billing Validation</span></button>
         <button class="nav-item" data-page="access" style="display:none"><i data-icon="users"></i><span>Access Control</span></button>
@@ -561,6 +562,7 @@
         <div class="page-toolbar"><div><h2>QA Audit · Field inspections</h2><p>Queue, assignment, results and weekly review of subcontractor installs.</p></div></div>
         <div id="qaRoot"></div>
       </section>
+      <section id="qafindingsPage" class="page"><div class="page-toolbar"><div><h2>QA Findings · Rectifications</h2><p>QA inspection findings on your installs, deadlines and re-inspection results.</p></div></div><div id="qaFindRoot"></div></section>
       <section id="wimsPage" class="page">
         <iframe id="wimsFrame" title="WIMS Warehouse Inventory" style="width:100%;height:calc(100vh - 130px);min-height:600px;border:0;border-radius:14px;background:#eef1ec"></iframe>
       </section>
@@ -769,10 +771,10 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-09-08.1"></script>
+  <script src="app.js?v=2026-09-10.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-09-08.1"></script>
+  <script src="ahba-cloud.js?v=2026-09-10.1"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-09-08.1"></script><script src="qa-api.js?v=2026-09-08.1"></script><script src="console-qa.js?v=2026-09-08.1"></script>
+  <script src="qa-core.js?v=2026-09-10.1"></script><script src="qa-api.js?v=2026-09-10.1"></script><script src="console-qa.js?v=2026-09-10.1"></script><script src="console-qa-findings.js?v=2026-09-10.1"></script>
 </body>
 </html>
