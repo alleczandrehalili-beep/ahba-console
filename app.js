@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-10.1';
+const APP_VERSION='2026-09-10.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1880,6 +1880,28 @@ async function fetchDocsFor(ids){
     const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push(x)}); return m;
   }catch(e){return{}}
 }
+let valOpenId=null;
+// Validator view of the duplicate check: read-only (no "Proceed anyway"); shows the same % match + per-field chips as the encoder saw.
+function valDupRender(dup,state){
+  const p=$('#valDupPanel'); if(!p) return;
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const box=(border,bg,html)=>`<div style="border:1px solid ${border};background:${bg};color:#3a3a3a;border-radius:8px;padding:10px 12px;font-size:12px">${html}</div>`;
+  p.style.display='';
+  if(state==='loading'){ p.innerHTML=box('#dfe5df','#f7f9f7','Checking for duplicate subscriber…'); return; }
+  if(!dup){ p.innerHTML=box('#dfe5df','#f7f9f7','Duplicate check unavailable right now.'); return; }
+  const ms=(dup.matches||[]);
+  if(!ms.length){ p.innerHTML=box('#bfe3cf','#eef8f1','✅ <b>No similar subscriber found</b> — all-time check on name, birthday, contact, email and address.'); return; }
+  const chip=(ok,label)=>`<span style="margin-right:10px;white-space:nowrap">${ok===null?'– ':(ok?'✓ ':'✗ ')}${label}</span>`;
+  const row=m=>`<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)">
+      <b>${m.pct}% match</b> — ${esc(m.id)} · ${esc(String(m.status||'').toUpperCase())} · encoded ${esc(m.encoded_on)} by ${esc(m.encoded_by)}<br>
+      ${esc(m.name)} — ${esc(m.address)}<br>
+      <span style="font-size:11px">${chip(m.same_name,'name '+m.name_pct+'%')}${chip(m.bday,'birthday')}${chip(m.contact,'contact')}${chip(m.email,'email')}${chip(m.same_address,'address '+m.addr_pct+'%')}</span>
+    </div>`;
+  const strong=!!dup.blocked;
+  const head=strong?'🚫 <b>Strong duplicate match</b> — this subscriber appears to exist already. Check before validating.'
+                   :'⚠️ <b>Possible duplicate</b> — compare with the JO(s) below before validating.';
+  p.innerHTML=box(strong?'#c2503a':'#b8860b', strong?'#fdf0ee':'#fdf6e3', head+ms.slice(0,3).map(row).join(''));
+}
 async function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
   // Lite na ang listahan — kunin ang buong record (lahat ng field + history para sa banner).
@@ -1889,6 +1911,11 @@ async function openValidate(jobId){
   $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.created_at||j.updated_at)}`;
   // Resubmitted order? Ipakita sa validator kung sino ang UNANG nag-check at ang remarks noon.
   const vpc=$('#valPrevCheck'); if(vpc) vpc.innerHTML=valCheckBanner(j,'Resubmitted order — previously checked');
+  // Duplicate-subscriber check (same RPC + % scoring the sales app shows on encode) — the validator sees it too.
+  valOpenId=jobId; valDupRender(null,'loading');
+  dupCheckJO({first:j.first_name,middle:j.middle_name,last:j.last_name,birth:j.birth_date,primary:j.primary_no,ocn:j.other_contact_no,email:j.email,
+    house:j.house_no,street:j.street_name,village:j.village,brgy:j.brgy,district:j.district,orderType:j.order_type||'SLI'},window.dashAuthClient,jobId)
+    .then(d=>{ if(valOpenId===jobId) valDupRender(d); });
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
@@ -2734,13 +2761,13 @@ async function editRejectedOrder(jobId){
 // one logic shared with mobile, no client row caps. Fails OPEN if the RPC is
 // missing/unreachable (the insert itself would fail too if the API were down).
 let ordDupAck=null;   // set by "Proceed anyway" — allows a WARN-level match through once
-async function dupCheckJO(p,client){
+async function dupCheckJO(p,client,excludeId){
   try{
     const {data,error}=await client.rpc('check_duplicate_jo',{
       p_first:p.first,p_middle:p.middle||'',p_last:p.last,p_birth:p.birth||null,
       p_primary:p.primary||'',p_ocn:p.ocn||'',p_email:p.email||'',
       p_house:p.house||'',p_street:p.street||'',p_village:p.village||'',
-      p_brgy:p.brgy||'',p_district:p.district||'',p_order_type:p.orderType||'SLI',p_exclude_id:null});
+      p_brgy:p.brgy||'',p_district:p.district||'',p_order_type:p.orderType||'SLI',p_exclude_id:excludeId||null});
     if(error){ console.warn('duplicate check unavailable:',error.message); return null; }
     return data;
   }catch(err){ console.warn('duplicate check unavailable:',err); return null; }
