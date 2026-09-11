@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-10.3';
+const APP_VERSION='2026-09-11.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2644,6 +2644,29 @@ async function exportRemittance(){
 
 // ---------- Add Job Order (console intake → Validator, mirrors sales agent) ----------
 let ordDocs={id:[],billing:[],premise:[]};
+// Render the file-count + thumbnail strip for each document category, and wire the
+// per-thumb ✕ remove buttons. Mirrors the mobile sales form's saRenderDocs().
+function ordRenderDocs(){
+  ['id','billing','premise'].forEach(cat=>{
+    const arr=ordDocs[cat]||[];
+    const b=$(`#orderModal [data-cnt="${cat}"]`); if(b) b.textContent=`${arr.length} file(s)`;
+    const t=$(`#orderModal [data-thumbs="${cat}"]`);
+    if(t){
+      t.innerHTML=arr.map((f,i)=>`<span class="ord-thumb"><img src="${f._url||(f._url=URL.createObjectURL(f))}" alt=""><button type="button" data-remdoc="${cat}" data-remi="${i}" title="Remove">✕</button></span>`).join('');
+      t.querySelectorAll('[data-remdoc]').forEach(btn=>btn.onclick=()=>{
+        const c=btn.dataset.remdoc, idx=Number(btn.dataset.remi);
+        const f=(ordDocs[c]||[])[idx]; if(f && f._url) URL.revokeObjectURL(f._url);
+        ordDocs[c].splice(idx,1); ordRenderDocs();
+      });
+    }
+  });
+}
+// Revoke any preview URLs and reset ordDocs + counts + thumbs back to empty.
+function ordClearDocs(){
+  ['id','billing','premise'].forEach(cat=>(ordDocs[cat]||[]).forEach(f=>{ if(f._url) URL.revokeObjectURL(f._url); }));
+  ordDocs={id:[],billing:[],premise:[]};
+  ordRenderDocs();
+}
 // Plan dropdowns for the console New work order form (match the mobile sales app)
 const ORD_PLANS_SDU=['PLAN 999 - 100MBPS','PLAN 1500 - 300MBPS','PLAN 1699 - 600MBPS / 400MBPS (VICE VERSA)','PLAN 2000 - 500MBPS','PLAN 2500 - 2500MBPS','PLAN 3000 - 700MBPS / 1GBPS (VICE VERSA)','PLAN 3500 - 1GBPS'];
 const ORD_PLANS_MDU=['PLAN 999 - 100MBPS','PLAN 1399 - 200MBPS','PLAN 1500 - 300MBPS','PLAN 2000 - 500MBPS'];
@@ -2728,7 +2751,7 @@ async function editRejectedOrder(jobId){
   const _full=await fetchFullJob(jobId);
   if(_full){ if(j) Object.assign(j,_full); else j=_full; }
   if(!j){ showToast('Order not found — refresh and try again'); return; }
-  ordEditId=jobId; ordDocs={id:[],billing:[],premise:[]};
+  ordEditId=jobId; ordClearDocs();
   openModal($('#orderModal'));
   // Ipakita sa encoder (GC o Subcon) kung SINO ang unang nag-check for validation at ANO ang remarks.
   const ovb=$('#ordValBanner');
@@ -2910,7 +2933,7 @@ async function submitOrder(e){
     }
     const wasEdit=!!ordEditId; ordEditId=null;
     ordDupClear();
-    ordDocs={id:[],billing:[],premise:[]};
+    ordClearDocs();
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
     const ovb2=$('#ordValBanner'); if(ovb2){ovb2.style.display='none';ovb2.innerHTML='';}
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
@@ -4014,7 +4037,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordDocs={id:[],billing:[],premise:[]}; $$('#orderModal [data-cnt]').forEach(x=>x.textContent='0 file(s)'); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
@@ -4067,7 +4090,7 @@ function init(){
   const _ss=$('#slrSearch'); if(_ss) _ss.oninput=()=>renderSlrTickets();
   $$('#slrStatusChips button').forEach(b=>b.onclick=()=>{ slrSt=b.dataset.slrst; renderSlrTickets(); });
   const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
-  $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...inp.files]; const b=$(`#orderModal [data-cnt="${cat}"]`); if(b)b.textContent=`${ordDocs[cat].length} file(s)`; });
+  $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
     fetch(`${SUPA_URL}/rest/v1/expenses`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({team:f.team,category:f.category,description:f.description,amount:Number(f.amount),job_id:f.workOrder||null,status:'Pending',work_date:manilaToday()})}).then(()=>setTimeout(renderExpenses,400)).catch(()=>{});

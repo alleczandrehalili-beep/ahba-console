@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-09-10.3" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-11.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -646,9 +646,21 @@
 
       <div class="form-grid" id="ordSecDocs">
         <div class="field full form-sec">Documents</div>
-        <label class="field full"><span>Valid ID <em style="font-style:normal;color:#c2503a">*required</em> · <b data-cnt="id">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="id"></label>
-        <label class="field full"><span>Proof of Billing <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="billing">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="billing"></label>
-        <label class="field full"><span>Subscriber Premise <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="premise">0 file(s)</b></span><input type="file" accept="image/*" multiple data-doc="premise"></label>
+        <div class="field full">
+          <span>Valid ID <em style="font-style:normal;color:#c2503a">*required</em> · <b data-cnt="id">0 file(s)</b></span>
+          <div class="ord-thumbs" data-thumbs="id"></div>
+          <div style="display:flex;gap:8px"><label class="addphoto" style="flex:1">📷 Camera<input type="file" accept="image/*" capture="environment" multiple hidden data-doc="id"></label><label class="addphoto" style="flex:1">🖼️ Album<input type="file" accept="image/*" multiple hidden data-doc="id"></label></div>
+        </div>
+        <div class="field full">
+          <span>Proof of Billing <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="billing">0 file(s)</b></span>
+          <div class="ord-thumbs" data-thumbs="billing"></div>
+          <div style="display:flex;gap:8px"><label class="addphoto" style="flex:1">📷 Camera<input type="file" accept="image/*" capture="environment" multiple hidden data-doc="billing"></label><label class="addphoto" style="flex:1">🖼️ Album<input type="file" accept="image/*" multiple hidden data-doc="billing"></label></div>
+        </div>
+        <div class="field full">
+          <span>Subscriber Premise <em style="font-style:normal;color:#9aa6a2">(optional)</em> · <b data-cnt="premise">0 file(s)</b></span>
+          <div class="ord-thumbs" data-thumbs="premise"></div>
+          <div style="display:flex;gap:8px"><label class="addphoto" style="flex:1">📷 Camera<input type="file" accept="image/*" capture="environment" multiple hidden data-doc="premise"></label><label class="addphoto" style="flex:1">🖼️ Album<input type="file" accept="image/*" multiple hidden data-doc="premise"></label></div>
+        </div>
       </div>
       <div id="ordDupPanel" style="display:none;margin:8px 25px 0"></div>
       <div class="err" id="orderErr" style="padding:2px 25px;color:#c2503a;font-size:11px;min-height:14px"></div>
@@ -772,10 +784,10 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-09-10.3"></script>
+  <script src="app.js?v=2026-09-11.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-09-10.3"></script>
+  <script src="ahba-cloud.js?v=2026-09-11.1"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-09-10.3"></script><script src="qa-api.js?v=2026-09-10.3"></script><script src="console-qa.js?v=2026-09-10.3"></script><script src="console-qa-findings.js?v=2026-09-10.3"></script>
+  <script src="qa-core.js?v=2026-09-11.1"></script><script src="qa-api.js?v=2026-09-11.1"></script><script src="console-qa.js?v=2026-09-11.1"></script><script src="console-qa-findings.js?v=2026-09-11.1"></script>
 </body>
 </html>
