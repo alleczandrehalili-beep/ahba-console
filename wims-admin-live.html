@@ -386,7 +386,7 @@
   function isSalesAcct(code){return /^S[AG]\d/i.test((((code||'').split('_')[1])||''));}   // SA=sales, SG=guard — hindi field teams
 
   // ---- state ----
-  var teams=[], boxes=[], stock=[], pick={}, curBox=null, issCat='modem';
+  var teams=[], boxes=[], stock=[], pick={}, curBox=null, issCat='modem', findPick={};   // findPick = serial-direct release list (mula search)
 
   function boot(){
     setConn('ok','connected');
@@ -596,16 +596,23 @@
     el.style.display='';
     el.innerHTML='In-field now for this team · <b>📶 Modem '+teamInField('modem')+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'</b> <span style="color:#8a9a94">(cap lifted)</span>';
   }
+  function renderFindPicks(){
+    var fo=$('#issFindOut'); if(!fo) return;
+    var ks=Object.keys(findPick);
+    fo.innerHTML=ks.length?('<div class="note info" style="margin:6px 0"><b>Serial-direct release · '+ks.length+'</b> — no box needed; box rules still apply server-side.<div style="margin-top:6px">'+
+      ks.map(function(sn){ return '<span class="chip" style="margin:2px 4px 2px 0">'+(findPick[sn]==='iptv'?'📺':'📶')+' '+sn+' <button type="button" data-findrm="'+sn+'" style="border:0;background:none;color:#8a2013;font-weight:800;cursor:pointer">✕</button></span>'; }).join('')+
+      '</div></div>'):'';
+  }
   function updateRelease(){
-    var n=Object.keys(pick).filter(function(s){return pick[s];}).length;
+    var nb=Object.keys(pick).filter(function(s){return pick[s];}).length;
+    var nd=Object.keys(findPick).length;
+    var n=nb+nd;
     $('#pickN').textContent=n;
     renderCap();
-    var boxObj=boxes.filter(function(b){return b.id===curBox;})[0];
-    var cat=boxObj?boxObj.category:null;
-    var have=cat?teamInField(cat):0;
-    var exceeds=false;   // 10-per-type cap LIFTED per owner (2026-08-19) — restore with wims-IPTV-share.sql + revert this
-    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox&&!exceeds);
-    $('#doRelease').textContent=exceeds?('⚠ Max '+CAP+' '+cat+' per team — '+have+' already in-field'):('📤 Release '+n+' CPE');
+    var exceeds=false;   // 10-per-type cap LIFTED per owner (2026-08-19)
+    // payag kahit 1 CPE; direct picks ay hindi nangangailangan ng box
+    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&(nd>0||curBox)&&!exceeds);
+    $('#doRelease').textContent='📤 Release '+n+' CPE'+(nd?' ('+nd+' serial-direct)':'');
   }
 
   // ---- stock tab ----
@@ -997,14 +1004,16 @@
 
     var fp=e.target.closest('[data-findpick]');
     if(fp){
-      var fs=fp.getAttribute('data-findpick'), fb=fp.getAttribute('data-findbox'), fc=fp.getAttribute('data-findcat');
-      issCat=fc; $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-isscat')===fc);});
-      curBox=fb; pick={}; pick[fs]=true;
-      renderBoxes(); renderCap(); renderUnits(); updateRelease();
-      var fo=$('#issFindOut'); if(fo) fo.innerHTML='<div class="note info" style="margin:6px 0">✓ <b>'+fs+'</b> selected — box and category set. Tick more serials below if needed.</div>';
+      // SERIAL-DIRECT release (owner 2026-09-11): ang piniling serial ay pumapasok
+      // sa direct list — hindi na kailangan ng box; ang box sharing rules at team
+      // stamps ay ine-enforce ng server (release_serials) bawat pinagmulang box.
+      findPick[fp.getAttribute('data-findpick')]=fp.getAttribute('data-findcat');
+      renderFindPicks(); updateRelease();
       var fi=$('#issFind'); if(fi) fi.value='';
       return;
     }
+    var fr=e.target.closest('[data-findrm]');
+    if(fr){ delete findPick[fr.getAttribute('data-findrm')]; renderFindPicks(); updateRelease(); return; }
     var ct=e.target.closest('[data-isscat]');
     if(ct){ issCat=ct.getAttribute('data-isscat');
       $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b===ct);});
@@ -1058,7 +1067,8 @@
     var bmap={}; boxes.forEach(function(b){ bmap[b.id]=b; });
     out.innerHTML=ms.length?ms.slice(0,8).map(function(u){
       var b=bmap[u.box_id]||{};
-      return '<button type="button" class="chip" data-findpick="'+u.serial+'" data-findbox="'+u.box_id+'" data-findcat="'+u.category+'" style="display:block;width:100%;text-align:left;margin-top:6px">'+(u.category==='iptv'?'📺':'📶')+' <b>'+u.serial+'</b> · '+(u.model||u.category)+' · Box '+(b.box_no!=null?b.box_no:'?')+(b.deliveries&&b.deliveries.dr_number?(' · '+b.deliveries.dr_number):'')+'</button>';
+      var boxLbl=(b.box_no!=null)?('Box '+b.box_no+(b.deliveries&&b.deliveries.dr_number?(' · '+b.deliveries.dr_number):'')):'no box — direct release';
+      return '<button type="button" class="chip" data-findpick="'+u.serial+'" data-findcat="'+u.category+'" style="display:block;width:100%;text-align:left;margin-top:6px">'+(u.category==='iptv'?'📺':'📶')+' <b>'+u.serial+'</b> · '+(u.model||u.category)+' · '+boxLbl+'</button>';
     }).join(''):'<div style="font-size:11px;color:#c2503a;font-weight:700;padding:6px 0">No IN-STOCK serial matches "'+q+'" — baka naka-issue na o wala sa stock.</div>';
   });
 
@@ -1080,14 +1090,19 @@
   });
 
   function doRelease(){
-    var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
-    if(!teamId||!curBox||!serials.length)return;
+    var teamId=$('#issTeam').value;
+    var boxSerials=Object.keys(pick).filter(function(s){return pick[s];});
+    var directSerials=Object.keys(findPick);
+    var direct=directSerials.length>0;
+    var serials=direct?directSerials.concat(boxSerials.filter(function(x){return directSerials.indexOf(x)<0;})):boxSerials;
+    if(!teamId||!serials.length)return;
+    if(!direct&&!curBox)return;
     var kits=Math.max(0,parseInt(($('#issKits')||{}).value,10)||0);
     var im=collectIssueMats();
     if(im.err){ toast(im.err,true); return; }
     var btn=$('#doRelease');btn.disabled=true;btn.textContent='Filing request…';
-    rpc('request_issuance',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');pick={};curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
+    rpc('request_issuance',{p_team_id:teamId,p_box_id:(direct?null:curBox),p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');pick={};findPick={};renderFindPicks();curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
