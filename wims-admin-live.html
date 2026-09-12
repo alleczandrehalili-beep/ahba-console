@@ -106,7 +106,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team (subcon releases go to the subcon COMPANY warehouse — AVELINE / J2 / RIA TECH / ALLY'S 88), pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 4 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
+      <p class="desc">Pick a team (subcon releases go to the subcon COMPANY warehouse — AVELINE / J2 / RIA TECH / ALLY'S 88), pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. Policy: the MODEM box team lock is a TOGGLE (switch below); an IPTV box is shared by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">CPE category</div>
@@ -121,6 +121,7 @@
       <div class="lbl">Box to issue from</div>
       <div class="row"><select id="issBox" style="min-width:300px"><option value="">— Select box —</option></select></div>
       <div id="capInfo" class="note info" style="display:none;margin-top:0"></div>
+      <div id="modemLockCtl" style="margin:6px 0"></div>
       <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
       <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
@@ -390,7 +391,7 @@
 
   function boot(){
     setConn('ok','connected');
-    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals(); loadTaskTypes();
+    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals(); loadTaskTypes(); loadModemLock();
   }
 
   // ---- individual-item issuance: central balances + qty grid sa Issuance tab ----
@@ -563,10 +564,10 @@
         var sh=Object.keys(owners).length;
         tag=sh?(' · 👥 '+sh+'/4 teams'):'';
       } else {
-        // TEMPORARY: modem boxes shared by up to 4 teams (owner order 2026-08-22)
+        // modem box lock = TOGGLE (modemLockN; 0 = OFF/unlimited)
         var mOwners={}; stock.forEach(function(u){ if(u.box_id===b.id&&u.owner_team_id) mOwners[u.owner_team_id]=1; });
         var msh=Object.keys(mOwners).length;
-        tag=msh?(' · 👥 '+msh+'/4 teams'):'';
+        tag=msh?(' · 👥 '+msh+(modemLockN>0?('/'+modemLockN):'')+' teams'):'';
       }
       var imp='';
       if(b.deliveries&&b.deliveries.date_received){
@@ -595,6 +596,20 @@
     if(!tid){el.style.display='none';return;}
     el.style.display='';
     el.innerHTML='In-field now for this team · <b>📶 Modem '+teamInField('modem')+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'</b> <span style="color:#8a9a94">(cap lifted)</span>';
+  }
+  // ---- MODEM BOX LOCK toggle (config modem_share_teams; 0 = OFF) ----
+  var modemLockN=0;
+  function loadModemLock(){
+    api('/config?select=value&key=eq.modem_share_teams')
+      .then(function(rows){ modemLockN=(rows&&rows[0])?(parseInt(rows[0].value,10)||0):0; renderModemLock(); renderBoxes(); })
+      .catch(function(){ var el=$('#modemLockCtl'); if(el) el.innerHTML='<span class="empty">Modem lock toggle: run wims-MODEM-lock-toggle.sql first.</span>'; });
+  }
+  function renderModemLock(){
+    var el=$('#modemLockCtl'); if(!el) return;
+    el.innerHTML='<div class="note '+(modemLockN>0?'warn':'info')+'" style="margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      '<span>🔒 <b>Modem box team lock:</b> '+(modemLockN>0?('ON — max '+modemLockN+' teams per box'):'OFF — unlimited teams per box')+'</span>'+
+      '<button class="chip" data-modemlock="'+(modemLockN>0?0:4)+'" style="margin-left:auto">'+(modemLockN>0?'Turn OFF':'Turn ON (max 4 teams)')+'</button>'+
+      '<span style="font-size:10px;color:#8a9a94">SUPERADMIN / Warehouse01 / Property only</span></div>';
   }
   function renderFindPicks(){
     var fo=$('#issFindOut'); if(!fo) return;
@@ -1002,6 +1017,18 @@
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
       ['issue','receive','stock','techs','reports','audit'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='receive'){fillTmTeams(); var td=$('#tmDate'); if(td&&!td.value)td.value=todayLocal();} if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); return;}
 
+    var ml=e.target.closest('[data-modemlock]');
+    if(ml){
+      var n=parseInt(ml.getAttribute('data-modemlock'),10)||0;
+      ml.disabled=true;
+      rpc('set_modem_box_lock',{p_max_teams:n})
+        .then(function(msg){ toast('✓ '+msg); loadModemLock(); })
+        .catch(function(err){
+          toast(/could not find the function|schema cache/i.test(err.message)?'Run wims-MODEM-lock-toggle.sql first':('Failed: '+err.message),true);
+          ml.disabled=false;
+        });
+      return;
+    }
     var fp=e.target.closest('[data-findpick]');
     if(fp){
       // SERIAL-DIRECT release (owner 2026-09-11): ang piniling serial ay pumapasok
