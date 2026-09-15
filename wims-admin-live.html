@@ -106,7 +106,7 @@
   <section id="tab-issue">
     <div class="panel">
       <h2>Release CPE to a team</h2>
-      <p class="desc">Pick a team (subcon releases go to the subcon COMPANY warehouse — AVELINE / J2 / RIA TECH / ALLY'S 88), pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. TEMPORARY policy per owner: a MODEM box can be shared by up to 4 teams; an IPTV box by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
+      <p class="desc">Pick a team (subcon releases go to the subcon COMPANY warehouse — AVELINE / J2 / RIA TECH / ALLY'S 88), pick a box, tick the serials, release — kits and individual items ride along in one release. You can also issue kits/materials only, without CPE. Policy: the MODEM box team lock is a TOGGLE (switch below); an IPTV box is shared by up to 4 teams (5 pcs each); the 10-per-type in-field cap is LIFTED.</p>
       <div class="lbl">Team</div>
       <div class="row"><select id="issTeam" style="min-width:240px"><option>Loading…</option></select></div>
       <div class="lbl">CPE category</div>
@@ -121,6 +121,7 @@
       <div class="lbl">Box to issue from</div>
       <div class="row"><select id="issBox" style="min-width:300px"><option value="">— Select box —</option></select></div>
       <div id="capInfo" class="note info" style="display:none;margin-top:0"></div>
+      <div id="modemLockCtl" style="margin:6px 0"></div>
       <div class="lbl">Serials to release · <span id="pickN" class="tnum">0</span> selected
         <button class="chip" id="tickAll" style="margin-left:8px;padding:4px 10px" hidden>select all</button></div>
       <div class="units" id="issUnits"><span class="empty">Pick a box first.</span></div>
@@ -386,11 +387,11 @@
   function isSalesAcct(code){return /^S[AG]\d/i.test((((code||'').split('_')[1])||''));}   // SA=sales, SG=guard — hindi field teams
 
   // ---- state ----
-  var teams=[], boxes=[], stock=[], pick={}, curBox=null, issCat='modem';
+  var teams=[], boxes=[], stock=[], pick={}, curBox=null, issCat='modem', findPick={};   // findPick = serial-direct release list (mula search)
 
   function boot(){
     setConn('ok','connected');
-    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals(); loadTaskTypes();
+    loadMaterials(); loadTeams(); loadStock(); loadMatBalances(); loadApprovals(); loadTaskTypes(); loadModemLock();
   }
 
   // ---- individual-item issuance: central balances + qty grid sa Issuance tab ----
@@ -563,10 +564,10 @@
         var sh=Object.keys(owners).length;
         tag=sh?(' · 👥 '+sh+'/4 teams'):'';
       } else {
-        // TEMPORARY: modem boxes shared by up to 4 teams (owner order 2026-08-22)
+        // modem box lock = TOGGLE (modemLockN; 0 = OFF/unlimited)
         var mOwners={}; stock.forEach(function(u){ if(u.box_id===b.id&&u.owner_team_id) mOwners[u.owner_team_id]=1; });
         var msh=Object.keys(mOwners).length;
-        tag=msh?(' · 👥 '+msh+'/4 teams'):'';
+        tag=msh?(' · 👥 '+msh+(modemLockN>0?('/'+modemLockN):'')+' teams'):'';
       }
       var imp='';
       if(b.deliveries&&b.deliveries.date_received){
@@ -596,16 +597,37 @@
     el.style.display='';
     el.innerHTML='In-field now for this team · <b>📶 Modem '+teamInField('modem')+'</b> &nbsp;·&nbsp; <b>📺 IPTV '+teamInField('iptv')+'</b> <span style="color:#8a9a94">(cap lifted)</span>';
   }
+  // ---- MODEM BOX LOCK toggle (config modem_share_teams; 0 = OFF) ----
+  var modemLockN=0;
+  function loadModemLock(){
+    api('/config?select=value&key=eq.modem_share_teams')
+      .then(function(rows){ modemLockN=(rows&&rows[0])?(parseInt(rows[0].value,10)||0):0; renderModemLock(); renderBoxes(); })
+      .catch(function(){ var el=$('#modemLockCtl'); if(el) el.innerHTML='<span class="empty">Modem lock toggle: run wims-MODEM-lock-toggle.sql first.</span>'; });
+  }
+  function renderModemLock(){
+    var el=$('#modemLockCtl'); if(!el) return;
+    el.innerHTML='<div class="note '+(modemLockN>0?'warn':'info')+'" style="margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      '<span>🔒 <b>Modem box team lock:</b> '+(modemLockN>0?('ON — max '+modemLockN+' teams per box'):'OFF — unlimited teams per box')+'</span>'+
+      '<button class="chip" data-modemlock="'+(modemLockN>0?0:4)+'" style="margin-left:auto">'+(modemLockN>0?'Turn OFF':'Turn ON (max 4 teams)')+'</button>'+
+      '<span style="font-size:10px;color:#8a9a94">SUPERADMIN / Warehouse01 / Property only</span></div>';
+  }
+  function renderFindPicks(){
+    var fo=$('#issFindOut'); if(!fo) return;
+    var ks=Object.keys(findPick);
+    fo.innerHTML=ks.length?('<div class="note info" style="margin:6px 0"><b>Serial-direct release · '+ks.length+'</b> — no box needed; box rules still apply server-side.<div style="margin-top:6px">'+
+      ks.map(function(sn){ return '<span class="chip" style="margin:2px 4px 2px 0">'+(findPick[sn]==='iptv'?'📺':'📶')+' '+sn+' <button type="button" data-findrm="'+sn+'" style="border:0;background:none;color:#8a2013;font-weight:800;cursor:pointer">✕</button></span>'; }).join('')+
+      '</div></div>'):'';
+  }
   function updateRelease(){
-    var n=Object.keys(pick).filter(function(s){return pick[s];}).length;
+    var nb=Object.keys(pick).filter(function(s){return pick[s];}).length;
+    var nd=Object.keys(findPick).length;
+    var n=nb+nd;
     $('#pickN').textContent=n;
     renderCap();
-    var boxObj=boxes.filter(function(b){return b.id===curBox;})[0];
-    var cat=boxObj?boxObj.category:null;
-    var have=cat?teamInField(cat):0;
-    var exceeds=false;   // 10-per-type cap LIFTED per owner (2026-08-19) — restore with wims-IPTV-share.sql + revert this
-    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&curBox&&!exceeds);
-    $('#doRelease').textContent=exceeds?('⚠ Max '+CAP+' '+cat+' per team — '+have+' already in-field'):('📤 Release '+n+' CPE');
+    var exceeds=false;   // 10-per-type cap LIFTED per owner (2026-08-19)
+    // payag kahit 1 CPE; direct picks ay hindi nangangailangan ng box
+    $('#doRelease').disabled=!(n>0&&$('#issTeam').value&&(nd>0||curBox)&&!exceeds);
+    $('#doRelease').textContent='📤 Release '+n+' CPE'+(nd?' ('+nd+' serial-direct)':'');
   }
 
   // ---- stock tab ----
@@ -995,16 +1017,30 @@
     if(tab){var id=tab.getAttribute('data-tab');$$('.tab').forEach(function(t){t.classList.toggle('on',t===tab);});
       ['issue','receive','stock','techs','reports','audit'].forEach(function(x){$('#tab-'+x).hidden=(x!==id);}); if(id==='stock')loadStock(); if(id==='receive'){fillTmTeams(); var td=$('#tmDate'); if(td&&!td.value)td.value=todayLocal();} if(id==='techs')loadTechnicians(); if(id==='reports')loadReports(); if(id==='audit')loadTeamAudit(); return;}
 
+    var ml=e.target.closest('[data-modemlock]');
+    if(ml){
+      var n=parseInt(ml.getAttribute('data-modemlock'),10)||0;
+      ml.disabled=true;
+      rpc('set_modem_box_lock',{p_max_teams:n})
+        .then(function(msg){ toast('✓ '+msg); loadModemLock(); })
+        .catch(function(err){
+          toast(/could not find the function|schema cache/i.test(err.message)?'Run wims-MODEM-lock-toggle.sql first':('Failed: '+err.message),true);
+          ml.disabled=false;
+        });
+      return;
+    }
     var fp=e.target.closest('[data-findpick]');
     if(fp){
-      var fs=fp.getAttribute('data-findpick'), fb=fp.getAttribute('data-findbox'), fc=fp.getAttribute('data-findcat');
-      issCat=fc; $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-isscat')===fc);});
-      curBox=fb; pick={}; pick[fs]=true;
-      renderBoxes(); renderCap(); renderUnits(); updateRelease();
-      var fo=$('#issFindOut'); if(fo) fo.innerHTML='<div class="note info" style="margin:6px 0">✓ <b>'+fs+'</b> selected — box and category set. Tick more serials below if needed.</div>';
+      // SERIAL-DIRECT release (owner 2026-09-11): ang piniling serial ay pumapasok
+      // sa direct list — hindi na kailangan ng box; ang box sharing rules at team
+      // stamps ay ine-enforce ng server (release_serials) bawat pinagmulang box.
+      findPick[fp.getAttribute('data-findpick')]=fp.getAttribute('data-findcat');
+      renderFindPicks(); updateRelease();
       var fi=$('#issFind'); if(fi) fi.value='';
       return;
     }
+    var fr=e.target.closest('[data-findrm]');
+    if(fr){ delete findPick[fr.getAttribute('data-findrm')]; renderFindPicks(); updateRelease(); return; }
     var ct=e.target.closest('[data-isscat]');
     if(ct){ issCat=ct.getAttribute('data-isscat');
       $$('[data-isscat]').forEach(function(b){b.classList.toggle('on',b===ct);});
@@ -1058,7 +1094,8 @@
     var bmap={}; boxes.forEach(function(b){ bmap[b.id]=b; });
     out.innerHTML=ms.length?ms.slice(0,8).map(function(u){
       var b=bmap[u.box_id]||{};
-      return '<button type="button" class="chip" data-findpick="'+u.serial+'" data-findbox="'+u.box_id+'" data-findcat="'+u.category+'" style="display:block;width:100%;text-align:left;margin-top:6px">'+(u.category==='iptv'?'📺':'📶')+' <b>'+u.serial+'</b> · '+(u.model||u.category)+' · Box '+(b.box_no!=null?b.box_no:'?')+(b.deliveries&&b.deliveries.dr_number?(' · '+b.deliveries.dr_number):'')+'</button>';
+      var boxLbl=(b.box_no!=null)?('Box '+b.box_no+(b.deliveries&&b.deliveries.dr_number?(' · '+b.deliveries.dr_number):'')):'no box — direct release';
+      return '<button type="button" class="chip" data-findpick="'+u.serial+'" data-findcat="'+u.category+'" style="display:block;width:100%;text-align:left;margin-top:6px">'+(u.category==='iptv'?'📺':'📶')+' <b>'+u.serial+'</b> · '+(u.model||u.category)+' · '+boxLbl+'</button>';
     }).join(''):'<div style="font-size:11px;color:#c2503a;font-weight:700;padding:6px 0">No IN-STOCK serial matches "'+q+'" — baka naka-issue na o wala sa stock.</div>';
   });
 
@@ -1080,14 +1117,19 @@
   });
 
   function doRelease(){
-    var teamId=$('#issTeam').value, serials=Object.keys(pick).filter(function(s){return pick[s];});
-    if(!teamId||!curBox||!serials.length)return;
+    var teamId=$('#issTeam').value;
+    var boxSerials=Object.keys(pick).filter(function(s){return pick[s];});
+    var directSerials=Object.keys(findPick);
+    var direct=directSerials.length>0;
+    var serials=direct?directSerials.concat(boxSerials.filter(function(x){return directSerials.indexOf(x)<0;})):boxSerials;
+    if(!teamId||!serials.length)return;
+    if(!direct&&!curBox)return;
     var kits=Math.max(0,parseInt(($('#issKits')||{}).value,10)||0);
     var im=collectIssueMats();
     if(im.err){ toast(im.err,true); return; }
     var btn=$('#doRelease');btn.disabled=true;btn.textContent='Filing request…';
-    rpc('request_issuance',{p_team_id:teamId,p_box_id:curBox,p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
-      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');pick={};curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
+    rpc('request_issuance',{p_team_id:teamId,p_box_id:(direct?null:curBox),p_serials:serials,p_kits:kits,p_materials:im.mats,p_foc_reels:(im.reels&&im.reels.length?im.reels:null),p_requested_name:(CFG.name||null)})
+      .then(function(){toast('✓ Request filed — waiting for approval (any one approver)');pick={};findPick={};renderFindPicks();curBox=null;resetIssueInputs();loadApprovals();return loadStock();})
       .catch(function(e){
         var m=String(e.message||'');
         if(/could not find the function|schema cache/i.test(m)) toast('Run wims-ISSUANCE-approval.sql in the SQL Editor first',true);
