@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-17.1';
+const APP_VERSION='2026-09-17.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -458,6 +458,8 @@ async function showTeamTrackOnMap(code, date){
   showToast(`Route: ${code} · ${date} — ${pts.length} stop${pts.length===1?'':'s'}${snapped?' · snapped to roads':' · direct line'} (tap empty map to clear)`);
 }
 function renderJobs(){
+  // Load the set of JOs with internal remarks once (GC console) → paints 📝 badges on re-render.
+  if(isGcConsole() && !gcNotesLoaded){ gcNotesLoaded=true; loadGcNoteIds().then(()=>{ if($('#dispatchBoard')) renderJobs(); }); }
   const hist=!!dashHist, SRC=hist?dashHist:jobs;
   const today=hist?dashViewDate:manilaToday();
   const isToday=d=>d && new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
@@ -676,7 +678,7 @@ function openJobDetail(jobId){
       _jgw.style.display=''; _jgn.value=''; if(_jgm) _jgm.textContent='';
       const _id=jobId;
       getApproverNote(_id).then(n=>{ if(!$('#jdTitle').textContent.startsWith(_id)) return; if(n){ _jgn.value=n.note||''; if(_jgm) _jgm.textContent=[n.updated_by,n.updated_at?fmtWhen(n.updated_at):''].filter(Boolean).join(' · '); } });
-      if(_jgs) _jgs.onclick=async()=>{ _jgs.disabled=true; const _old=_jgs.textContent; _jgs.textContent='Saving…'; try{ await saveApproverNote(_id,_jgn.value.trim()); if(_jgm) _jgm.textContent='saved · '+fmtWhen(new Date().toISOString()); showToast('GC remark saved'); }catch(e){ showToast('Save failed: '+e.message); } finally{ _jgs.disabled=false; _jgs.textContent=_old; } };
+      if(_jgs) _jgs.onclick=async()=>{ _jgs.disabled=true; const _old=_jgs.textContent; _jgs.textContent='Saving…'; const _v=_jgn.value.trim(); try{ await saveApproverNote(_id,_v); if(_v) gcNoteIds.add(_id); else gcNoteIds.delete(_id); if($('#dispatchBoard')) renderJobs(); if(_jgm) _jgm.textContent='saved · '+fmtWhen(new Date().toISOString()); showToast('Remark saved'); }catch(e){ showToast('Save failed: '+e.message); } finally{ _jgs.disabled=false; _jgs.textContent=_old; } };
     } else { _jgw.style.display='none'; }
   }
   $('#jdStatus').value='';
@@ -815,6 +817,7 @@ function jobCard(j){
   const prio=j.priority?`<span class="priority" style="${j.priority!=='1st Load'?'color:#687974;background:#f1f3f1':''}">${j.priority}</span>`:'';
   const dc=j.dispatch_count||0;
   const dcBadge=dc>0?`<span class="redispatch dc${Math.min(dc,5)}" title="Dispatched ${dc}x">⟳ ×${dc}</span>`:'';
+  const noteBadge=(isGcConsole()&&gcNoteIds.has(j.id))?`<span title="May Validator/Dispatcher internal remark" style="cursor:help">📝</span>`:'';
   const enc=j.created_at?fmtWhen(j.created_at):(j.load_date?String(j.load_date).slice(0,10):'—');
   const action=j.status==='pending'
     ? `<button class="assign-btn" data-assign="${j.id}" style="margin-top:8px;width:100%">Assign team</button>`
@@ -827,7 +830,7 @@ function jobCard(j){
   const acctLine=acct?`<span>🚐 ${acct}</span>`:'';
   const crewLine=crew?`<span>👤 ${crew}</span>`:'';
   return `<article class="job-card compact" data-detail="${j.id}" data-name="${(j.subscriber||'').toLowerCase().replace(/"/g,'')}"${drag}>
-    <div class="job-top"><span class="job-id">${j.id}</span><span style="display:flex;gap:5px;align-items:center">${dcBadge}${prio}</span></div>
+    <div class="job-top"><span class="job-id">${j.id}</span><span style="display:flex;gap:5px;align-items:center">${noteBadge}${dcBadge}${prio}</span></div>
     <h3>${esc(j.subscriber||'—')}</h3>
     <div class="jc-meta">
       <span><span class="status ${j.status}">${statusLabel(j.status)}</span></span>
@@ -1926,6 +1929,13 @@ async function saveApproverNote(id,note){
   const r=await fetch(`${SUPA_URL}/rest/v1/jo_approver_notes?on_conflict=job_id`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
   if(!r.ok) throw new Error('HTTP '+r.status);
 }
+// Which JOs have an internal remark → 📝 badge on the JO card (GC console only).
+let gcNoteIds=new Set(), gcNotesLoaded=false;
+async function loadGcNoteIds(){
+  if(!isGcConsole()){ gcNoteIds=new Set(); gcNotesLoaded=true; return; }
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/jo_approver_notes?select=job_id,note`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; gcNoteIds=new Set(rows.filter(x=>x.note&&x.note.trim()).map(x=>x.job_id)); }catch(e){}
+  gcNotesLoaded=true;
+}
 async function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
   // Lite na ang listahan — kunin ang buong record (lahat ng field + history para sa banner).
@@ -2001,7 +2011,7 @@ async function decideValidation(jobId,approve){
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
     // GC approver remark (GC console only) — save if the validator typed one on approve. Non-fatal.
-    if(approve && isGcConsole()){ const _gnv=(($('#valGcNote')&&$('#valGcNote').value)||'').trim(); if(_gnv){ try{ await saveApproverNote(jobId,_gnv); }catch(_e){} } }
+    if(approve && isGcConsole()){ const _gnv=(($('#valGcNote')&&$('#valGcNote').value)||'').trim(); if(_gnv){ try{ await saveApproverNote(jobId,_gnv); gcNoteIds.add(jobId); }catch(_e){} } }
     // Append-only audit line so the JO Detail history shows WHO approved/rejected and when.
     histLog(jobId, approve
       ? `Approved at intake by ${who} (JO ${body.job_order_no} · IBAS ${body.ibass_acct_no})`
