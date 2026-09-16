@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-15.1';
+const APP_VERSION='2026-09-17.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -669,6 +669,16 @@ function openJobDetail(jobId){
     }
   }
   if($('#jdPriority')){ $('#jdPriority').value=j.priority||'Normal'; $('#jdPriority').onchange=()=>updatePriority(jobId,$('#jdPriority').value); }
+  // GC approver remark (GC console only) — view + edit later; hidden entirely for non-GC (RLS also blocks).
+  const _jgw=$('#jdGcNoteWrap'), _jgn=$('#jdGcNote'), _jgs=$('#jdGcNoteSave'), _jgm=$('#jdGcNoteMeta');
+  if(_jgw&&_jgn){
+    if(isGcConsole()){
+      _jgw.style.display=''; _jgn.value=''; if(_jgm) _jgm.textContent='';
+      const _id=jobId;
+      getApproverNote(_id).then(n=>{ if(!$('#jdTitle').textContent.startsWith(_id)) return; if(n){ _jgn.value=n.note||''; if(_jgm) _jgm.textContent=[n.updated_by,n.updated_at?fmtWhen(n.updated_at):''].filter(Boolean).join(' · '); } });
+      if(_jgs) _jgs.onclick=async()=>{ _jgs.disabled=true; const _old=_jgs.textContent; _jgs.textContent='Saving…'; try{ await saveApproverNote(_id,_jgn.value.trim()); if(_jgm) _jgm.textContent='saved · '+fmtWhen(new Date().toISOString()); showToast('GC remark saved'); }catch(e){ showToast('Save failed: '+e.message); } finally{ _jgs.disabled=false; _jgs.textContent=_old; } };
+    } else { _jgw.style.display='none'; }
+  }
   $('#jdStatus').value='';
   // Ang pag-cancel mula sa console ay dating walang hinihinging dahilan, kaya walang
   // maipakita sa Billing Validation. Kailangan na ito ngayon — gaya ng sa mobile,
@@ -1902,6 +1912,20 @@ function valDupRender(dup,state){
                    :'⚠️ <b>Possible duplicate</b> — compare with the JO(s) below before validating.';
   p.innerHTML=box(strong?'#c2503a':'#b8860b', strong?'#fdf0ee':'#fdf6e3', head+ms.slice(0,3).map(row).join(''));
 }
+// ---- GC approver remarks (GC console only) ----
+// Hard-isolated via the RLS table public.jo_approver_notes: mobile never fetches it,
+// subcon console tokens are denied by RLS. This client gate just hides the UI for non-GC.
+function isGcConsole(){ const u=window.dashUser; return !!(u && (u.is_super || (gcOrgId && u.org_id===gcOrgId))); }
+async function getApproverNote(id){
+  if(!isGcConsole()) return null;
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/jo_approver_notes?select=note,updated_by,updated_at&job_id=eq.${encodeURIComponent(id)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; return rows[0]||null; }catch(e){ return null; }
+}
+async function saveApproverNote(id,note){
+  const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'GC';
+  const body={job_id:id, note:note||'', updated_by:who, updated_at:new Date().toISOString()};
+  const r=await fetch(`${SUPA_URL}/rest/v1/jo_approver_notes?on_conflict=job_id`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+}
 async function openValidate(jobId){
   const j=valJobs.find(x=>x.id===jobId)||{}; const docs=valDocs[jobId]||[];
   // Lite na ang listahan — kunin ang buong record (lahat ng field + history para sa banner).
@@ -1938,6 +1962,9 @@ async function openValidate(jobId){
   }).join('');
   $$('#valDocs .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
   $('#valReason').value='';
+  // GC approver remark (GC console only) — load existing note into the field
+  const _vgw=$('#valGcNoteWrap'), _vgn=$('#valGcNote');
+  if(_vgw&&_vgn){ if(isGcConsole()){ _vgw.style.display=''; _vgn.value=''; getApproverNote(jobId).then(n=>{ if(valOpenId===jobId&&n&&_vgn) _vgn.value=n.note||''; }); } else { _vgw.style.display='none'; } }
   $('#valApprove').onclick=()=>decideValidation(jobId,true);
   $('#valReject').onclick=()=>decideValidation(jobId,false);
   // View-only (subcontractor): show the JO detail + status, but hide the validate/reject controls.
@@ -1973,6 +2000,8 @@ async function decideValidation(jobId,approve){
   }
   try{
     await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    // GC approver remark (GC console only) — save if the validator typed one on approve. Non-fatal.
+    if(approve && isGcConsole()){ const _gnv=(($('#valGcNote')&&$('#valGcNote').value)||'').trim(); if(_gnv){ try{ await saveApproverNote(jobId,_gnv); }catch(_e){} } }
     // Append-only audit line so the JO Detail history shows WHO approved/rejected and when.
     histLog(jobId, approve
       ? `Approved at intake by ${who} (JO ${body.job_order_no} · IBAS ${body.ibass_acct_no})`
