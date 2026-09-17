@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-17.2';
+const APP_VERSION='2026-09-17.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -459,7 +459,7 @@ async function showTeamTrackOnMap(code, date){
 }
 function renderJobs(){
   // Load the set of JOs with internal remarks once (GC console) → paints 📝 badges on re-render.
-  if(isGcConsole() && !gcNotesLoaded){ gcNotesLoaded=true; loadGcNoteIds().then(()=>{ if($('#dispatchBoard')) renderJobs(); }); }
+  if(isGcConsole() && !gcNotesLoaded){ gcNotesLoaded=true; loadGcNoteIds().then(()=>{ if($('#dispatchBoard')) renderJobs(); if($('#timelinePage')&&$('#timelinePage').classList.contains('active')) renderTimeline(); }); }
   const hist=!!dashHist, SRC=hist?dashHist:jobs;
   const today=hist?dashViewDate:manilaToday();
   const isToday=d=>d && new Date(d).toLocaleDateString('en-CA',{timeZone:TZ})===today;
@@ -678,7 +678,7 @@ function openJobDetail(jobId){
       _jgw.style.display=''; _jgn.value=''; if(_jgm) _jgm.textContent='';
       const _id=jobId;
       getApproverNote(_id).then(n=>{ if(!$('#jdTitle').textContent.startsWith(_id)) return; if(n){ _jgn.value=n.note||''; if(_jgm) _jgm.textContent=[n.updated_by,n.updated_at?fmtWhen(n.updated_at):''].filter(Boolean).join(' · '); } });
-      if(_jgs) _jgs.onclick=async()=>{ _jgs.disabled=true; const _old=_jgs.textContent; _jgs.textContent='Saving…'; const _v=_jgn.value.trim(); try{ await saveApproverNote(_id,_v); if(_v) gcNoteIds.add(_id); else gcNoteIds.delete(_id); if($('#dispatchBoard')) renderJobs(); if(_jgm) _jgm.textContent='saved · '+fmtWhen(new Date().toISOString()); showToast('Remark saved'); }catch(e){ showToast('Save failed: '+e.message); } finally{ _jgs.disabled=false; _jgs.textContent=_old; } };
+      if(_jgs) _jgs.onclick=async()=>{ _jgs.disabled=true; const _old=_jgs.textContent; _jgs.textContent='Saving…'; const _v=_jgn.value.trim(); try{ await saveApproverNote(_id,_v); if(_v) gcNoteIds.add(_id); else gcNoteIds.delete(_id); if($('#dispatchBoard')) renderJobs(); if($('#timelinePage')&&$('#timelinePage').classList.contains('active')) renderTimeline(); if(_jgm) _jgm.textContent='saved · '+fmtWhen(new Date().toISOString()); showToast('Remark saved'); }catch(e){ showToast('Save failed: '+e.message); } finally{ _jgs.disabled=false; _jgs.textContent=_old; } };
     } else { _jgw.style.display='none'; }
   }
   $('#jdStatus').value='';
@@ -1153,7 +1153,7 @@ function renderTimeline(){
   // Status-bar filter: when a non-"For Dispatch" status is selected, hide the backlog (it IS For Dispatch).
   const showBacklog = !tlStatusFilter || tlStatusFilter==='fordispatch';
   if(bl){
-    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Not yet dispatched':'Dispatched '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=tlBy(j).replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">Agent: ${by}</span></div>${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'No waiting unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
+    bl.innerHTML=(showBacklog&&backlog.length)?backlog.map(j=>{const dc=Number(j.dispatch_count)||0;const note=(isGcConsole()&&gcNoteIds.has(j.id))?'<span title="May internal remark">📝</span>':'';const dcb=`<span class="redispatch dc${dc===0?'0':Math.min(dc,5)}" style="font-size:8px;padding:1px 5px;flex:none" title="${dc===0?'Not yet dispatched':'Dispatched '+dc+'x'}">⟳${dc}x</span>`;const sub=(j.subscriber||'(no name)').replace(/</g,'&lt;').slice(0,22);const jo=(j.job_order_no||'No J.O. #').replace(/</g,'&lt;').slice(0,18);const by=tlBy(j).replace(/</g,'&lt;').slice(0,34);return `<span class="tl-chip" draggable="true" data-tljob="${j.id}" data-tlsearch="${tlSearchText(j)}"><div class="tl-chip-body"><b class="tl-chip-sub">${sub}</b><span class="tl-chip-jo">J.O. ${jo}</span><span class="tl-chip-by">Agent: ${by}</span></div>${note}${dcb}</span>`;}).join(''):`<span style="color:#9aa6a2;font-size:11px">${showBacklog?'No waiting unscheduled load.':'(For Dispatch hidden — '+tlStatusFilter+' selected)'}</span>`;
   }
   // Clicksoft-style status history feed
   renderTimelineHistory();
@@ -1196,7 +1196,8 @@ function renderTimeline(){
       const c=tlStatusColor(j.status);
       const win=`${tlFmtHour(startMin/60)}–${tlFmtHour(endMin/60)}`;
       const mark=bumped?'↪ ':'';
-      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win} · Agent: ${tlBy(j).replace(/"/g,'&quot;')}${bumped?' (auto-moved after previous job ran long)':''}">${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
+      const note=(isGcConsole()&&gcNoteIds.has(j.id))?'📝':'';
+      return `<div class="tl-block${bumped?' tl-bumped':''}" draggable="true" data-tlblock="${j.id}" data-tlsearch="${tlSearchText(j)}" style="left:${left}%;width:${w}%;background:${c.bg};color:${c.fg};border:1px solid ${c.bd}" title="${note?'📝 May internal remark · ':''}${mark}${j.id} · ${(j.subscriber||'').replace(/"/g,'&quot;')} · ${statusLabel(j.status)} · ${win} · Agent: ${tlBy(j).replace(/"/g,'&quot;')}${bumped?' (auto-moved after previous job ran long)':''}">${note}${mark}${String(j.id).replace('WO-','')}<small>${(j.subscriber||'').replace(/</g,'&lt;').slice(0,16)}</small></div>`;
     }).join('');
     // Assigned account + designated driver / technician for this team's current shift
     const acct=s.account||t.account||'';
