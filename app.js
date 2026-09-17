@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-17.3';
+const APP_VERSION='2026-09-18.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -986,8 +986,8 @@ async function renderExpenses(){
   set('#todayExpense',money(total)); set('#budgetPercent',`${pct}% of ${money(BUDGET)}`); set('#donutTotal',`₱${(total/1000).toFixed(1)}k`);
   if($('#budgetBar'))$('#budgetBar').style.width=`${Math.min(pct,100)}%`;
 
-  const cats=['Deployment','Console','Permit','Gas','Parking','Violation','Other'];
-  const cols=['#082c28','#6a5acd','#18a57b','#ff765f','#e9a93d','#4285f4','#b0bab7'];
+  const cats=['Deployment','Console','Permit','Gas','Parking','Violation','Vehicle','Other'];
+  const cols=['#082c28','#6a5acd','#18a57b','#ff765f','#e9a93d','#4285f4','#0d7c9a','#b0bab7'];
   const values=cats.map(c=> c==='Deployment'? deployCost : c==='Console'? consoleCost : cloudExp.filter(e=>e.category===c).reduce((a,b)=>a+Number(b.amount||0),0));
   const sum=values.reduce((a,b)=>a+b,0)||1; let acc=0;
   const stops=values.map((v,i)=>{const s=acc;acc+=v/sum*100;return `${cols[i]} ${s}% ${acc}%`}).join(',');
@@ -999,7 +999,7 @@ async function renderExpenses(){
     const gasRow=`<tr><td>—</td><td><strong>${deployedTeams} teams deployed</strong></td><td>Gas</td><td>Gasoline — ${deployedTeams} deployed teams × ₱${GAS_PER_TEAM.toLocaleString('en-PH')}</td><td>—</td><td><strong>${money(gasCost)}</strong></td><td><span class="status completed">Auto</span></td></tr>`;
     const consoleRow=`<tr><td>—</td><td><strong>${consoleUsers} console login(s)</strong></td><td>Console</td><td>Dashboard access — ${consoleUsers} user(s) logged in today × ₱${CONSOLE_COST.toLocaleString('en-PH')}</td><td>—</td><td><strong>${money(consoleCost)}</strong></td><td><span class="status completed">Auto</span></td></tr>`;
     const pendingRow=pendingTeams?`<tr style="opacity:.7"><td>—</td><td><strong>${pendingTeams} team(s)</strong></td><td>Deployment</td><td>Logged in but not yet counted — no load activity / awaiting dispatcher verification</td><td>—</td><td><strong>${money(0)}</strong></td><td><span class="status pending">Pending</span></td></tr>`:'';
-    const expRows=cloudExp.map(e=>`<tr><td>${e.created_at?fmtTime(e.created_at):''}</td><td><strong>${esc(e.team||'—')}</strong></td><td>${esc(e.category||'')}</td><td>${esc(e.description||'')}</td><td>${e.job_id||'—'}</td><td><strong>${money(e.amount)}</strong></td><td><span class="status ${e.status==='Approved'?'completed':'pending'}">${e.status||'Pending'}</span></td></tr>`).join('');
+    const expRows=cloudExp.map(e=>`<tr><td>${e.created_at?fmtTime(e.created_at):''}</td><td><strong>${esc(e.team||'—')}</strong></td><td>${esc(e.category||'')}${e.source==='fms'?' <span class="status assigned" title="Recorded in Fleet — edit it there">FMS</span>':''}</td><td>${esc(e.description||'')}</td><td>${e.job_id||'—'}</td><td><strong>${money(e.amount)}</strong></td><td><span class="status ${e.status==='Approved'?'completed':'pending'}">${e.status||'Pending'}</span></td></tr>`).join('');
     $('#expenseBody').innerHTML=manpowerRow+gasRow+consoleRow+pendingRow+expRows;
   }
   if($('#expenseSummary'))$('#expenseSummary').innerHTML=[
@@ -1684,7 +1684,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
@@ -1709,6 +1709,16 @@ function initQAFindings(){
   const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
   _qaFindMount=ConsoleQAFindings.mount(rootEl,{api,user:window.dashUser||{},org:(window.dashUser||{}).org_id||null,deps:{toast:showToast,isVisible:()=>{const s=document.getElementById('qafindingsPage'); return !!(s&&s.classList.contains('active'));}},
     onBadge:n=>{const b=document.getElementById('qaFindBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }}});
+}
+// ===== FLEET (FMS) — module in console-fms.js; mounted lazily when the page opens. Rules + pushes live in the fms schema (SQL). =====
+let _fmsMount=null;
+function initFMS(){
+  const rootEl=document.getElementById('fmsRoot'); if(!rootEl) return;
+  if(_fmsMount){ _fmsMount.refresh(); return; }
+  if(!window.dashAuthClient||!window.FmsApi||!window.ConsoleFMS){ rootEl.innerHTML='<div class="empty-cell">Fleet module not loaded — reload the page.</div>'; return; }
+  const api=FmsApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
+  _fmsMount=ConsoleFMS.mount(rootEl,{api,user:window.dashUser||{},deps:{toast:showToast,canEdit:dashCanEdit('fms'),ensureXLSX:(typeof ensureXLSX==='function'?ensureXLSX:null),compressImage:(typeof compressImage==='function'?compressImage:null)},
+    onBadge:n=>{const b=document.getElementById('fmsBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }}});
 }
 // Hand the embedded WIMS admin our live Supabase session so it reuses this login
 // (no separate sign-in). We only ever answer OUR own iframe's request.
@@ -3101,7 +3111,7 @@ function startSlrTicker(){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
