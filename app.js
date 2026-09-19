@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-19.2';
+const APP_VERSION='2026-09-19.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3043,9 +3043,7 @@ async function renderSlrTickets(force){
     b.textContent=_lbl[k]+' ('+(k==='all'?slrRows.length:(_cnt[k]||0))+')';
     b.classList.toggle('active',k===slrSt);
   });
-  const q=(($('#slrSearch')&&$('#slrSearch').value)||'').trim().toUpperCase();
-  let list=slrRows.filter(t=>(slrSt==='all'||slrStatusOf(t)===slrSt)&&(slrTeam==='all'||t.team===slrTeam));
-  if(q) list=list.filter(t=>[t.ticket_no,t.subscriber,t.ibass_acct_no,t.team,t.address,t.id,t.service_remarks].join(' ').toUpperCase().includes(q));
+  let list=slrFiltered();
   const emp=$('#slrEmpty'); if(emp) emp.hidden=!!list.length;
   tb.innerHTML=list.map(t=>`<tr>
     <td><strong>${esc(t.ticket_no||'—')}</strong><span>${esc(t.id)}</span></td>
@@ -3059,6 +3057,24 @@ async function renderSlrTickets(force){
     <td><button class="assign-btn" data-slrview="${esc(t.id)}">View</button></td></tr>`).join('');
   tb.querySelectorAll('[data-slrview]').forEach(b=>b.onclick=()=>openSlrDetail(b.dataset.slrview));
   slrBadgePaint();
+}
+// Currently filtered tickets (status chip + team chip + search) — shared ng table at export.
+function slrFiltered(){
+  const q=(($('#slrSearch')&&$('#slrSearch').value)||'').trim().toUpperCase();
+  let list=slrRows.filter(t=>(slrSt==='all'||slrStatusOf(t)===slrSt)&&(slrTeam==='all'||t.team===slrTeam));
+  if(q) list=list.filter(t=>[t.ticket_no,t.subscriber,t.ibass_acct_no,t.team,t.address,t.id,t.service_remarks].join(' ').toUpperCase().includes(q));
+  return list;
+}
+// On-demand extraction (owner 2026-09-19): i-download ang naka-filter na tickets sa Excel.
+async function exportSlrTickets(){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  if(!slrLoaded){ try{ await slrFetch(); }catch(e){ showToast('Could not load tickets: '+(e.message||e)); return; } }
+  const list=slrFiltered();
+  if(!list.length){ showToast('Nothing to export — adjust the filters'); return; }
+  const rows=list.map(t=>({'TICKET NO':t.ticket_no||'','TICKET ID':t.id,'TEAM':t.team||'','STATUS':t.status||'','SUBSCRIBER':t.subscriber||'','IBAS ACCOUNT':t.ibass_acct_no||'','CONTACT':t.primary_no||'','ADDRESS':t.address||'','SERVICE DONE':t.service_remarks||'','CREATED':slrFmt(t.created_at),'COMPLETED':t.completed_at?slrFmt(t.completed_at):''}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upperRows(rows)),'SLR Tickets');
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_SLR_tickets_${manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  showToast(`${list.length} ticket${list.length===1?'':'s'} exported`);
 }
 function slrBadgePaint(){
   const b=$('#slrBadge'); if(!b) return;
@@ -4156,6 +4172,7 @@ function init(){
   const _ss=$('#slrSearch'); if(_ss) _ss.oninput=()=>renderSlrTickets();
   $$('#slrStatusChips button').forEach(b=>b.onclick=()=>{ slrSt=b.dataset.slrst; renderSlrTickets(); });
   const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
+  const _se=$('#slrExport'); if(_se) _se.onclick=exportSlrTickets;
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
