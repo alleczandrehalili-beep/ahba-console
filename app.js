@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-18.1';
+const APP_VERSION='2026-09-19.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2193,26 +2193,30 @@ async function resetNow(){
 }
 
 // ---------- Attendance (time-in / time-out) ----------
-async function fetchAttendance(date){
+async function fetchAttendance(from,to){
+  if(to==null) to=from;   // back-compat: single-date callers
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=*&work_date=eq.${date}&order=time_in.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=*&work_date=gte.${from}&work_date=lte.${to}&order=work_date.desc,time_in.desc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     return r.ok?await r.json():[];
   }catch(e){return[]}
 }
 async function renderAttendance(){
   const body=$('#attendanceBody'); if(!body)return;
-  // Always (re)wire the date change so BOTH the daily log and the security gate-out log
-  // follow the selected date. (Previously onchange was wired only when the field was empty,
-  // so after a refresh — when the date already had a value — changing it did nothing.)
-  const dateEl=$('#attDate'); if(dateEl){ if(!dateEl.value) dateEl.value=manilaToday(); dateEl.onchange=renderAttendance; }
-  const date=dateEl?dateEl.value:manilaToday();
+  // Date RANGE: #attDate = From, #attDateTo = To. Both default to today (single-day view).
+  // (Re)wire onchange on every render so BOTH the daily log and the security gate-out log
+  // follow the selected range even after a refresh, when the fields already have a value.
+  const fromEl=$('#attDate'), toEl=$('#attDateTo');
+  if(fromEl){ if(!fromEl.value) fromEl.value=manilaToday(); fromEl.onchange=renderAttendance; }
+  if(toEl){ if(!toEl.value) toEl.value=(fromEl?fromEl.value:manilaToday()); toEl.onchange=renderAttendance; }
+  let from=fromEl?fromEl.value:manilaToday(), to=toEl?toEl.value:from;
+  if(from&&to&&to<from){ const t=from; from=to; to=t; }   // tolerate reversed range
   body.innerHTML=`<tr><td colspan="6" class="empty-cell">Loading…</td></tr>`;
-  const rows=await fetchAttendance(date);
+  const rows=await fetchAttendance(from,to);
   const open=rows.filter(r=>!r.time_out).length, closed=rows.filter(r=>r.time_out).length;
   let totalMin=0; rows.forEach(r=>{if(r.time_in){const end=r.time_out?new Date(r.time_out):new Date();totalMin+=Math.max(0,(end-new Date(r.time_in))/60000)}});
   $('#attIn').textContent=open; $('#attOut').textContent=closed; $('#attTotal').textContent=rows.length;
   $('#attHours').textContent=`${Math.floor(totalMin/60)}h ${String(Math.round(totalMin%60)).padStart(2,'0')}m`;
-  if(!rows.length){body.innerHTML=`<tr><td colspan="6" class="empty-cell">No time records for this day.</td></tr>`;return}
+  if(!rows.length){body.innerHTML=`<tr><td colspan="6" class="empty-cell">No time records for the selected range.</td></tr>`;return}
   body.innerHTML=rows.map(r=>{
     const status=r.time_out?'<span class="status completed">Timed out</span>':'<span class="status en-route">Timed in</span>';
     const acctFree=(!r.time_out && r.work_account)
@@ -2236,7 +2240,7 @@ async function renderAttendance(){
     } else { lp.style.display='none'; lc.innerHTML=''; }
   }
   attRows=rows;            // keep for export
-  renderGateLog(date);
+  renderGateLog(from,to);
 }
 // Release a locked work account (clear it from all open attendance rows today) so another team can use it.
 async function freeWorkAccount(account){
@@ -2266,18 +2270,19 @@ async function forceSignOff(username){
 }
 // ---- Security gate-out / vehicle log (on the Attendance page) ----
 let attRows=[], gateRows=[];
-async function renderGateLog(date){
+async function renderGateLog(from,to){
+  if(to==null) to=from;   // back-compat: single-date callers
   const body=$('#gateBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="9" class="empty-cell">Loading…</td></tr>`;
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/gate_logs?select=*&work_date=eq.${date}&order=checked_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/gate_logs?select=*&work_date=gte.${from}&work_date=lte.${to}&order=work_date.asc,checked_at.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     gateRows=r.ok?await r.json():[];
   }catch(e){ gateRows=[]; }
   const ok=gateRows.filter(g=>g.crew_ok).length, disc=gateRows.length-ok;
   const set=(id,v)=>{const el=$(id);if(el)el.textContent=v};
   set('#gateCount',gateRows.length); set('#gateOk',ok); set('#gateDisc',disc);
   set('#gateFirst', gateRows.length?fmtTime(gateRows[0].checked_at):'—');
-  if(!gateRows.length){ body.innerHTML=`<tr><td colspan="9" class="empty-cell">No gate-out records for this day.</td></tr>`; return; }
+  if(!gateRows.length){ body.innerHTML=`<tr><td colspan="9" class="empty-cell">No gate-out records for the selected range.</td></tr>`; return; }
   body.innerHTML=gateRows.map(g=>{
     const crew=[g.crew_tech1,g.crew_tech2].filter(Boolean).join(', ');
     const isIn=(g.gate_type==='incoming');
@@ -2293,19 +2298,21 @@ function upperRows(rows){ return (rows||[]).map(r=>{ const o={}; for(const k in 
 async function exportAttendance(){
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!attRows.length){showToast('Nothing to export');return}
-  const date=$('#attDate')?.value||manilaToday();
+  const from=$('#attDate')?.value||manilaToday(), to=$('#attDateTo')?.value||from;
+  const label=(from===to)?from:`${from}_to_${to}`;
   const rows=attRows.map(r=>({'TECHNICIAN':r.username,'DATE':r.work_date,'TIME IN':r.time_in?fmtWhen(r.time_in):'','TIME OUT':r.time_out?fmtWhen(r.time_out):'','HOURS':fmtDur(r.time_in,r.time_out),'STATUS':r.time_out?'Timed out':'Timed in','ACCOUNT':r.work_account||'','DRIVER':r.crew_driver||'','TECH 1':r.crew_tech1||'','TECH 2':r.crew_tech2||''}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upperRows(rows)),'Attendance');
-  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_attendance_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_attendance_${label}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Attendance exported');
 }
 async function exportGateLog(){
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   if(!gateRows.length){showToast('No vehicle log to export');return}
-  const date=$('#attDate')?.value||manilaToday();
+  const date=$('#attDate')?.value||manilaToday(), to=$('#attDateTo')?.value||date;
+  const label=(date===to)?date:`${date}_to_${to}`;
   const rows=gateRows.map(g=>({'TIME':fmtWhen(g.checked_at),'TYPE':(g.gate_type==='incoming'?'INCOMING':'OUTGOING'),'TEAM':g.team||'','ACCOUNT':g.account||'','PLATE NO.':g.plate_no||'','ODOMETER (KM)':(g.odometer!=null?g.odometer:''),'FUEL':g.fuel_level||'','DRIVER':g.crew_driver||'','TECH 1':g.crew_tech1||'','TECH 2':g.crew_tech2||'','CREW OK':(g.gate_type==='incoming'?'':(g.crew_ok?'YES':'NO')),'CREW REMARKS':g.crew_remarks||'','VEHICLE REMARKS':g.vehicle_remarks||'','VALIDATED BY':g.security_user||'','DATE':g.work_date||date}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(upperRows(rows)),'Vehicle log');
-  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_vehicle_log_${date}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_vehicle_log_${label}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Vehicle log exported');
 }
 
