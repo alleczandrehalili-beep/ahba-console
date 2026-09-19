@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-19.1';
+const APP_VERSION='2026-09-19.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3004,7 +3004,10 @@ async function submitOrder(e){
 // ---------- 🎫 SLR Tickets (tech-created repairs) — SEPARATE monitoring ----------
 // Ang tickets ay nasa jobs table (load_type='SLR-TICKET') pero HINDI kasama sa jobs
 // array (sinasala sa getJobs) — ang page na ito ang tanging tanaw ng console sa kanila.
-let slrRows=[], slrSt='open', slrTeam='all', slrLoaded=false;
+// FIX 2026-09-19: default view = ALL. Dating 'open' ang default kaya 3 tickets lang
+// ang kita ng dispatcher gayong 80+ na ang nasa system (halos lahat completed) —
+// mukha tuloy "nawawala" ang mga tickets. May bilang na rin ang bawat chip.
+let slrRows=[], slrSt='all', slrTeam='all', slrLoaded=false;
 const SLR_OPEN=['assigned','pending','en-route','on-site','in-progress'];
 const slrStatusOf=t=>SLR_OPEN.includes(t.status)?'open':(t.status==='completed'?'completed':'closed');
 const slrFmt=ts=>ts?new Date(ts).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—';
@@ -3033,7 +3036,13 @@ async function renderSlrTickets(force){
     tc.innerHTML=['all',...teams].map(t=>`<button class="${slrTeam===t?'active':''}" data-slrteam="${esc(t)}">${t==='all'?'All teams':esc(t)}</button>`).join('');
     tc.querySelectorAll('[data-slrteam]').forEach(b=>b.onclick=()=>{slrTeam=b.dataset.slrteam;renderSlrTickets();});
   }
-  $$('#slrStatusChips button').forEach(b=>b.classList.toggle('active',b.dataset.slrst===slrSt));
+  const _cnt={open:0,completed:0,closed:0}; slrRows.forEach(t=>{_cnt[slrStatusOf(t)]=(_cnt[slrStatusOf(t)]||0)+1;});
+  const _lbl={open:'Open',completed:'Completed',closed:'Cancelled / Negative',all:'All'};
+  $$('#slrStatusChips button').forEach(b=>{
+    const k=b.dataset.slrst;
+    b.textContent=_lbl[k]+' ('+(k==='all'?slrRows.length:(_cnt[k]||0))+')';
+    b.classList.toggle('active',k===slrSt);
+  });
   const q=(($('#slrSearch')&&$('#slrSearch').value)||'').trim().toUpperCase();
   let list=slrRows.filter(t=>(slrSt==='all'||slrStatusOf(t)===slrSt)&&(slrTeam==='all'||t.team===slrTeam));
   if(q) list=list.filter(t=>[t.ticket_no,t.subscriber,t.ibass_acct_no,t.team,t.address,t.id,t.service_remarks].join(' ').toUpperCase().includes(q));
