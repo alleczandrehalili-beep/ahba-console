@@ -282,6 +282,15 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>🔁 Pulled CPE — replacements</h2><p class="desc" style="margin:0">Mga BINUNOT/pinalitang unit sa SLR replacement tickets — hawak ng team hanggang markahan dito na NAISAULI sa warehouse.</p></div>
+        <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="plFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="plTo" style="padding:7px 9px"></div>
+        <button class="btn" id="pulledExport">⬇ Export Excel</button>
+      </div>
+      <div id="pulledTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>🛠 Defective — overview</h2><p class="desc" style="margin:0">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p></div>
         <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="dfFrom" style="padding:7px 9px"></div>
         <div class="field"><label>To</label><input type="date" id="dfTo" style="padding:7px 9px"></div>
@@ -1060,6 +1069,15 @@
     if(e.target.id==='invExport'){exportInv();return;}
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
+    if(e.target.id==='pulledExport'){exportPulled();return;}
+    var plr=e.target.closest&&e.target.closest('[data-pulledret]');
+    if(plr){
+      plr.disabled=true;
+      rpc('mark_pulled_returned',{p_ids:[plr.getAttribute('data-pulledret')]})
+        .then(function(){ toast('✔ Naitala — naisauli na sa warehouse'); loadPulled(); })
+        .catch(function(err){ plr.disabled=false; toast(err.message||'Failed',true); });
+      return;
+    }
     if(e.target.id==='defExport'){exportDef();return;}
     if(e.target.id==='matMonExport'){exportMatMon();return;}
     if(e.target.id==='repExportAll'){exportAllReports();return;}
@@ -1108,6 +1126,7 @@
     if(e.target.id==='repTeam'||e.target.id==='cpeFrom'||e.target.id==='cpeTo')loadReports();
     if(e.target.id==='mmFrom'||e.target.id==='mmTo')loadMatMonitoring();
     if(e.target.id==='crFrom'||e.target.id==='crTo')loadCpeReturns();
+    if(e.target.id==='plFrom'||e.target.id==='plTo')loadPulled();
     if(e.target.id==='dfFrom'||e.target.id==='dfTo')loadDefective();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='matLoc')renderMatList();
@@ -1401,6 +1420,31 @@
     downloadXlsx('wims-cpe-returns.xlsx',rows);
   }
 
+  // ---- 🔁 Pulled CPE (replacements) — hawak ng team hanggang maisauli ----
+  var pulledRows=[];
+  function loadPulled(){
+    var el=$('#pulledTable'); if(!el) return;
+    apiAll('/pulled_cpe?select=*&order=pulled_at.desc'+dateRange('pulled_at','plFrom','plTo')).then(function(rows){
+      pulledRows=rows||[];
+      if(!pulledRows.length){ el.innerHTML='<span class="empty">Wala pang pulled CPE — lalabas dito ang mga binunot na unit sa replacement tickets.</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>Pulled</th><th>Team</th><th>Serial (lumang unit)</th><th>Ticket/JO</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody>'+
+        pulledRows.map(function(r){
+          var st=r.status==='returned'
+            ? '<span class="pill installed">✔ naisauli'+(r.returned_at?(' · '+new Date(r.returned_at).toLocaleDateString()):'')+'</span>'
+            : '<span class="pill" style="background:#fdf6ea;color:#8a6a24;border:1px solid #f0d9a8">hawak ng team</span>';
+          return '<tr><td>'+new Date(r.pulled_at).toLocaleString()+'</td><td>'+teamCode(r.team_id)+'</td><td class="tnum"><b>'+r.serial+'</b></td><td class="tnum">'+(r.jo_number||'—')+'</td><td>'+st+'</td><td style="font-size:11px">'+(r.note||'—')+'</td><td>'+(r.status==='with_team'?'<button class="btn" data-pulledret="'+r.id+'" style="padding:5px 10px;font-size:11px">✔ Naisauli</button>':'')+'</td></tr>';
+        }).join('')+'</tbody></table>';
+    }).catch(function(e){
+      el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-PULLED-STEP1 + STEP2 first for the pulled-CPE tracker.':e.message)+'</span>';
+    });
+  }
+  function exportPulled(){
+    if(!pulledRows.length){ toast('Nothing to export',true); return; }
+    var rows=[['Pulled at','Team','Serial','Ticket/JO','Status','Naisauli noong','Note']].concat(
+      pulledRows.map(function(r){return [new Date(r.pulled_at).toLocaleString(),teamCode(r.team_id),r.serial,r.jo_number||'',r.status,r.returned_at?new Date(r.returned_at).toLocaleString():'',r.note||''];}));
+    downloadXlsx('wims-pulled-cpe.xlsx',rows);
+  }
+
   // per-report date-range filter: bawat category may sariling From/To inputs
   function dateRange(col, fid, tid){
     var f=($('#'+(fid||'repFrom'))||{}).value, t=($('#'+(tid||'repTo'))||{}).value, q='';
@@ -1687,6 +1731,7 @@
   function loadReports(){
     loadInventory();
     loadCpeReturns();
+    loadPulled();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
