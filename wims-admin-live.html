@@ -1456,29 +1456,95 @@
     downloadXlsx('wims-pulled-cpe.xlsx',rows);
   }
 
-  // ---- 📥 Central receiving — LAHAT ng pasok sa central (CPE + materials) ----
+  // ---- 📥 Central receiving — BREAKDOWN PER BATCH PER DATE + TOTALS ----
+  // (owner 2026-09-22: kelan, sino, ano, anong oras — bawat batch, may total)
   var crecvRows=[];
+  function fmtQty(n){ return (+n).toLocaleString(); }
+  function crecvGroup(rows){
+    var days={}, order=[];
+    rows.forEach(function(r){
+      var dk=(r.received_at||'').slice(0,10);
+      // batch = isang delivery (CPE) o isang import file (materials: same note+actor+date)
+      var bk=r.kind==='CPE delivery' ? ('C·'+(r.ref||'')+'·'+r.received_at)
+                                     : ('M·'+(r.detail||'')+'·'+(r.received_by||'')+'·'+dk);
+      if(!days[dk]){ days[dk]={key:dk,order:[],batches:{}}; order.push(dk); }
+      var d=days[dk];
+      if(!d.batches[bk]){ d.batches[bk]={kind:r.kind,ref:r.ref,detail:r.detail,by:r.received_by,at:r.received_at,items:[]}; d.order.push(bk); }
+      var b=d.batches[bk]; b.items.push(r); if(r.received_at<b.at) b.at=r.received_at;
+    });
+    return {days:days, order:order};
+  }
+  function sumUnits(items){  // {unit: total} — hal. {pc:135000, m:120000, units:280}
+    var t={}; items.forEach(function(r){ var u=r.unit||'?'; t[u]=(t[u]||0)+(+r.qty||0); }); return t;
+  }
+  function unitsLabel(t){ return Object.keys(t).map(function(u){return fmtQty(t[u])+' '+u;}).join(' · '); }
+  function crecvGrand(rows){  // grand total per item sa saklaw
+    var m={}, order=[];
+    rows.forEach(function(r){
+      var k=r.kind==='CPE delivery' ? 'CPE units (lahat ng deliveries)' : (r.ref||'—');
+      if(!m[k]){ m[k]={qty:0,unit:r.unit||'',n:0}; order.push(k); }
+      m[k].qty+=(+r.qty||0); m[k].n++;
+    });
+    return order.map(function(k){ return {item:k, qty:m[k].qty, unit:m[k].unit, batches:m[k].n}; });
+  }
   function loadCentralRecv(){
     var el=$('#crecvTable'); if(!el) return;
     apiAll('/v_central_receiving?select=*&order=received_at.desc'+dateRange('received_at','rcFrom','rcTo')).then(function(rows){
       crecvRows=rows||[];
       if(!crecvRows.length){ el.innerHTML='<span class="empty">Wala pang receiving record sa napiling saklaw.</span>'; return; }
-      el.innerHTML='<table><thead><tr><th>Kailan (petsa · oras)</th><th>Uri</th><th>Ref / Material</th><th>Detalye</th><th>Boxes</th><th>Dami</th><th>Sino nagpasok</th></tr></thead><tbody>'+
-        crecvRows.map(function(r){
-          var pill=r.kind==='CPE delivery'
-            ? '<span class="pill installed">📦 CPE</span>'
-            : '<span class="pill" style="background:#eef4fb;color:#1d4f8a;border:1px solid #c9dcf2">🧰 Materials</span>';
-          return '<tr><td class="tnum">'+new Date(r.received_at).toLocaleString()+'</td><td>'+pill+'</td><td><b>'+(r.ref||'—')+'</b></td><td style="font-size:11px;max-width:320px">'+(r.detail||'—')+'</td><td class="tnum">'+(r.boxes==null?'—':+r.boxes)+'</td><td class="tnum"><b>'+(r.qty==null?'—':+r.qty)+'</b> '+(r.unit||'')+'</td><td><b>'+(r.received_by||'—')+'</b></td></tr>';
-        }).join('')+'</tbody></table>';
+      var g=crecvGroup(crecvRows), html='';
+      g.order.forEach(function(dk){
+        var d=g.days[dk], dayItems=[];
+        d.order.forEach(function(bk){ dayItems=dayItems.concat(d.batches[bk].items); });
+        html+='<tr><td colspan="4" style="background:#082c28;color:#c9f36a;font-weight:800;padding:8px 10px">📅 '+new Date(dk+'T00:00:00').toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric',weekday:'short'})+
+              ' <span style="font-weight:600;color:#9fd9c2">· '+d.order.length+' batch · TOTAL: '+unitsLabel(sumUnits(dayItems))+'</span></td></tr>';
+        d.order.forEach(function(bk){
+          var b=d.batches[bk];
+          var head=b.kind==='CPE delivery' ? ('📦 CPE delivery · DR '+(b.ref||'—')+(b.detail&&b.detail!==b.ref?(' · '+b.detail):'')) : ('🧰 Materials import · '+(b.detail||'—'));
+          html+='<tr><td colspan="4" style="background:#f2f8f5;font-weight:700;padding:7px 10px">🕐 '+new Date(b.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · 👤 '+(b.by||'—')+' · '+head+'</td></tr>';
+          b.items.forEach(function(r){
+            html+='<tr><td style="padding-left:26px">'+(r.kind==='CPE delivery'?('Serialized CPE'+(r.boxes!=null?(' · '+fmtQty(r.boxes)+' box'):'')):(r.ref||'—'))+'</td>'+
+                  '<td class="tnum"><b>'+(r.qty==null?'—':fmtQty(r.qty))+'</b> '+(r.unit||'')+'</td>'+
+                  '<td class="tnum" style="font-size:11px">'+new Date(r.received_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})+'</td>'+
+                  '<td style="font-size:11px">'+(r.received_by||'—')+'</td></tr>';
+          });
+          html+='<tr><td style="font-weight:800;color:#0e6f52;padding-left:26px">BATCH TOTAL</td><td class="tnum" colspan="3" style="font-weight:800;color:#0e6f52">'+b.items.length+' line(s) · '+unitsLabel(sumUnits(b.items))+'</td></tr>';
+        });
+      });
+      var gr=crecvGrand(crecvRows);
+      html+='<tr><td colspan="4" style="background:#082c28;color:#fff;font-weight:800;padding:8px 10px">Σ GRAND TOTAL — buong saklaw</td></tr>';
+      gr.forEach(function(t){ html+='<tr><td style="padding-left:26px"><b>'+t.item+'</b></td><td class="tnum"><b>'+fmtQty(t.qty)+'</b> '+t.unit+'</td><td colspan="2" style="font-size:11px">'+t.batches+' entry</td></tr>'; });
+      el.innerHTML='<table><thead><tr><th>Batch / Item</th><th>Dami</th><th>Oras</th><th>Sino</th></tr></thead><tbody>'+html+'</tbody></table>';
     }).catch(function(e){
       el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-CENTRAL-receiving.sql first for this report.':e.message)+'</span>';
     });
   }
+  function crecvAoa(){
+    var g=crecvGroup(crecvRows), rows=[['Petsa','Oras','Sino nagpasok','Batch (DR / import file)','Item','Boxes','Dami','Unit']];
+    g.order.forEach(function(dk){
+      var d=g.days[dk], dayItems=[];
+      d.order.forEach(function(bk){ dayItems=dayItems.concat(d.batches[bk].items); });
+      rows.push(['📅 '+dk,'','','','','','','']);
+      d.order.forEach(function(bk){
+        var b=d.batches[bk];
+        var head=b.kind==='CPE delivery' ? ('CPE delivery · DR '+(b.ref||'—')+(b.detail&&b.detail!==b.ref?(' · '+b.detail):'')) : ('Materials import · '+(b.detail||'—'));
+        b.items.forEach(function(r,i){
+          rows.push([dk, new Date(r.received_at).toLocaleTimeString(), r.received_by||'', i===0?head:'',
+                     r.kind==='CPE delivery'?'Serialized CPE':(r.ref||''), (r.boxes==null?'':+r.boxes), (r.qty==null?'':+r.qty), r.unit||'']);
+        });
+        var bt=sumUnits(b.items);
+        rows.push(['','','','BATCH TOTAL','', '', unitsLabel(bt),'']);
+      });
+      rows.push(['','','','DAY TOTAL ('+dk+')','','',unitsLabel(sumUnits(dayItems)),'']);
+    });
+    rows.push(['','','','','','','','']);
+    rows.push(['Σ GRAND TOTAL — buong saklaw','','','','','','','']);
+    crecvGrand(crecvRows).forEach(function(t){ rows.push(['','','','',t.item,'',+t.qty,t.unit]); });
+    return rows;
+  }
   function exportCrecv(){
     if(!crecvRows.length){ toast('Nothing to export',true); return; }
-    var rows=[['Kailan (petsa at oras)','Uri','Ref / Material','Detalye','Boxes','Dami','Unit','Sino nagpasok']].concat(
-      crecvRows.map(function(r){return [new Date(r.received_at).toLocaleString(),r.kind,r.ref||'',r.detail||'',(r.boxes==null?'':+r.boxes),(r.qty==null?'':+r.qty),r.unit||'',r.received_by||''];}));
-    downloadXlsx('wims-central-receiving.xlsx',rows);
+    downloadXlsx('wims-central-receiving.xlsx',crecvAoa());
   }
 
   // per-report date-range filter: bawat category may sariling From/To inputs
@@ -1571,7 +1637,7 @@
     if(defCpe.length) sheets.push({name:'Defective CPE', aoa:[['When','Team','Serial','Type','Model','Remarks']].concat(defCpe.map(function(r){return [new Date(r.returned_at).toLocaleString(),r.team||'',r.serial,r.category||'',r.model||'',r.note||''];}))});
     if(defMat.length) sheets.push({name:'Defective Materials', aoa:[['When','Material','Team','Qty','Unit','Remarks']].concat(defMat.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.team||'',+r.qty,r.unit,r.note||''];}))});
     if(ledRows.length) sheets.push({name:'Deduction Ledger', aoa:[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];}))});
-    if(crecvRows.length) sheets.push({name:'Central Receiving', aoa:[['Kailan (petsa at oras)','Uri','Ref / Material','Detalye','Boxes','Dami','Unit','Sino nagpasok']].concat(crecvRows.map(function(r){return [new Date(r.received_at).toLocaleString(),r.kind,r.ref||'',r.detail||'',(r.boxes==null?'':+r.boxes),(r.qty==null?'':+r.qty),r.unit||'',r.received_by||''];}))});
+    if(crecvRows.length) sheets.push({name:'Central Receiving', aoa:crecvAoa()});
     if(!sheets.length){ toast('Reports are still loading — try again in a moment',true); return; }
     downloadXlsxSheets('wims-ALL-reports.xlsx',sheets);
   }
