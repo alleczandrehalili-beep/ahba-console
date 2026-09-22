@@ -291,6 +291,15 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>📥 Central receiving — history</h2><p class="desc" style="margin:0">LAHAT ng pumasok sa CENTRAL warehouse — CPE deliveries at materials — kung SINO ang nagpasok, kailan at anong oras.</p></div>
+        <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="rcFrom" style="padding:7px 9px"></div>
+        <div class="field"><label>To</label><input type="date" id="rcTo" style="padding:7px 9px"></div>
+        <button class="btn" id="crecvExport">⬇ Export Excel</button>
+      </div>
+      <div id="crecvTable" style="margin-top:12px;overflow:auto;max-height:420px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>🛠 Defective — overview</h2><p class="desc" style="margin:0">Everything teams returned or declared as DEFECTIVE — removed from usable stock.</p></div>
         <div class="field" style="margin-left:auto"><label>📅 From</label><input type="date" id="dfFrom" style="padding:7px 9px"></div>
         <div class="field"><label>To</label><input type="date" id="dfTo" style="padding:7px 9px"></div>
@@ -1070,6 +1079,7 @@
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
     if(e.target.id==='pulledExport'){exportPulled();return;}
+    if(e.target.id==='crecvExport'){exportCrecv();return;}
     var plr=e.target.closest&&e.target.closest('[data-pulledret]');
     if(plr){
       plr.disabled=true;
@@ -1127,6 +1137,7 @@
     if(e.target.id==='mmFrom'||e.target.id==='mmTo')loadMatMonitoring();
     if(e.target.id==='crFrom'||e.target.id==='crTo')loadCpeReturns();
     if(e.target.id==='plFrom'||e.target.id==='plTo')loadPulled();
+    if(e.target.id==='rcFrom'||e.target.id==='rcTo')loadCentralRecv();
     if(e.target.id==='dfFrom'||e.target.id==='dfTo')loadDefective();
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='matLoc')renderMatList();
@@ -1445,6 +1456,31 @@
     downloadXlsx('wims-pulled-cpe.xlsx',rows);
   }
 
+  // ---- 📥 Central receiving — LAHAT ng pasok sa central (CPE + materials) ----
+  var crecvRows=[];
+  function loadCentralRecv(){
+    var el=$('#crecvTable'); if(!el) return;
+    apiAll('/v_central_receiving?select=*&order=received_at.desc'+dateRange('received_at','rcFrom','rcTo')).then(function(rows){
+      crecvRows=rows||[];
+      if(!crecvRows.length){ el.innerHTML='<span class="empty">Wala pang receiving record sa napiling saklaw.</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>Kailan (petsa · oras)</th><th>Uri</th><th>Ref / Material</th><th>Detalye</th><th>Boxes</th><th>Dami</th><th>Sino nagpasok</th></tr></thead><tbody>'+
+        crecvRows.map(function(r){
+          var pill=r.kind==='CPE delivery'
+            ? '<span class="pill installed">📦 CPE</span>'
+            : '<span class="pill" style="background:#eef4fb;color:#1d4f8a;border:1px solid #c9dcf2">🧰 Materials</span>';
+          return '<tr><td class="tnum">'+new Date(r.received_at).toLocaleString()+'</td><td>'+pill+'</td><td><b>'+(r.ref||'—')+'</b></td><td style="font-size:11px;max-width:320px">'+(r.detail||'—')+'</td><td class="tnum">'+(r.boxes==null?'—':+r.boxes)+'</td><td class="tnum"><b>'+(r.qty==null?'—':+r.qty)+'</b> '+(r.unit||'')+'</td><td><b>'+(r.received_by||'—')+'</b></td></tr>';
+        }).join('')+'</tbody></table>';
+    }).catch(function(e){
+      el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-CENTRAL-receiving.sql first for this report.':e.message)+'</span>';
+    });
+  }
+  function exportCrecv(){
+    if(!crecvRows.length){ toast('Nothing to export',true); return; }
+    var rows=[['Kailan (petsa at oras)','Uri','Ref / Material','Detalye','Boxes','Dami','Unit','Sino nagpasok']].concat(
+      crecvRows.map(function(r){return [new Date(r.received_at).toLocaleString(),r.kind,r.ref||'',r.detail||'',(r.boxes==null?'':+r.boxes),(r.qty==null?'':+r.qty),r.unit||'',r.received_by||''];}));
+    downloadXlsx('wims-central-receiving.xlsx',rows);
+  }
+
   // per-report date-range filter: bawat category may sariling From/To inputs
   function dateRange(col, fid, tid){
     var f=($('#'+(fid||'repFrom'))||{}).value, t=($('#'+(tid||'repTo'))||{}).value, q='';
@@ -1535,6 +1571,7 @@
     if(defCpe.length) sheets.push({name:'Defective CPE', aoa:[['When','Team','Serial','Type','Model','Remarks']].concat(defCpe.map(function(r){return [new Date(r.returned_at).toLocaleString(),r.team||'',r.serial,r.category||'',r.model||'',r.note||''];}))});
     if(defMat.length) sheets.push({name:'Defective Materials', aoa:[['When','Material','Team','Qty','Unit','Remarks']].concat(defMat.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.team||'',+r.qty,r.unit,r.note||''];}))});
     if(ledRows.length) sheets.push({name:'Deduction Ledger', aoa:[['When','Material','Type','Qty','Unit','Team','Note']].concat(ledRows.map(function(r){return [new Date(r.created_at).toLocaleString(),r.material,r.kind,+r.qty,r.unit,r.team||'central',r.note||''];}))});
+    if(crecvRows.length) sheets.push({name:'Central Receiving', aoa:[['Kailan (petsa at oras)','Uri','Ref / Material','Detalye','Boxes','Dami','Unit','Sino nagpasok']].concat(crecvRows.map(function(r){return [new Date(r.received_at).toLocaleString(),r.kind,r.ref||'',r.detail||'',(r.boxes==null?'':+r.boxes),(r.qty==null?'':+r.qty),r.unit||'',r.received_by||''];}))});
     if(!sheets.length){ toast('Reports are still loading — try again in a moment',true); return; }
     downloadXlsxSheets('wims-ALL-reports.xlsx',sheets);
   }
@@ -1732,6 +1769,7 @@
     loadInventory();
     loadCpeReturns();
     loadPulled();
+    loadCentralRecv();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
     var team=sel?sel.value:'';
