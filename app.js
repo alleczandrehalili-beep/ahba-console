@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-22.1';
+const APP_VERSION='2026-09-22.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1684,7 +1684,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
@@ -3001,6 +3001,44 @@ async function submitOrder(e){
   btn.disabled=false; btn.textContent=(($('#orderForm').dataset.ordtype)==='SLI'?'Submit for validation':'Dispatch Load');
 }
 
+// ---------- Collapsible sidebar nav groups (owner 2026-09-22) ----------
+// Default: NAKASARA ang bawat category — click sa header para lumabas ang sub-tabs.
+// Naaalala per user (localStorage). Habang nakasara, ang header ay nagpapakita ng
+// kabuuang badge ng mga sub-tab sa loob (hal. SLR Tickets count sa Daily Operations).
+function navGrpSet(g,open,save){
+  const head=document.querySelector(`.nav-group-head[data-grp="${g}"]`);
+  const body=document.querySelector(`.nav-group[data-grpbody="${g}"]`);
+  if(!head||!body) return;
+  head.setAttribute('aria-expanded', open?'true':'false');
+  body.classList.toggle('collapsed', !open);
+  if(save!==false){ try{ localStorage.setItem('navgrp_'+g, open?'1':'0'); }catch(e){} }
+  navGrpBadges();
+}
+function navGrpBadges(){
+  document.querySelectorAll('.nav-group-head').forEach(head=>{
+    const body=document.querySelector(`.nav-group[data-grpbody="${head.dataset.grp}"]`); if(!body) return;
+    let sum=0;
+    body.querySelectorAll('.nav-item').forEach(n=>{ if(n.style.display==='none') return;
+      const b=n.querySelector('b'); if(b&&b.style.display!=='none') sum+=(+b.textContent||0); });
+    const gb=head.querySelector('.grp-badge');
+    if(gb){ gb.textContent=sum; gb.style.display=(head.getAttribute('aria-expanded')!=='true'&&sum>0)?'':'none'; }
+  });
+}
+function initNavGroups(){
+  document.querySelectorAll('.nav-group-head').forEach(head=>{
+    const g=head.dataset.grp;
+    head.onclick=()=>navGrpSet(g, head.getAttribute('aria-expanded')!=='true');
+    let open=false;
+    try{ if(localStorage.getItem('navgrp_'+g)==='1') open=true; }catch(e){}
+    navGrpSet(g,open,false);
+  });
+  // Kapag nag-iba ang badge sa loob (SLR/QA pollers), i-refresh ang header aggregate.
+  // (navGrpBadges writes only to the HEADS — outside the observed group bodies — no loop.)
+  document.querySelectorAll('.nav-group').forEach(body=>{
+    try{ new MutationObserver(navGrpBadges).observe(body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['style']}); }catch(e){}
+  });
+}
+
 // ---------- 🎫 SLR Tickets (tech-created repairs) — SEPARATE monitoring ----------
 // Ang tickets ay nasa jobs table (load_type='SLR-TICKET') pero HINDI kasama sa jobs
 // array (sinasala sa getJobs) — ang page na ito ang tanging tanaw ng console sa kanila.
@@ -3251,6 +3289,7 @@ function applyAccess(u){
   $$('.nav-group').forEach(g=>{ const any=[...g.querySelectorAll('.nav-item')].some(n=>n.style.display!=='none');
     g.style.display=any?'':'none';
     const h=document.querySelector(`.nav-group-head[data-grp="${g.dataset.grpbody}"]`); if(h) h.style.display=any?'':'none'; });
+  navGrpBadges();
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
   const canExp=(u.is_super||allowed.includes('expenses'));
@@ -4116,6 +4155,7 @@ function init(){
   updateShiftClock(); setInterval(updateShiftClock, 1000);
 
   $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
+  initNavGroups();
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));

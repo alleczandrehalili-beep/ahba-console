@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-09-22.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-22.2" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -147,7 +147,7 @@
         <button class="nav-item" data-page="timeline"><i data-icon="clock"></i><span>Dashboard</span><b id="pendingBadge">0</b></button>
         <!-- Consolidated groups (owner 2026-09-21): section headers + highlighted sub-tabs,
              laging kita lahat (walang collapse) para madaling makita. -->
-        <div class="nav-group-head" data-grp="daily">Daily Operations</div>
+        <button type="button" class="nav-group-head" data-grp="daily" aria-expanded="false"><span>Daily Operations</span><b class="grp-badge" style="display:none">0</b><i class="grp-chev">▸</i></button>
         <div class="nav-group" data-grpbody="daily">
           <button class="nav-item" data-page="teams"><i data-icon="users"></i><span>Field Teams</span></button>
           <button class="nav-item" data-page="workorders"><i data-icon="clipboard"></i><span>Work Orders</span></button>
@@ -155,7 +155,7 @@
           <button class="nav-item" data-page="history"><i data-icon="clipboard"></i><span>Billing Validation</span></button>
           <button class="nav-item" data-page="remittance"><i data-icon="wallet"></i><span>Remittance</span></button>
         </div>
-        <div class="nav-group-head" data-grp="qa">QA Operations</div>
+        <button type="button" class="nav-group-head" data-grp="qa" aria-expanded="false"><span>QA Operations</span><b class="grp-badge" style="display:none">0</b><i class="grp-chev">▸</i></button>
         <div class="nav-group" data-grpbody="qa">
           <button class="nav-item" data-page="qaaudit"><i data-icon="check"></i><span>QA Audit</span><b id="qaBadge" style="display:none">0</b></button>
           <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>QA Validation</span></button>
@@ -165,7 +165,7 @@
         <button class="nav-item" data-page="fms"><i data-icon="truck"></i><span>Fleet</span><b id="fmsBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
         <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
-        <div class="nav-group-head" data-grp="fldaccess">Field Ops Access</div>
+        <button type="button" class="nav-group-head" data-grp="fldaccess" aria-expanded="false"><span>Field Ops Access</span><b class="grp-badge" style="display:none">0</b><i class="grp-chev">▸</i></button>
         <div class="nav-group" data-grpbody="fldaccess">
           <button class="nav-item" data-page="access" style="display:none"><i data-icon="users"></i><span>Access Control</span></button>
           <button class="nav-item" data-page="subcon" style="display:none"><i data-icon="users"></i><span>Subcontractors</span></button>
@@ -809,11 +809,11 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-09-22.1"></script>
+  <script src="app.js?v=2026-09-22.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-09-22.1"></script>
+  <script src="ahba-cloud.js?v=2026-09-22.2"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-09-22.1"></script><script src="qa-api.js?v=2026-09-22.1"></script><script src="console-qa.js?v=2026-09-22.1"></script><script src="console-qa-findings.js?v=2026-09-22.1"></script>
-  <script src="fms-core.js?v=2026-09-22.1"></script><script src="fms-api.js?v=2026-09-22.1"></script><script src="console-fms.js?v=2026-09-22.1"></script>
+  <script src="qa-core.js?v=2026-09-22.2"></script><script src="qa-api.js?v=2026-09-22.2"></script><script src="console-qa.js?v=2026-09-22.2"></script><script src="console-qa-findings.js?v=2026-09-22.2"></script>
+  <script src="fms-core.js?v=2026-09-22.2"></script><script src="fms-api.js?v=2026-09-22.2"></script><script src="console-fms.js?v=2026-09-22.2"></script>
 </body>
 </html>
