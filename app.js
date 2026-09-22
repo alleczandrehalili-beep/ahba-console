@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-20.1';
+const APP_VERSION='2026-09-22.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3246,6 +3246,11 @@ function applyAccess(u){
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
   $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  // Nav groups: itago ang header + wrapper kapag WALANG kahit isang kita na sub-tab
+  // (hal. dispatcher na walang QA access, o subcon console na walang Field Ops Access).
+  $$('.nav-group').forEach(g=>{ const any=[...g.querySelectorAll('.nav-item')].some(n=>n.style.display!=='none');
+    g.style.display=any?'':'none';
+    const h=document.querySelector(`.nav-group-head[data-grp="${g.dataset.grpbody}"]`); if(h) h.style.display=any?'':'none'; });
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
   const canExp=(u.is_super||allowed.includes('expenses'));

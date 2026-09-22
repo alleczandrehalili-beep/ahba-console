@@ -164,3 +164,9 @@ html,body{overflow-x:hidden;max-width:100%}
 .ord-thumbs .ord-thumb{position:relative;display:inline-block;width:64px;height:64px}
 .ord-thumbs .ord-thumb img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .ord-thumbs .ord-thumb button{position:absolute;top:-6px;right:-6px;background:#c2503a;color:#fff;border:0;border-radius:50%;width:19px;height:19px;font-size:11px;line-height:1;padding:0;cursor:pointer}
+
+/* ---- Sidebar nav groups (consolidation 2026-09-21): headers + highlighted sub-tabs ---- */
+.nav-group-head{padding:12px 12px 5px;color:#7ea39c;font:800 9px 'DM Sans',sans-serif;letter-spacing:.14em;text-transform:uppercase}
+.nav-group{display:flex;flex-direction:column;gap:4px;margin:0 0 4px 8px;padding-left:8px;border-left:2px solid #1c4a44;background:rgba(255,255,255,.025);border-radius:0 10px 10px 0}
+.nav-group .nav-item{padding:9px 12px;font-size:12.5px}
+.nav-group .nav-item.active{box-shadow:inset 3px 0 var(--lime)}
