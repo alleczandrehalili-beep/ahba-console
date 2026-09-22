@@ -171,8 +171,10 @@ html,body{overflow-x:hidden;max-width:100%}
 .nav-list::-webkit-scrollbar-thumb{background:#2a544e;border-radius:4px}
 .nav-list::-webkit-scrollbar-track{background:transparent}
 .sidebar-spacer{flex:0 0 10px}
-.nav-group-head{width:100%;border:0;background:transparent;display:flex;align-items:center;gap:8px;padding:12px 12px 6px;color:#7ea39c;font:800 9px 'DM Sans',sans-serif;letter-spacing:.14em;text-transform:uppercase;text-align:left;cursor:pointer}
-.nav-group-head:hover{color:#fff}
+.nav-group-head{width:100%;border:0;background:transparent;display:flex;align-items:center;gap:12px;padding:11px 12px;color:#95aca7;font:800 10px 'DM Sans',sans-serif;letter-spacing:.12em;text-transform:uppercase;text-align:left;cursor:pointer;border-radius:10px}
+.nav-group-head:hover{background:#123a36;color:#fff}
+.nav-group-head:focus{outline:none}
+.nav-group-head svg{width:18px;height:18px;flex:none}
 .nav-group-head .grp-chev{margin-left:auto;font-style:normal;font-size:11px;transition:transform .15s ease}
 .nav-group-head[aria-expanded="true"] .grp-chev{transform:rotate(90deg)}
 .nav-group-head .grp-badge{background:#ff775f;color:#fff;border-radius:20px;padding:2px 7px;font-size:10px;font-style:normal;margin-left:auto}
