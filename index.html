@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-09-22.5" />
+  <link rel="stylesheet" href="styles.css?v=2026-09-23.2" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -410,7 +410,15 @@
               <button type="button" data-vq="fsoi">✏️ FSOI — resubmitted <span id="valFsoiCount"></span></button>
             </div>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>Area</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
+          <div class="filter-row" style="padding-top:0;align-items:center;gap:10px;justify-content:flex-start">
+            <span style="font:800 9px 'DM Sans',sans-serif;letter-spacing:.08em;color:#8a9894;text-transform:uppercase;flex:none;min-width:62px">District</span>
+            <div class="filter-chips" id="valDistChips" style="flex-wrap:wrap"></div>
+          </div>
+          <div class="filter-row" style="padding-top:0;align-items:center;gap:10px;justify-content:flex-start">
+            <span style="font:800 9px 'DM Sans',sans-serif;letter-spacing:.08em;color:#8a9894;text-transform:uppercase;flex:none;min-width:62px">Barangay</span>
+            <div class="filter-chips" id="valBrgyChips" style="flex-wrap:wrap"></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>Work order</th><th>Sales agent</th><th>Subscriber</th><th>Contact</th><th>District</th><th>Barangay</th><th>Submitted</th><th>Action</th></tr></thead><tbody id="validationBody"></tbody></table></div>
         </article>
         <article class="panel full-table" id="valRejectedPanel" style="margin-top:14px;display:none">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">⚠ Rejected — needs fixing</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Orders the Validator rejected. Click “Edit &amp; resubmit” to fix the details and send it back for validation.</p></div>
@@ -809,11 +817,11 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="app.js?v=2026-09-22.5"></script>
+  <script src="app.js?v=2026-09-23.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-09-22.5"></script>
+  <script src="ahba-cloud.js?v=2026-09-23.2"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-09-22.5"></script><script src="qa-api.js?v=2026-09-22.5"></script><script src="console-qa.js?v=2026-09-22.5"></script><script src="console-qa-findings.js?v=2026-09-22.5"></script>
-  <script src="fms-core.js?v=2026-09-22.5"></script><script src="fms-api.js?v=2026-09-22.5"></script><script src="console-fms.js?v=2026-09-22.5"></script>
+  <script src="qa-core.js?v=2026-09-23.2"></script><script src="qa-api.js?v=2026-09-23.2"></script><script src="console-qa.js?v=2026-09-23.2"></script><script src="console-qa-findings.js?v=2026-09-23.2"></script>
+  <script src="fms-core.js?v=2026-09-23.2"></script><script src="fms-api.js?v=2026-09-23.2"></script><script src="console-fms.js?v=2026-09-23.2"></script>
 </body>
 </html>

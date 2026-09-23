@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-22.5';
+const APP_VERSION='2026-09-23.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1744,7 +1744,7 @@ async function refreshValBadge(){
 }
 async function renderValidation(){
   const body=$('#validationBody'); if(!body)return;
-  body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
+  body.innerHTML=`<tr><td colspan="8" class="empty-cell">Loading…</td></tr>`;
   await ensureFreshTok();   // buhayin ang token bago mag-fetch — dito pinaka-ramdam ang dead-JWT hang
   // The rejected list is independent of the for-validation queue — render it right away so it
   // ALWAYS shows (even when nothing is awaiting validation, which is the normal case for a subcon).
@@ -1760,7 +1760,7 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -1782,17 +1782,41 @@ async function renderValidation(){
   refreshValBadge();
 }
 let valQueueView='new', valNewJ=[], valFsoiJ=[];
+// District/Barangay viewing filters (owner 2026-09-23): para agad makita ng validator
+// at dispatcher kung saang lugar ang mga JO na pinapasok ng sales.
+let valDist='', valBrgy='';
+function paintValGeoFilters(){
+  const base=valQueueView==='fsoi'?valFsoiJ:valNewJ;
+  const dc=$('#valDistChips'); if(!dc) return;
+  const dCounts={}; base.forEach(j=>{ const d=String(j.district||'').trim(); if(d) dCounts[d]=(dCounts[d]||0)+1; });
+  const dists=Object.keys(dCounts).sort((a,b)=>(+a)-(+b));
+  dc.innerHTML=[`<button type="button" class="${valDist===''?'active':''}" data-vd="">All districts (${base.length})</button>`]
+    .concat(dists.map(d=>`<button type="button" class="${valDist===d?'active':''}" data-vd="${esc(d)}">District ${esc(d)} (${dCounts[d]})</button>`)).join('');
+  dc.querySelectorAll('[data-vd]').forEach(b=>b.onclick=()=>{ valDist=b.dataset.vd; valBrgy=''; paintValQueue(); });
+  const bc=$('#valBrgyChips');
+  if(bc){
+    const pool=base.filter(j=>!valDist||String(j.district||'').trim()===valDist);
+    const bCounts={}; pool.forEach(j=>{ const b0=String(j.brgy||'').trim().toUpperCase(); if(b0) bCounts[b0]=(bCounts[b0]||0)+1; });
+    const brgys=Object.keys(bCounts).sort();
+    bc.innerHTML=[`<button type="button" class="${valBrgy===''?'active':''}" data-vb="">All barangays (${pool.length})</button>`]
+      .concat(brgys.map(b0=>`<button type="button" class="${valBrgy===b0?'active':''}" data-vb="${esc(b0)}">${esc(b0)} (${bCounts[b0]})</button>`)).join('');
+    bc.querySelectorAll('[data-vb]').forEach(b=>b.onclick=()=>{ valBrgy=b.dataset.vb; paintValQueue(); });
+  }
+}
 function paintValQueue(){
   const body=$('#validationBody'); if(!body) return;
-  const list=valQueueView==='fsoi'?valFsoiJ:valNewJ;
+  paintValGeoFilters();
+  const list=(valQueueView==='fsoi'?valFsoiJ:valNewJ).filter(j=>
+    (!valDist||String(j.district||'').trim()===valDist) &&
+    (!valBrgy||String(j.brgy||'').trim().toUpperCase()===valBrgy));
   const hint=$('#valQueueHint');
   if(hint) hint.textContent=valQueueView==='fsoi'
     ? 'Dating na-reject at in-edit na ng encoder — buksan para makita kung sino ang unang nag-check at ang remarks.'
     : 'Unang beses pa lang na-submit — check the ID, Proof of Billing, and Premise photos before approving.';
   body.innerHTML=list.length?list.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${esc(j.area||j.city||'—')}</td><td>${fmtWhen(j.created_at||j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
-  }).join(''):`<tr><td colspan="7" class="empty-cell">${valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.'}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${j.district?('District '+esc(j.district)):'—'}</td><td>${esc(String(j.brgy||'—').toUpperCase())}</td><td>${fmtWhen(j.created_at||j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+  }).join(''):`<tr><td colspan="8" class="empty-cell">${(valDist||valBrgy)?'No JOs match the district/barangay filter — clear it to see everything.':(valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.')}</td></tr>`;
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
 }
 // Rejected orders the viewer can see (subcon = own via RLS, GC = all). Shows the rejection
