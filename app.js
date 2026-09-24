@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-23.2';
+const APP_VERSION='2026-09-24.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -604,7 +604,7 @@ function openJobDetail(jobId){
   if(j.qa_status){ $('#jdSub').textContent+=' · QA: '+j.qa_status+(j.qa_assessment?' · '+j.qa_assessment:''); }   // mirror ng qa.audits (sync_job)
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
   $('#jdInfo').innerHTML=[
-    F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?agentLabel(j.created_by):'—'),
+    F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?(/^(CONSOLE|IMPORT)$/i.test(j.created_by)&&j.encoded_by?(j.created_by.toUpperCase()+' · '+j.encoded_by):agentLabel(j.created_by)):'—'),
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
     F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
@@ -1760,7 +1760,7 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
     loadAgentNames(),
     fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
   ]);
@@ -2078,6 +2078,10 @@ const agentLabel=u=>u?(u+(agentNames[u]?(' · '+agentNames[u]):'')):'—';
 function encoderLabel(j){
   const oid=j&&j.org_id;
   if(oid && gcOrgId && oid!==gcOrgId && orgById[oid]){ const o=orgById[oid]; return '🏢 '+(o.name||o.code||'Subcon'); }
+  // Console/Import encodes: ipakita ang MISMONG console user na nag-encode (encoded_by,
+  // owner 2026-09-24) para ma-monitor kung kanino galing ang JO — hindi na "CONSOLE" lang.
+  if(j && /^(CONSOLE|IMPORT)$/i.test(String(j.created_by||'')) && j.encoded_by)
+    return '🖥 '+String(j.created_by).toUpperCase()+' · '+j.encoded_by;
   return agentLabel(j&&j.created_by);
 }
 // The GC Validator stores the rejection reason in special_note as "REJECTED: <reason>".
@@ -2963,7 +2967,7 @@ async function submitOrder(e){
   // SLI goes to the Validator first; Migration, SLR, Transfer & IPTV go straight to For
   // Dispatch — ang mga Dispatcher mismo ang nagsisilbing validator ng mga ito.
   const toValidate=(ordType==='SLI');
-  const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',load_type:ordType,load_date:(toValidate?null:manilaToday()),
+  const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',encoded_by:((window.dashUser&&(dashUser.username||dashUser.display_name))||null),load_type:ordType,load_date:(toValidate?null:manilaToday()),
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,birth_date:(bday||null),primary_no:pno,other_contact_no:ono,email:email,
     house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
     updated_at:new Date().toISOString()};
@@ -2995,12 +2999,15 @@ async function submitOrder(e){
       // Resubmit an edited REJECTED order — UPDATE (keep id/created_by/org), back to for_validation.
       const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
       const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time; delete patch.history;
+      delete patch.encoded_by;   // resubmit: panatilihin ang ORIHINAL na encoder (may sariling history line ang resubmit)
       if(!bday) delete patch.birth_date;   // blank on edit = keep whatever the record already has
       patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
       const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
       histLog(ordEditId, `Edited & resubmitted for validation by ${who}`);
     } else {
       const {error}=await client.from('jobs').insert(job); if(error) throw error;
+      // Bakas sa history kung SINO ang console user na nag-encode (monitoring, owner 2026-09-24).
+      { const _u=window.dashUser||{}; histLog(jobId,`Encoded via console by ${_u.display_name||_u.username||'Console'}`); }
       // Leave a trace for the Validator when a warned duplicate was pushed through.
       if(ordDupAck) histLog(jobId,`Encoded with duplicate warning: ${ordDupAck.pct}% match with ${ordDupAck.id}`);
     }
@@ -4134,7 +4141,7 @@ async function importJobsFromRows(rows){
     const addr=[g.house_no,g.street_name,g.village,g.brgy,g.city].filter(Boolean).join(', ');
     const id='WO-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6)+String(idx);
     const o={ id, subscriber:full||'Subscriber', service_type:g.type||'Installation', plan:g.plan||'', area:g.city||g.brgy||'', address:addr,
-      status:'pending', wait_time:'Imported', priority:g.priority||'1st Load', schedule:'Today', team:g.team||null, load_date:today, created_by:'IMPORT', created_at:now, updated_at:now,
+      status:'pending', wait_time:'Imported', priority:g.priority||'1st Load', schedule:'Today', team:g.team||null, load_date:today, created_by:'IMPORT', encoded_by:((window.dashUser&&(dashUser.username||dashUser.display_name))||null), created_at:now, updated_at:now,
       first_name:g.first_name,middle_name:g.middle_name,last_name:g.last_name,primary_no:g.primary_no,other_contact_no:g.other_contact_no,
       house_no:g.house_no,street_name:g.street_name,village:g.village,brgy:g.brgy,city:g.city,
       ibass_acct_no:g.ibass_acct_no,job_order_no:g.job_order_no,vas_no:g.vas_no,play_type:g.play_type,ref_no:g.ref_no,new_ref:g.new_ref,
