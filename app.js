@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-24.2';
+const APP_VERSION='2026-09-25.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2885,10 +2885,14 @@ function renderDupPanel(dup){
   const p=$('#ordDupPanel'); if(!p) return;
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const chip=(ok,label)=>`<span style="margin-right:10px;white-space:nowrap">${ok===null?'– ':(ok?'✓ ':'✗ ')}${label}</span>`;
+  // 🔓 Superadmin-only override (owner 2026-09-25): i-exempt ang LUMANG JO sa dup check
+  // (mananatili itong kita sa system — flag lang, hindi delete) para payagan ang re-encode.
+  const canOverride=!!(window.dashUser&&dashUser.is_super);
   const row=m=>`<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)">
       <b>${m.pct}% match</b> — ${esc(m.id)} · ${esc(String(m.status||'').toUpperCase())} · encoded ${esc(m.encoded_on)} by ${esc(m.encoded_by)}<br>
       ${esc(m.name)} — ${esc(m.address)}<br>
       <span style="font-size:11px">${chip(m.same_name,'name '+m.name_pct+'%')}${chip(m.bday,'birthday')}${chip(m.contact,'contact')}${chip(m.email,'email')}${chip(m.same_address,'address '+m.addr_pct+'%')}</span>
+      ${(m.level==='block'&&canOverride)?`<div style="margin-top:7px"><button type="button" class="secondary-btn" data-dupex="${esc(m.id)}" style="height:32px;font-size:11px;color:#c2503a;border-color:#f0c3ba">🔓 Allow re-encode — exempt this old JO from the duplicate check</button></div>`:''}
     </div>`;
   const blocked=!!dup.blocked;
   const head=blocked
@@ -2901,7 +2905,23 @@ function renderDupPanel(dup){
   p.style.display='';
   const go=$('#ordDupProceed');
   if(go) go.onclick=()=>{ ordDupAck=(dup.matches&&dup.matches[0])||{pct:0,id:'?'}; $('#orderForm').requestSubmit($('#orderSubmit')); };
+  p.querySelectorAll('[data-dupex]').forEach(b=>b.onclick=()=>dupExemptOld(b.dataset.dupex));
   try{ p.scrollIntoView({block:'nearest'}); }catch(err){}
+}
+// Superadmin override: i-exempt ang lumang JO sa duplicate check, itala sa history nito,
+// tapos awtomatikong i-re-check ang encode (tuloy kung wala nang ibang nakaharang).
+async function dupExemptOld(oldId){
+  if(!confirm(`Allow re-encode?\n\nThe old JO ${oldId} will be EXEMPTED from the duplicate check. It stays visible everywhere in the system — only the duplicate check will skip it.`)) return;
+  const client=sbc(); if(!client){ showToast('Cloud client still loading — try again'); return; }
+  try{
+    const {error}=await client.from('jobs').update({dup_exempt:true,updated_at:new Date().toISOString()}).eq('id',oldId);
+    if(error) throw error;
+    const _u=window.dashUser||{};
+    histLog(oldId,`Duplicate-check override by ${_u.display_name||_u.username||'Superadmin'} — re-encode of this subscriber allowed`);
+    showToast('Override saved — re-checking the encode…');
+    ordDupClear();
+    $('#orderForm').requestSubmit($('#orderSubmit'));
+  }catch(e){ showToast('Override failed: '+(e.message||e)); }
 }
 async function submitOrder(e){
   e.preventDefault();
