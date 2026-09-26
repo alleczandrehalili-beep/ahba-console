@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-25.1';
+const APP_VERSION='2026-09-26.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1694,7 +1694,7 @@ let _qaMount=null;
 function initQA(){
   const rootEl=document.getElementById('qaRoot'); if(!rootEl||_qaMount) return;
   if(!window.dashAuthClient||!window.QaApi||!window.ConsoleQA){ rootEl.innerHTML='<div class="empty-cell">QA module not loaded — reload the page.</div>'; return; }
-  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
+  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL,anonKey:SUPA_KEY});
   _qaMount=ConsoleQA.mount(rootEl,{api,user:window.dashUser||{},deps:{toast:showToast,canEdit:dashCanEdit('qaaudit'),L:window.L,ensureXLSX:(typeof ensureXLSX==='function'?ensureXLSX:null)},
     onBadge:n=>{const b=document.getElementById('qaBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }},
     onAssigned:({inspector,date,count})=>{ // push sa inspector (existing send-push Edge Function; team = inspector username)
@@ -1706,7 +1706,7 @@ function initQAFindings(){
   const rootEl=document.getElementById('qaFindRoot'); if(!rootEl) return;
   if(_qaFindMount){ _qaFindMount.refresh(); return; }
   if(!window.dashAuthClient||!window.QaApi||!window.ConsoleQAFindings){ rootEl.innerHTML='<div class="empty-cell">QA module not loaded — reload the page.</div>'; return; }
-  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL});
+  const api=QaApi.create(window.dashAuthClient,{username:(window.dashUser||{}).username||'',supaUrl:SUPA_URL,anonKey:SUPA_KEY});
   _qaFindMount=ConsoleQAFindings.mount(rootEl,{api,user:window.dashUser||{},org:(window.dashUser||{}).org_id||null,deps:{toast:showToast,isVisible:()=>{const s=document.getElementById('qafindingsPage'); return !!(s&&s.classList.contains('active'));}},
     onBadge:n=>{const b=document.getElementById('qaFindBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }}});
 }
