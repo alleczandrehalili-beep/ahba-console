@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-25.1';
+const APP_VERSION='2026-09-26.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1929,6 +1929,7 @@ async function fetchDocsFor(ids){
   }catch(e){return{}}
 }
 let valOpenId=null;
+let valDupTop=null;   // 'pending' | null | {blocked,maxPct,id} — approve gate ng bukás na JO
 // Validator view of the duplicate check: read-only (no "Proceed anyway"); shows the same % match + per-field chips as the encoder saw.
 function valDupRender(dup,state){
   const p=$('#valDupPanel'); if(!p) return;
@@ -1946,7 +1947,12 @@ function valDupRender(dup,state){
       <span style="font-size:11px">${chip(m.same_name,'name '+m.name_pct+'%')}${chip(m.bday,'birthday')}${chip(m.contact,'contact')}${chip(m.email,'email')}${chip(m.same_address,'address '+m.addr_pct+'%')}</span>
     </div>`;
   const strong=!!dup.blocked;
-  const head=strong?'🚫 <b>Strong duplicate match</b> — this subscriber appears to exist already. Check before validating.'
+  // 100% duplicate (owner 2026-09-26): malakas na paalala + SUPERADMIN LANG ang makaka-approve.
+  const _blocks=ms.filter(m=>m.level==='block');
+  const _maxPct=_blocks.length?Math.max(..._blocks.map(m=>+m.pct||0)):0;
+  const is100=strong&&_maxPct>=100;
+  const head=is100?'🚨 <b>100% DUPLICATE</b> — exact match of an existing subscriber. <b>Only the Superadmin can approve this order.</b> Reject it unless the Superadmin decides otherwise.'
+            :strong?'🚫 <b>Strong duplicate match</b> — this subscriber appears to exist already. Check carefully before validating.'
                    :'⚠️ <b>Possible duplicate</b> — compare with the JO(s) below before validating.';
   p.innerHTML=box(strong?'#c2503a':'#b8860b', strong?'#fdf0ee':'#fdf6e3', head+ms.slice(0,3).map(row).join(''));
 }
@@ -1982,9 +1988,15 @@ async function openValidate(jobId){
   const vpc=$('#valPrevCheck'); if(vpc) vpc.innerHTML=valCheckBanner(j,'Resubmitted order — previously checked');
   // Duplicate-subscriber check (same RPC + % scoring the sales app shows on encode) — the validator sees it too.
   valOpenId=jobId; valDupRender(null,'loading');
+  valDupTop='pending';   // gate ng approve habang tumatakbo pa ang check
   dupCheckJO({first:j.first_name,middle:j.middle_name,last:j.last_name,birth:j.birth_date,primary:j.primary_no,ocn:j.other_contact_no,email:j.email,
     house:j.house_no,street:j.street_name,village:j.village,brgy:j.brgy,district:j.district,orderType:j.order_type||'SLI'},window.dashAuthClient,jobId)
-    .then(d=>{ if(valOpenId===jobId) valDupRender(d); });
+    .then(d=>{ if(valOpenId!==jobId) return; valDupRender(d);
+      // Itala para sa approve gate: pinakamataas na BLOCK-level match ng bukás na JO.
+      if(!d||!d.matches||!d.matches.length){ valDupTop=null; return; }
+      const _b=(d.matches||[]).filter(m=>m.level==='block');
+      valDupTop=_b.length?{blocked:true,maxPct:Math.max(..._b.map(m=>+m.pct||0)),id:(_b.sort((a,b)=>(+b.pct||0)-(+a.pct||0))[0]||{}).id}:null;
+    });
   const F=(label,val)=>`<div><b>${label}</b>${val||'—'}</div>`;
   $('#valInfo').innerHTML=[
     F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
@@ -2025,6 +2037,13 @@ async function decideValidation(jobId,approve){
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Validator';   // sino ang nag-desisyon
   let body, rejReason='';
   if(approve){
+    // 🚨 100% DUPLICATE (owner 2026-09-26): superadmin lang ang makaka-approve.
+    if(valDupTop==='pending'){ showToast('Duplicate check still running — wait a second and try again'); return; }
+    if(valDupTop && valDupTop.blocked && valDupTop.maxPct>=100){
+      if(!u.is_super){ showToast('🚨 100% duplicate of '+valDupTop.id+' — only the SUPERADMIN can approve this order'); return; }
+      if(!confirm(`🚨 This order is a 100% DUPLICATE of ${valDupTop.id}.\n\nApprove anyway as Superadmin?`)) return;
+      histLog(jobId,`Approved despite 100% duplicate of ${valDupTop.id} by ${who} (Superadmin)`);
+    }
     const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
     if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
