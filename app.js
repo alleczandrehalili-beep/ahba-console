@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.2';
+const APP_VERSION='2026-09-28.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3113,6 +3113,14 @@ function initNavGroups(){
 // Isang server-side RPC (team_month_performance) ang nagbubuod per team para sa
 // piniling buwan — installs, dispatched, attendance hours, efficiency, areas.
 let taRows=[], taFrom='', taTo='';   // flat rows: {month, group, ...metrics}
+let taCache={};   // month 'YYYY-MM' -> raw RPC rows (iwas ulit-ulit na fetch; ang export ay YTD)
+async function taFetchMonth(m){
+  if(taCache[m]) return taCache[m];
+  const r=await fetch(`${SUPA_URL}/rest/v1/rpc/team_month_performance`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_month:m})});
+  if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,200));
+  taCache[m]=(await r.json())||[];
+  return taCache[m];
+}
 const taMonthList=(from,to)=>{ const out=[]; let [y,m]=from.split('-').map(Number); const [ty,tm]=to.split('-').map(Number);
   while(y<ty||(y===ty&&m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>=12) break; } return out; };
 const taMonthLabel=ym=>{ const [y,m]=ym.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+y; };
@@ -3156,9 +3164,7 @@ async function teamAnalyzeRun(){
     await ensureFreshTok();
     for(let i=0;i<months.length;i++){
       body.innerHTML=`Crunching ${taMonthLabel(months[i])}… (${i+1}/${months.length})`;
-      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/team_month_performance`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_month:months[i]})});
-      if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,200));
-      ((await r.json())||[]).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON'}));
+      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON'}));
     }
   }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
   if(!taRows.length){ body.innerHTML='No team activity found for '+taFrom+' → '+taTo+'.'; return; }
@@ -3192,16 +3198,42 @@ async function teamAnalyzeRun(){
     </tbody></table></div>
     <div style="font-size:10px;color:#8a9894;margin-top:8px">Installs & dispatched exclude SLR tickets · Hours per install = total logged hours ÷ completed installs · Avg work hrs per JO = start-of-work → completed (from JO history, same-day; outliers over 12h excluded) · Areas = distinct barangays of completed JOs · All times Manila.</div>`;
 }
+// EXPORT = laging YTD (Enero → kasalukuyang buwan): isang sheet BAWAT BUWAN + TOTAL sheet.
 async function teamAnalyzeExport(){
-  if(!taRows.length){ showToast('Run Analyze first'); return; }
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
-  const mk=list=>list.sort((a,b)=>a.team.localeCompare(b.team)||b.month.localeCompare(a.month))
-    .map(t=>({'TEAM':t.team,'MONTH':taMonthLabel(t.month),'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')}));
-  const wb=XLSX.utils.book_new();
-  const ah=mk(taRows.filter(r=>r.group==='AHBA')); if(ah.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ah),'AHBA teams');
-  const sc=mk(taRows.filter(r=>r.group==='SUBCON')); if(sc.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(sc),'Subcontractors');
-  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_${taFrom}_to_${taTo}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
-  showToast('Team performance exported');
+  const btn=document.getElementById('taExport');
+  const mNow=manilaToday().slice(0,7), year=mNow.slice(0,4);
+  const months=taMonthList(year+'-01', mNow);
+  const r2=v=>v==null?null:Math.round(v*100)/100;
+  try{
+    await ensureFreshTok();
+    const per={};   // month -> rows (AHBA muna, tapos SUBCON, installs desc)
+    for(let i=0;i<months.length;i++){
+      if(btn) btn.textContent=`Fetching ${i+1}/${months.length}…`;
+      const rows=(await taFetchMonth(months[i])).slice()
+        .sort((a,b)=>(taIsAhba(b.team)-taIsAhba(a.team))||((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
+      per[months[i]]=rows;
+    }
+    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
+    const wb=XLSX.utils.book_new();
+    // TOTAL (YTD) muna — ito ang unang makikita pagbukas ng file
+    const tot={};
+    months.forEach(m=>per[m].forEach(t=>{
+      const o=tot[t.team]||(tot[t.team]={team:t.team,ahba:taIsAhba(t.team),installs:0,dispatched:0,att_days:0,att_hours:0,workSum:0,workN:0,areas:new Set()});
+      o.installs+=(+t.installs||0); o.dispatched+=(+t.dispatched||0);
+      o.att_days+=(+t.att_days||0); o.att_hours+=(+t.att_hours||0);
+      if(t.avg_work_hours!=null&&(+t.installs||0)>0){ o.workSum+=t.avg_work_hours*t.installs; o.workN+=+t.installs; }
+      (t.areas||[]).forEach(a=>o.areas.add(a));
+    }));
+    const totRows=Object.values(tot)
+      .sort((a,b)=>(b.ahba-a.ahba)||(b.installs-a.installs)||a.team.localeCompare(b.team))
+      .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'INSTALLS (COMPLETED)':o.installs,'LOADS DISPATCHED':o.dispatched,'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(totRows),`TOTAL YTD ${year}`);
+    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(per[m].map(mkRow)),taMonthLabel(m)); });
+    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+    showToast(`YTD ${year} exported — ${months.length} month sheets + TOTAL`);
+  }catch(e){ showToast('Export failed: '+(e.message||e)); }
+  if(btn) btn.textContent='Export Excel';
 }
 
 // ---------- 🎫 SLR Tickets (tech-created repairs) — SEPARATE monitoring ----------
