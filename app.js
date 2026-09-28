@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.3';
+const APP_VERSION='2026-09-28.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3178,20 +3178,21 @@ async function teamAnalyzeRun(){
       const tb=rows.filter(r=>r.team===b).reduce((s,r)=>s+(+r.installs||0),0);
       return tb-ta||a.localeCompare(b);
     });
-    return `<tr><td colspan="9" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length} team${teams.length===1?'':'s'}</td></tr>`
+    const crv=t=>((+t.dispatched||0)>0?(Math.round(((+t.installs||0)/(+t.dispatched))*1000)/10)+'%':'—');
+    return `<tr><td colspan="10" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length} team${teams.length===1?'':'s'}</td></tr>`
       + teams.map(tm=>{
           const mr=rows.filter(r=>r.team===tm).sort((a,b)=>b.month.localeCompare(a.month));
-          return `<tr><td colspan="9" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
+          return `<tr><td colspan="10" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
             + mr.map(t=>`<tr>
               <td style="padding-left:26px;color:#52635f">${taMonthLabel(t.month)}</td>
-              <td>${num(t.installs)}</td><td>${num(t.dispatched)}</td>
+              <td>${num(t.dispatched)}</td><td>${num(t.installs)}</td><td><b>${crv(t)}</b></td>
               <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
               <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
               <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('');
         }).join('');
   };
   body.innerHTML=`<div class="table-wrap"><table><thead><tr>
-      <th>Team · Month</th><th>Installs<br>(completed)</th><th>Loads<br>dispatched</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
+      <th>Team · Month</th><th>Loads<br>dispatched</th><th>Installs<br>(completed)</th><th>Completion<br>rate</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
     </tr></thead><tbody>
       ${section('AHBA TEAMS','🏢',taRows.filter(r=>r.group==='AHBA'))}
       ${section('SUBCONTRACTORS','🤝',taRows.filter(r=>r.group==='SUBCON'))}
@@ -3214,7 +3215,8 @@ async function teamAnalyzeExport(){
         .sort((a,b)=>(taIsAhba(b.team)-taIsAhba(a.team))||((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
       per[months[i]]=rows;
     }
-    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
+    const cr=(inst,disp)=>((+disp||0)>0?Math.round(((+inst||0)/(+disp))*1000)/10:null);   // Completion Rate %
+    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'LOADS DISPATCHED':t.dispatched,'INSTALLS (COMPLETED)':t.installs,'COMPLETION RATE (%)':cr(t.installs,t.dispatched),'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
     const wb=XLSX.utils.book_new();
     // TOTAL (YTD) muna — ito ang unang makikita pagbukas ng file
     const tot={};
@@ -3227,7 +3229,7 @@ async function teamAnalyzeExport(){
     }));
     const totRows=Object.values(tot)
       .sort((a,b)=>(b.ahba-a.ahba)||(b.installs-a.installs)||a.team.localeCompare(b.team))
-      .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'INSTALLS (COMPLETED)':o.installs,'LOADS DISPATCHED':o.dispatched,'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
+      .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'LOADS DISPATCHED':o.dispatched,'INSTALLS (COMPLETED)':o.installs,'COMPLETION RATE (%)':cr(o.installs,o.dispatched),'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(totRows),`TOTAL YTD ${year}`);
     months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(per[m].map(mkRow)),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
