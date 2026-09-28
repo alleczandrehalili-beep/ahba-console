@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.4';
+const APP_VERSION='2026-09-28.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3211,8 +3211,9 @@ async function teamAnalyzeExport(){
     const per={};   // month -> rows (AHBA muna, tapos SUBCON, installs desc)
     for(let i=0;i<months.length;i++){
       if(btn) btn.textContent=`Fetching ${i+1}/${months.length}…`;
-      const rows=(await taFetchMonth(months[i])).slice()
-        .sort((a,b)=>(taIsAhba(b.team)-taIsAhba(a.team))||((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
+      // AHBA teams LANG sa extraction (owner 2026-09-28) — ang subcon ay sa screen view lang.
+      const rows=(await taFetchMonth(months[i])).filter(t=>taIsAhba(t.team))
+        .sort((a,b)=>((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
       per[months[i]]=rows;
     }
     const cr=(inst,disp)=>((+disp||0)>0?Math.round(((+inst||0)/(+disp))*1000)/10:null);   // Completion Rate %
@@ -3233,7 +3234,7 @@ async function teamAnalyzeExport(){
     XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(totRows),`TOTAL YTD ${year}`);
     months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(per[m].map(mkRow)),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
-    showToast(`YTD ${year} exported — ${months.length} month sheets + TOTAL`);
+    showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
   }catch(e){ showToast('Export failed: '+(e.message||e)); }
   if(btn) btn.textContent='Export Excel';
 }
