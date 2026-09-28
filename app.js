@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.1';
+const APP_VERSION='2026-09-28.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3112,23 +3112,30 @@ function initNavGroups(){
 // ---------- 📊 Monthly Team Performance (Analyze — SUPERADMIN only) ----------
 // Isang server-side RPC (team_month_performance) ang nagbubuod per team para sa
 // piniling buwan — installs, dispatched, attendance hours, efficiency, areas.
-let taRows=[], taMonth='';
+let taRows=[], taFrom='', taTo='';   // flat rows: {month, group, ...metrics}
+const taMonthList=(from,to)=>{ const out=[]; let [y,m]=from.split('-').map(Number); const [ty,tm]=to.split('-').map(Number);
+  while(y<ty||(y===ty&&m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>=12) break; } return out; };
+const taMonthLabel=ym=>{ const [y,m]=ym.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+y; };
+const taIsAhba=t=>/^AHBA/i.test(String(t||''));
 function teamAnalyzeOpen(){
   let ov=document.getElementById('taOv'); if(ov) ov.remove();
   ov=document.createElement('div'); ov.id='taOv';
   ov.style.cssText='position:fixed;inset:0;background:rgba(8,30,26,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
   const mNow=manilaToday().slice(0,7);
-  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1080px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
+  const d=new Date(mNow+'-15T00:00:00'); d.setMonth(d.getMonth()-2);
+  const mFrom=d.toISOString().slice(0,7);
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1120px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div><h3 style="margin:0;font-size:16px">📊 Monthly Team Performance</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Superadmin evaluation — per technician team, for the selected month</p></div>
+      <div><h3 style="margin:0;font-size:16px">📊 Monthly Team Performance</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Superadmin evaluation — monthly breakdown per team · AHBA and Subcontractors separated</p></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input type="month" id="taMonth" value="${mNow}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px">
+        <label style="font-size:10px;color:#8a9894">From <input type="month" id="taFrom" value="${mFrom}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
+        <label style="font-size:10px;color:#8a9894">To <input type="month" id="taTo" value="${mNow}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
         <button class="primary-btn" id="taRun" style="height:36px">Analyze</button>
         <button class="secondary-btn" id="taExport" style="height:36px">Export Excel</button>
         <button class="secondary-btn" id="taClose" style="height:36px">✕ Close</button>
       </div>
     </div>
-    <div id="taBody" style="margin-top:14px;font-size:12px;color:#5a6a66">Pick a month, then press Analyze.</div>
+    <div id="taBody" style="margin-top:14px;font-size:12px;color:#5a6a66">Pick the month range, then press Analyze.</div>
   </div>`;
   document.body.appendChild(ov);
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
@@ -3139,33 +3146,61 @@ function teamAnalyzeOpen(){
 }
 async function teamAnalyzeRun(){
   const body=document.getElementById('taBody'); if(!body) return;
-  taMonth=((document.getElementById('taMonth')||{}).value)||manilaToday().slice(0,7);
-  body.innerHTML='Crunching '+taMonth+'…';
+  const mNow=manilaToday().slice(0,7);
+  taFrom=((document.getElementById('taFrom')||{}).value)||mNow;
+  taTo=((document.getElementById('taTo')||{}).value)||mNow;
+  if(taFrom>taTo){ const t=taFrom; taFrom=taTo; taTo=t; }
+  const months=taMonthList(taFrom,taTo);
+  taRows=[];
   try{
     await ensureFreshTok();
-    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/team_month_performance`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_month:taMonth})});
-    if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,200));
-    taRows=(await r.json())||[];
+    for(let i=0;i<months.length;i++){
+      body.innerHTML=`Crunching ${taMonthLabel(months[i])}… (${i+1}/${months.length})`;
+      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/team_month_performance`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_month:months[i]})});
+      if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,200));
+      ((await r.json())||[]).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON'}));
+    }
   }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
-  if(!taRows.length){ body.innerHTML='No team activity found for '+taMonth+'.'; return; }
+  if(!taRows.length){ body.innerHTML='No team activity found for '+taFrom+' → '+taTo+'.'; return; }
   const esc=v=>String(v==null?'':v).replace(/</g,'&lt;');
   const num=v=>(v==null?'—':v);
+  // Monthly breakdown per team: team section row, tapos isang hilera bawat buwan (pinakabago muna).
+  const section=(label,icon,rows)=>{
+    if(!rows.length) return '';
+    const teams=[...new Set(rows.map(r=>r.team))].sort((a,b)=>{
+      const ta=rows.filter(r=>r.team===a).reduce((s,r)=>s+(+r.installs||0),0);
+      const tb=rows.filter(r=>r.team===b).reduce((s,r)=>s+(+r.installs||0),0);
+      return tb-ta||a.localeCompare(b);
+    });
+    return `<tr><td colspan="9" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length} team${teams.length===1?'':'s'}</td></tr>`
+      + teams.map(tm=>{
+          const mr=rows.filter(r=>r.team===tm).sort((a,b)=>b.month.localeCompare(a.month));
+          return `<tr><td colspan="9" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
+            + mr.map(t=>`<tr>
+              <td style="padding-left:26px;color:#52635f">${taMonthLabel(t.month)}</td>
+              <td>${num(t.installs)}</td><td>${num(t.dispatched)}</td>
+              <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
+              <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
+              <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('');
+        }).join('');
+  };
   body.innerHTML=`<div class="table-wrap"><table><thead><tr>
-      <th>Team</th><th>Installs<br>(completed)</th><th>Loads<br>dispatched</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
-    </tr></thead><tbody>${taRows.map(t=>`<tr>
-      <td><strong>${esc(t.team)}</strong></td>
-      <td>${num(t.installs)}</td><td>${num(t.dispatched)}</td>
-      <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
-      <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
-      <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('')}</tbody></table></div>
+      <th>Team · Month</th><th>Installs<br>(completed)</th><th>Loads<br>dispatched</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
+    </tr></thead><tbody>
+      ${section('AHBA TEAMS','🏢',taRows.filter(r=>r.group==='AHBA'))}
+      ${section('SUBCONTRACTORS','🤝',taRows.filter(r=>r.group==='SUBCON'))}
+    </tbody></table></div>
     <div style="font-size:10px;color:#8a9894;margin-top:8px">Installs & dispatched exclude SLR tickets · Hours per install = total logged hours ÷ completed installs · Avg work hrs per JO = start-of-work → completed (from JO history, same-day; outliers over 12h excluded) · Areas = distinct barangays of completed JOs · All times Manila.</div>`;
 }
 async function teamAnalyzeExport(){
   if(!taRows.length){ showToast('Run Analyze first'); return; }
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
-  const rows=taRows.map(t=>({'TEAM':t.team,'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Team performance');
-  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_${taMonth}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  const mk=list=>list.sort((a,b)=>a.team.localeCompare(b.team)||b.month.localeCompare(a.month))
+    .map(t=>({'TEAM':t.team,'MONTH':taMonthLabel(t.month),'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')}));
+  const wb=XLSX.utils.book_new();
+  const ah=mk(taRows.filter(r=>r.group==='AHBA')); if(ah.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(ah),'AHBA teams');
+  const sc=mk(taRows.filter(r=>r.group==='SUBCON')); if(sc.length) XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(sc),'Subcontractors');
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_${taFrom}_to_${taTo}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast('Team performance exported');
 }
 
