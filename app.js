@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-26.2';
+const APP_VERSION='2026-09-28.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3109,6 +3109,66 @@ function initNavGroups(){
   });
 }
 
+// ---------- 📊 Monthly Team Performance (Analyze — SUPERADMIN only) ----------
+// Isang server-side RPC (team_month_performance) ang nagbubuod per team para sa
+// piniling buwan — installs, dispatched, attendance hours, efficiency, areas.
+let taRows=[], taMonth='';
+function teamAnalyzeOpen(){
+  let ov=document.getElementById('taOv'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='taOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(8,30,26,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const mNow=manilaToday().slice(0,7);
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1080px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h3 style="margin:0;font-size:16px">📊 Monthly Team Performance</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Superadmin evaluation — per technician team, for the selected month</p></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="month" id="taMonth" value="${mNow}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px">
+        <button class="primary-btn" id="taRun" style="height:36px">Analyze</button>
+        <button class="secondary-btn" id="taExport" style="height:36px">Export Excel</button>
+        <button class="secondary-btn" id="taClose" style="height:36px">✕ Close</button>
+      </div>
+    </div>
+    <div id="taBody" style="margin-top:14px;font-size:12px;color:#5a6a66">Pick a month, then press Analyze.</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.getElementById('taClose').onclick=()=>ov.remove();
+  document.getElementById('taRun').onclick=teamAnalyzeRun;
+  document.getElementById('taExport').onclick=teamAnalyzeExport;
+  teamAnalyzeRun();
+}
+async function teamAnalyzeRun(){
+  const body=document.getElementById('taBody'); if(!body) return;
+  taMonth=((document.getElementById('taMonth')||{}).value)||manilaToday().slice(0,7);
+  body.innerHTML='Crunching '+taMonth+'…';
+  try{
+    await ensureFreshTok();
+    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/team_month_performance`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_month:taMonth})});
+    if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,200));
+    taRows=(await r.json())||[];
+  }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+  if(!taRows.length){ body.innerHTML='No team activity found for '+taMonth+'.'; return; }
+  const esc=v=>String(v==null?'':v).replace(/</g,'&lt;');
+  const num=v=>(v==null?'—':v);
+  body.innerHTML=`<div class="table-wrap"><table><thead><tr>
+      <th>Team</th><th>Installs<br>(completed)</th><th>Loads<br>dispatched</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
+    </tr></thead><tbody>${taRows.map(t=>`<tr>
+      <td><strong>${esc(t.team)}</strong></td>
+      <td>${num(t.installs)}</td><td>${num(t.dispatched)}</td>
+      <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
+      <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
+      <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('')}</tbody></table></div>
+    <div style="font-size:10px;color:#8a9894;margin-top:8px">Installs & dispatched exclude SLR tickets · Hours per install = total logged hours ÷ completed installs · Avg work hrs per JO = start-of-work → completed (from JO history, same-day; outliers over 12h excluded) · Areas = distinct barangays of completed JOs · All times Manila.</div>`;
+}
+async function teamAnalyzeExport(){
+  if(!taRows.length){ showToast('Run Analyze first'); return; }
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  const rows=taRows.map(t=>({'TEAM':t.team,'INSTALLS (COMPLETED)':t.installs,'LOADS DISPATCHED':t.dispatched,'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Team performance');
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_${taMonth}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  showToast('Team performance exported');
+}
+
 // ---------- 🎫 SLR Tickets (tech-created repairs) — SEPARATE monitoring ----------
 // Ang tickets ay nasa jobs table (load_type='SLR-TICKET') pero HINDI kasama sa jobs
 // array (sinasala sa getJobs) — ang page na ito ang tanging tanaw ng console sa kanila.
@@ -3361,6 +3421,7 @@ function applyAccess(u){
     const h=document.querySelector(`.nav-group-head[data-grp="${g.dataset.grpbody}"]`); if(h) h.style.display=any?'':'none'; });
   navGrpBadges();
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
+  const _tanb=$('#teamAnalyzeBtn'); if(_tanb) _tanb.style.display=u.is_super?'':'none';   // 📊 superadmin only
   // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
   const canExp=(u.is_super||allowed.includes('expenses'));
   $$('[data-go="expenses"], .expense-panel').forEach(el=>{ if(el) el.style.display=canExp?'':'none'; });
@@ -4288,6 +4349,7 @@ function init(){
   $$('#slrStatusChips button').forEach(b=>b.onclick=()=>{ slrSt=b.dataset.slrst; renderSlrTickets(); });
   const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
   const _se=$('#slrExport'); if(_se) _se.onclick=exportSlrTickets;
+  const _tan=$('#teamAnalyzeBtn'); if(_tan) _tan.onclick=teamAnalyzeOpen;
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
