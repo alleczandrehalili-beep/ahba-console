@@ -33,7 +33,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.5';
+const APP_VERSION='2026-09-28.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3231,8 +3231,10 @@ async function teamAnalyzeExport(){
     const totRows=Object.values(tot)
       .sort((a,b)=>(b.ahba-a.ahba)||(b.installs-a.installs)||a.team.localeCompare(b.team))
       .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'LOADS DISPATCHED':o.dispatched,'INSTALLS (COMPLETED)':o.installs,'COMPLETION RATE (%)':cr(o.installs,o.dispatched),'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(totRows),`TOTAL YTD ${year}`);
-    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(per[m].map(mkRow)),taMonthLabel(m)); });
+    // Columns G–K (hours metrics + areas) ay NAKA-HIDE by default — unhide on demand sa Excel.
+    const hideGK=ws=>{ ws['!cols']=[]; for(let i=0;i<=10;i++) ws['!cols'][i]=(i>=6?{hidden:true}:{wch:i===1?14:(i===10?40:12)}); return ws; };
+    XLSX.utils.book_append_sheet(wb,hideGK(XLSX.utils.json_to_sheet(totRows)),`TOTAL YTD ${year}`);
+    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,hideGK(XLSX.utils.json_to_sheet(per[m].map(mkRow))),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
   }catch(e){ showToast('Export failed: '+(e.message||e)); }
