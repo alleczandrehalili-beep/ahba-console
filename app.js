@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.9';
+const APP_VERSION='2026-09-28.10';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3272,23 +3272,59 @@ async function teamAnalyzeExport(){
     totHdrRows.add(totAoa.length); totAoa.push(TOT_HEADERS);
     aggRows(months).forEach(r=>totAoa.push(r));
     const qMap={}; months.forEach(m=>{ const q='Q'+Math.ceil(+m.slice(5,7)/3); (qMap[q]=qMap[q]||[]).push(m); });
+    const sideBlocks=[], sideLblRows=new Set();   // katabi ng bawat quarter: Top/Bottom 3
     Object.keys(qMap).sort().forEach(q=>{
       const mos=qMap[q];
       totAoa.push([]);
+      const startRow=totAoa.length;
       totLblRows.add(totAoa.length);
       totAoa.push([`${q} ${year} (${taMonthLabel(mos[0]).split(' ')[0]}–${taMonthLabel(mos[mos.length-1]).split(' ')[0]})`]);
       totHdrRows.add(totAoa.length); totAoa.push(TOT_HEADERS);
-      aggRows(mos).forEach(r=>totAoa.push(r));
+      const rows=aggRows(mos);
+      rows.forEach(r=>totAoa.push(r));
+      // Leaderboards (owner 2026-09-28): installs Top/Bottom 3 (may avg per month) + completion rate Top/Bottom 3
+      const nMo=mos.length;
+      const byInst=rows.slice().sort((a,b)=>(b[6]-a[6])||String(a[1]).localeCompare(String(b[1])));
+      const withRate=rows.filter(r=>r[7]!=null);
+      const byRate=withRate.slice().sort((a,b)=>(b[7]-a[7])||String(a[1]).localeCompare(String(b[1])));
+      const instLine=(r,i)=>[(i+1)+'.', r[1], `${r[6]} (${Math.round((r[6]/nMo)*10)/10}/mo)`];
+      const rateLine=(r,i)=>[(i+1)+'.', r[1], r[7]+'%'];
+      const lines=[];
+      lines.push({lbl:1,row:['NUMBER OF INSTALLS — TOP 3','','']});
+      byInst.slice(0,3).forEach((r,i)=>lines.push({row:instLine(r,i)}));
+      lines.push({lbl:1,row:['NUMBER OF INSTALLS — BOTTOM 3','','']});
+      byInst.slice(-3).reverse().forEach((r,i)=>lines.push({row:instLine(r,i)}));
+      lines.push({lbl:1,row:['COMPLETION RATE — TOP 3','','']});
+      byRate.slice(0,3).forEach((r,i)=>lines.push({row:rateLine(r,i)}));
+      lines.push({lbl:1,row:['COMPLETION RATE — BOTTOM 3','','']});
+      byRate.slice(-3).reverse().forEach((r,i)=>lines.push({row:rateLine(r,i)}));
+      sideBlocks.push({startRow,lines});
+    });
+    // Ipinta ang side blocks sa columns P–R (index 15–17), pantay sa simula ng bawat quarter.
+    sideBlocks.forEach(b=>{
+      b.lines.forEach((ln,i)=>{
+        const R=b.startRow+i;
+        while(totAoa.length<=R) totAoa.push([]);
+        const row=totAoa[R];
+        row[15]=ln.row[0]; row[16]=ln.row[1]; row[17]=ln.row[2];
+        if(ln.lbl) sideLblRows.add(R);
+      });
     });
     // Format gaya ng sample ng owner: DILAW na bold header, borders sa lahat ng cells,
     // centered na datos, at may kulay na REMARKS marker (monthly sheets).
     const REM_FILL={PERFORMER:['C6EFCE','006100'],PASSED:['BDD7EE','1F4E79'],EVALUATION:['FFEB9C','9C6500'],FAILED:['FFC7CE','9C0006']};
-    const styleTA=(ws,remCol,hdrRows,lblRows)=>{
-      const hdrs=hdrRows||new Set([0]), lbls=lblRows||new Set();
+    const styleTA=(ws,remCol,hdrRows,lblRows,sideLbls)=>{
+      const hdrs=hdrRows||new Set([0]), lbls=lblRows||new Set(), sls=sideLbls||new Set();
       const range=XLSX.utils.decode_range(ws['!ref']||'A1');
       const B={top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}};
       for(let R=range.s.r;R<=range.e.r;R++)for(let C=range.s.c;C<=range.e.c;C++){
         const cell=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(!cell) continue;
+        if(C>=15){   // side leaderboard block (P–R)
+          cell.s=sls.has(R)
+            ? {font:{bold:true},fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}},border:B,alignment:{horizontal:'left',vertical:'center'}}
+            : {border:B,alignment:{horizontal:'left',vertical:'center'}};
+          continue;
+        }
         if(lbls.has(R)){ cell.s={font:{bold:true,sz:12},fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}},border:B,alignment:{horizontal:'left',vertical:'center'}}; continue; }
         if(hdrs.has(R)){ cell.s={font:{bold:true},fill:{patternType:'solid',fgColor:{rgb:'FFFF00'}},border:B,alignment:{horizontal:'left',vertical:'center'}}; continue; }
         let s={border:B,alignment:{horizontal:'center',vertical:'center'}};
@@ -3302,7 +3338,9 @@ async function teamAnalyzeExport(){
     // Monthly (15 cols, REMARKS sa I): kita A–J (hanggang Days), hidden K–O.
     // TOTAL (14 cols, walang REMARKS): kita A–I, hidden J–N.
     const taCols=(ws,firstHidden,total)=>{ ws['!cols']=[]; for(let i=0;i<total;i++) ws['!cols'][i]=(i>=firstHidden?{hidden:true}:{wch:(i>=1&&i<=4)?16:14}); return ws; };
-    XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.aoa_to_sheet(totAoa),9,14),null,totHdrRows,totLblRows),`TOTAL YTD ${year}`);
+    const wsTot=taCols(XLSX.utils.aoa_to_sheet(totAoa),9,14);
+    wsTot['!cols'][14]={wch:2}; wsTot['!cols'][15]={wch:30}; wsTot['!cols'][16]={wch:16}; wsTot['!cols'][17]={wch:18};
+    XLSX.utils.book_append_sheet(wb,styleTA(wsTot,null,totHdrRows,totLblRows,sideLblRows),`TOTAL YTD ${year}`);
     months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(per[m].map(t=>mkRow(t,crew[m]))),10,15),8),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
