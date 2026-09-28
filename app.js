@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.11';
+const APP_VERSION='2026-09-28.12';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3240,7 +3240,8 @@ async function teamAnalyzeExport(){
     for(let i=0;i<months.length;i++){
       if(btn) btn.textContent=`Fetching ${i+1}/${months.length}…`;
       // AHBA teams LANG sa extraction (owner 2026-09-28) — ang subcon ay sa screen view lang.
-      const rows=(await taFetchMonth(months[i])).filter(t=>taIsAhba(t.team))
+      // AHBA_TEST ay test account — hindi kasama sa evaluation report.
+      const rows=(await taFetchMonth(months[i])).filter(t=>taIsAhba(t.team)&&t.team!=='AHBA_TEST')
         .sort((a,b)=>((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
       per[months[i]]=rows;
       crew[months[i]]=await taFetchCrew(months[i]);
@@ -3282,11 +3283,12 @@ async function teamAnalyzeExport(){
       totHdrRows.add(totAoa.length); totAoa.push(TOT_HEADERS);
       const rows=aggRows(mos);
       rows.forEach(r=>totAoa.push(r));
-      // Leaderboards (owner 2026-09-28): installs Top/Bottom 3 (may avg per month) + completion rate Top/Bottom 3
+      // Leaderboards (owner 2026-09-28): installs Top/Bottom 3 (may avg per month) + completion rate Top/Bottom 3.
+      // EXCLUDED ang walang productivity (0 installs sa panahon) — hindi sila kasali sa ranking.
       const nMo=mos.length;
-      const byInst=rows.slice().sort((a,b)=>(b[6]-a[6])||String(a[1]).localeCompare(String(b[1])));
-      const withRate=rows.filter(r=>r[7]!=null);
-      const byRate=withRate.slice().sort((a,b)=>(b[7]-a[7])||String(a[1]).localeCompare(String(b[1])));
+      const active=rows.filter(r=>(+r[6]||0)>0);
+      const byInst=active.slice().sort((a,b)=>(b[6]-a[6])||String(a[1]).localeCompare(String(b[1])));
+      const byRate=active.filter(r=>r[7]!=null).sort((a,b)=>(b[7]-a[7])||String(a[1]).localeCompare(String(b[1])));
       const instLine=(r,i)=>[(i+1)+'.', r[1], `${r[6]} (${Math.round((r[6]/nMo)*10)/10}/mo)`];
       const rateLine=(r,i)=>[(i+1)+'.', r[1], r[7]+'%'];
       const lines=[];
