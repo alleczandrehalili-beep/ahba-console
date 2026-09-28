@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.10';
+const APP_VERSION='2026-09-28.11';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1688,7 +1688,7 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);if(page==='teams')renderTeams($('#teamSearch')?.value||'');applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
@@ -4451,10 +4451,13 @@ function init(){
   buildTeamDropdowns();
   renderOverview();renderTeams();renderNotifPop();
   // Pull newly-created technician accounts into the team list (assign, Field Teams, dropdowns)
-  syncTeamsFromDb().then(a=>{ if(a){ renderTeams($('#teamSearch')?.value||''); } });
+  // FIX 2026-09-28 (blank Field Teams): laging mag-re-render pagkatapos ng sync (dating
+  // if(changed) lang — kapag 0/401 sa unang subok, nananatiling blangko ang grid), at may
+  // catch para hindi maputol ang chain.
+  syncTeamsFromDb().then(()=>{ renderTeams($('#teamSearch')?.value||''); }).catch(()=>{});
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
-  const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); });
+  const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); }).catch(()=>{ try{ renderTeams($('#teamSearch')?.value||''); }catch(e){} });
   refreshShifts(); setInterval(refreshShifts, 40000);   // was 20000 — lighter DB load; shifts change slowly
 
   // Metric cards → clickable shortcuts
