@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.7';
+const APP_VERSION='2026-09-28.8';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3125,6 +3125,29 @@ async function taFetchMonth(m){
   taCache[m]=(await r.json())||[];
   return taCache[m];
 }
+// Crew names (owner 2026-09-28): DRIVER · INSTALLER 1 · INSTALLER 2 katabi ng Team —
+// ang PINAKA-MADALAS na pangalan sa attendance ng buwan (TOTAL sheet = buong YTD).
+let taCrewCache={};
+async function taFetchCrew(m){
+  if(taCrewCache[m]) return taCrewCache[m];
+  const start=m+'-01';
+  const nd=new Date(m+'-15T00:00:00'); nd.setMonth(nd.getMonth()+1);
+  const end=nd.toISOString().slice(0,7)+'-01';
+  const rows=[];
+  for(let off=0;off<10000;off+=1000){
+    const r=await fetch(`${SUPA_URL}/rest/v1/attendance?select=username,crew_driver,crew_tech1,crew_tech2&work_date=gte.${start}&work_date=lt.${end}&limit=1000&offset=${off}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) break;
+    const page=await r.json(); rows.push(...page);
+    if(page.length<1000) break;
+  }
+  taCrewCache[m]=rows; return rows;
+}
+function taMode(rows,team,field){
+  const c={};
+  rows.forEach(r=>{ if(r.username!==team) return; const v=String(r[field]||'').trim().toUpperCase(); if(!v) return; c[v]=(c[v]||0)+1; });
+  let best='',bn=0; for(const k in c){ if(c[k]>bn){ best=k; bn=c[k]; } }
+  return best||'—';
+}
 const taMonthList=(from,to)=>{ const out=[]; let [y,m]=from.split('-').map(Number); const [ty,tm]=to.split('-').map(Number);
   while(y<ty||(y===ty&&m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>=12) break; } return out; };
 const taMonthLabel=ym=>{ const [y,m]=ym.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+y; };
@@ -3213,17 +3236,20 @@ async function teamAnalyzeExport(){
   try{
     await ensureFreshTok();
     const per={};   // month -> rows (AHBA muna, tapos SUBCON, installs desc)
+    const crew={};  // month -> attendance crew rows
     for(let i=0;i<months.length;i++){
       if(btn) btn.textContent=`Fetching ${i+1}/${months.length}…`;
       // AHBA teams LANG sa extraction (owner 2026-09-28) — ang subcon ay sa screen view lang.
       const rows=(await taFetchMonth(months[i])).filter(t=>taIsAhba(t.team))
         .sort((a,b)=>((+b.installs||0)-(+a.installs||0))||a.team.localeCompare(b.team));
       per[months[i]]=rows;
+      crew[months[i]]=await taFetchCrew(months[i]);
     }
+    const allCrew=[].concat(...months.map(m=>crew[m]));
     const cr=(inst,disp)=>((+disp||0)>0?Math.round(((+inst||0)/(+disp))*1000)/10:null);   // Completion Rate %
     // Monthly marker (owner 2026-09-28): 51+ PERFORMER · 50 PASSED · 30–49 EVALUATION · <30 FAILED
     const mark=inst=>{ const n=+inst||0; return n>50?'PERFORMER':(n===50?'PASSED':(n>=30?'EVALUATION':'FAILED')); };
-    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'LOADS DISPATCHED':t.dispatched,'INSTALLS (COMPLETED)':t.installs,'COMPLETION RATE (%)':cr(t.installs,t.dispatched),'REMARKS':mark(t.installs),'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
+    const mkRow=(t,cw)=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'DRIVER':taMode(cw,t.team,'crew_driver'),'INSTALLER 1':taMode(cw,t.team,'crew_tech1'),'INSTALLER 2':taMode(cw,t.team,'crew_tech2'),'LOADS DISPATCHED':t.dispatched,'INSTALLS (COMPLETED)':t.installs,'COMPLETION RATE (%)':cr(t.installs,t.dispatched),'REMARKS':mark(t.installs),'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
     const wb=XLSX.utils.book_new();
     // TOTAL (YTD) muna — ito ang unang makikita pagbukas ng file
     const tot={};
@@ -3236,7 +3262,7 @@ async function teamAnalyzeExport(){
     }));
     const totRows=Object.values(tot)
       .sort((a,b)=>(b.ahba-a.ahba)||(b.installs-a.installs)||a.team.localeCompare(b.team))
-      .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'LOADS DISPATCHED':o.dispatched,'INSTALLS (COMPLETED)':o.installs,'COMPLETION RATE (%)':cr(o.installs,o.dispatched),'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
+      .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'DRIVER':taMode(allCrew,o.team,'crew_driver'),'INSTALLER 1':taMode(allCrew,o.team,'crew_tech1'),'INSTALLER 2':taMode(allCrew,o.team,'crew_tech2'),'LOADS DISPATCHED':o.dispatched,'INSTALLS (COMPLETED)':o.installs,'COMPLETION RATE (%)':cr(o.installs,o.dispatched),'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
     // Format gaya ng sample ng owner: DILAW na bold header, borders sa lahat ng cells,
     // centered na datos, at may kulay na REMARKS marker (monthly sheets).
     const REM_FILL={PERFORMER:['C6EFCE','006100'],PASSED:['BDD7EE','1F4E79'],EVALUATION:['FFEB9C','9C6500'],FAILED:['FFC7CE','9C0006']};
@@ -3254,10 +3280,11 @@ async function teamAnalyzeExport(){
       return ws;
     };
     // Naka-HIDE ang detalye (hours metrics + areas) — unhide on demand sa Excel.
-    // Monthly (12 cols, may REMARKS sa F): kita A–G, hidden H–L. TOTAL (11 cols): kita A–F, hidden G–K.
-    const taCols=(ws,firstHidden,total)=>{ ws['!cols']=[]; for(let i=0;i<total;i++) ws['!cols'][i]=(i>=firstHidden?{hidden:true}:{wch:i===1?16:14}); return ws; };
-    XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(totRows),6,11),null),`TOTAL YTD ${year}`);
-    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(per[m].map(mkRow)),7,12),5),taMonthLabel(m)); });
+    // Monthly (15 cols, REMARKS sa I): kita A–J (hanggang Days), hidden K–O.
+    // TOTAL (14 cols, walang REMARKS): kita A–I, hidden J–N.
+    const taCols=(ws,firstHidden,total)=>{ ws['!cols']=[]; for(let i=0;i<total;i++) ws['!cols'][i]=(i>=firstHidden?{hidden:true}:{wch:(i>=1&&i<=4)?16:14}); return ws; };
+    XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(totRows),9,14),null),`TOTAL YTD ${year}`);
+    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(per[m].map(t=>mkRow(t,crew[m]))),10,15),8),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
   }catch(e){ showToast('Export failed: '+(e.message||e)); }
