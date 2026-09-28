@@ -8,6 +8,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(new Error('load failed: '+src)); document.head.appendChild(s); }); }
 let _xlsxP, _jszipP;
 function ensureXLSX(){ return window.XLSX ? Promise.resolve() : (_xlsxP||(_xlsxP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'))); }
+// Styled build (xlsx-js-style = SheetJS 0.18.5 + cell styles; same API kaya ligtas
+// i-overwrite ang global XLSX) — kailangan ng Analyze export (yellow header/borders/fills).
+let _xlsxStyleP=null;
+function ensureXLSXStyle(){ return (window.XLSX&&window.XLSX.__styled)?Promise.resolve():(_xlsxStyleP||(_xlsxStyleP=loadScript('https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js').then(()=>{ window.XLSX.__styled=true; }))); }
 function ensureJSZip(){ return window.JSZip ? Promise.resolve() : (_jszipP||(_jszipP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'))); }
 
 const icons = {
@@ -33,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-28.6';
+const APP_VERSION='2026-09-28.7';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3201,7 +3205,7 @@ async function teamAnalyzeRun(){
 }
 // EXPORT = laging YTD (Enero → kasalukuyang buwan): isang sheet BAWAT BUWAN + TOTAL sheet.
 async function teamAnalyzeExport(){
-  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  try{ await ensureXLSXStyle(); }catch(_){ showToast('Excel library failed to load'); return; }
   const btn=document.getElementById('taExport');
   const mNow=manilaToday().slice(0,7), year=mNow.slice(0,4);
   const months=taMonthList(year+'-01', mNow);
@@ -3217,7 +3221,9 @@ async function teamAnalyzeExport(){
       per[months[i]]=rows;
     }
     const cr=(inst,disp)=>((+disp||0)>0?Math.round(((+inst||0)/(+disp))*1000)/10:null);   // Completion Rate %
-    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'LOADS DISPATCHED':t.dispatched,'INSTALLS (COMPLETED)':t.installs,'COMPLETION RATE (%)':cr(t.installs,t.dispatched),'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
+    // Monthly marker (owner 2026-09-28): 51+ PERFORMER · 50 PASSED · 30–49 EVALUATION · <30 FAILED
+    const mark=inst=>{ const n=+inst||0; return n>50?'PERFORMER':(n===50?'PASSED':(n>=30?'EVALUATION':'FAILED')); };
+    const mkRow=t=>({'GROUP':taIsAhba(t.team)?'AHBA':'SUBCON','TEAM':t.team,'LOADS DISPATCHED':t.dispatched,'INSTALLS (COMPLETED)':t.installs,'COMPLETION RATE (%)':cr(t.installs,t.dispatched),'REMARKS':mark(t.installs),'DAYS LOGGED':t.att_days,'TOTAL HOURS LOGGED':t.att_hours,'AVG DAILY HOURS':t.avg_daily_hours,'HOURS PER INSTALL':t.hours_per_install,'AVG WORK HRS PER JO':t.avg_work_hours,'AREAS COVERED':(t.areas||[]).join(', ')});
     const wb=XLSX.utils.book_new();
     // TOTAL (YTD) muna — ito ang unang makikita pagbukas ng file
     const tot={};
@@ -3231,10 +3237,27 @@ async function teamAnalyzeExport(){
     const totRows=Object.values(tot)
       .sort((a,b)=>(b.ahba-a.ahba)||(b.installs-a.installs)||a.team.localeCompare(b.team))
       .map(o=>({'GROUP':o.ahba?'AHBA':'SUBCON','TEAM':o.team,'LOADS DISPATCHED':o.dispatched,'INSTALLS (COMPLETED)':o.installs,'COMPLETION RATE (%)':cr(o.installs,o.dispatched),'DAYS LOGGED':o.att_days,'TOTAL HOURS LOGGED':r2(o.att_hours),'AVG DAILY HOURS':o.att_days>0?r2(o.att_hours/o.att_days):null,'HOURS PER INSTALL':(o.installs>0&&o.att_hours>0)?r2(o.att_hours/o.installs):null,'AVG WORK HRS PER JO':o.workN>0?r2(o.workSum/o.workN):null,'AREAS COVERED':[...o.areas].sort().join(', ')}));
-    // Columns G–K (hours metrics + areas) ay NAKA-HIDE by default — unhide on demand sa Excel.
-    const hideGK=ws=>{ ws['!cols']=[]; for(let i=0;i<=10;i++) ws['!cols'][i]=(i>=6?{hidden:true}:{wch:i===1?14:(i===10?40:12)}); return ws; };
-    XLSX.utils.book_append_sheet(wb,hideGK(XLSX.utils.json_to_sheet(totRows)),`TOTAL YTD ${year}`);
-    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,hideGK(XLSX.utils.json_to_sheet(per[m].map(mkRow))),taMonthLabel(m)); });
+    // Format gaya ng sample ng owner: DILAW na bold header, borders sa lahat ng cells,
+    // centered na datos, at may kulay na REMARKS marker (monthly sheets).
+    const REM_FILL={PERFORMER:['C6EFCE','006100'],PASSED:['BDD7EE','1F4E79'],EVALUATION:['FFEB9C','9C6500'],FAILED:['FFC7CE','9C0006']};
+    const styleTA=(ws,remCol)=>{
+      const range=XLSX.utils.decode_range(ws['!ref']||'A1');
+      const B={top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}};
+      for(let R=range.s.r;R<=range.e.r;R++)for(let C=range.s.c;C<=range.e.c;C++){
+        const cell=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(!cell) continue;
+        if(R===0){ cell.s={font:{bold:true},fill:{patternType:'solid',fgColor:{rgb:'FFFF00'}},border:B,alignment:{horizontal:'left',vertical:'center'}}; continue; }
+        let s={border:B,alignment:{horizontal:'center',vertical:'center'}};
+        if(remCol!=null&&C===remCol&&cell.v){ const f=REM_FILL[String(cell.v)];
+          if(f) s={border:B,alignment:{horizontal:'center',vertical:'center'},font:{bold:true,color:{rgb:f[1]}},fill:{patternType:'solid',fgColor:{rgb:f[0]}}}; }
+        cell.s=s;
+      }
+      return ws;
+    };
+    // Naka-HIDE ang detalye (hours metrics + areas) — unhide on demand sa Excel.
+    // Monthly (12 cols, may REMARKS sa F): kita A–G, hidden H–L. TOTAL (11 cols): kita A–F, hidden G–K.
+    const taCols=(ws,firstHidden,total)=>{ ws['!cols']=[]; for(let i=0;i<total;i++) ws['!cols'][i]=(i>=firstHidden?{hidden:true}:{wch:i===1?16:14}); return ws; };
+    XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(totRows),6,11),null),`TOTAL YTD ${year}`);
+    months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(per[m].map(mkRow)),7,12),5),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
   }catch(e){ showToast('Export failed: '+(e.message||e)); }
