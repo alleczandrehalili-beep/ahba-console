@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-01.1';
+const APP_VERSION='2026-10-01.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2931,7 +2931,7 @@ function renderDupPanel(dup){
     </div>`;
   p.style.display='';
   const go=$('#ordDupProceed');
-  if(go) go.onclick=()=>{ ordDupAck=(dup.matches&&dup.matches[0])||{pct:0,id:'?'}; $('#orderForm').requestSubmit($('#orderSubmit')); };
+  if(go) go.onclick=()=>{ go.disabled=true; go.textContent='Submitting…'; ordDupAck=(dup.matches&&dup.matches[0])||{pct:0,id:'?'}; $('#orderForm').requestSubmit($('#orderSubmit')); };
   p.querySelectorAll('[data-dupex]').forEach(b=>b.onclick=()=>dupExemptOld(b.dataset.dupex));
   try{ p.scrollIntoView({block:'nearest'}); }catch(err){}
 }
@@ -2950,8 +2950,14 @@ async function dupExemptOld(oldId){
     $('#orderForm').requestSubmit($('#orderSubmit'));
   }catch(e){ showToast('Override failed: '+(e.message||e)); }
 }
+let ordSubmitBusy=false;   // in-flight guard — one click = one JO (owner 2026-10-01: twin-JO bug)
 async function submitOrder(e){
   e.preventDefault();
+  if(ordSubmitBusy) return;
+  ordSubmitBusy=true;
+  try{ await submitOrderInner(e); } finally { ordSubmitBusy=false; }
+}
+async function submitOrderInner(e){
   const f=Object.fromEntries(new FormData($('#orderForm')));
   const err=m=>{const el=$('#orderErr'); if(el)el.textContent=m||'';};
   err('');
