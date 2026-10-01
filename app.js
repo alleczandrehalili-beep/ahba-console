@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-09-30.1';
+const APP_VERSION='2026-10-01.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2918,12 +2918,16 @@ function renderDupPanel(dup){
       ${(m.level==='block'&&canOverride)?`<div style="margin-top:7px"><button type="button" class="secondary-btn" data-dupex="${esc(m.id)}" style="height:32px;font-size:11px;color:#c2503a;border-color:#f0c3ba">🔓 Allow re-encode — exempt this old JO from the duplicate check</button></div>`:''}
     </div>`;
   const blocked=!!dup.blocked;
+  // Owner 2026-10-01 (NABOR incident): BACKEND (console) na lang ang pwedeng mag-encode ng
+  // duplicate — may "Proceed anyway" kahit BLOCK-level; naka-🚨 pa rin sa history, dadaan pa
+  // rin sa Validator, at ang 100% match ay Superadmin approval pa rin. Sales (mobile) ay
+  // hard-blocked na ulit.
   const head=blocked
-    ? '🚫 <b>Duplicate found — encoding not allowed.</b> This subscriber already exists in the system. If this is a mistake, correct the earlier JO’s details first.'
+    ? '🚫 <b>Duplicate found.</b> This subscriber already exists in the system. Backend may still proceed — the VALIDATOR will review it, and a 100% match needs SUPERADMIN approval.'
     : '⚠️ <b>Possible duplicate found.</b> Review the match below before proceeding.';
   p.innerHTML=`<div style="border:1px solid ${blocked?'#c2503a':'#b8860b'};background:${blocked?'#fdf0ee':'#fdf6e3'};color:#3a3a3a;border-radius:8px;padding:10px 12px;font-size:12px">
       ${head}${(dup.matches||[]).slice(0,3).map(row).join('')}
-      ${blocked?'':'<div style="margin-top:9px"><button type="button" class="secondary-btn" id="ordDupProceed">Proceed anyway</button></div>'}
+      <div style="margin-top:9px"><button type="button" class="secondary-btn" id="ordDupProceed">${blocked?'⚠ Proceed anyway — send to Validator':'Proceed anyway'}</button></div>
     </div>`;
   p.style.display='';
   const go=$('#ordDupProceed');
@@ -2997,7 +3001,7 @@ async function submitOrder(e){
       house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:brgy,district:dist,orderType:ordType},client);
     if(dup && dup.matches && dup.matches.length){
       renderDupPanel(dup);
-      if(dup.blocked){ err('Encoding blocked — this subscriber already exists (see the details above).'); restoreBtn(); return; }
+      if(dup.blocked){ err('Duplicate found — review the match above, then press "Proceed anyway — send to Validator" if this should still be encoded.'); restoreBtn(); return; }
       err('Possible duplicate — review the match above, then press "Proceed anyway" or correct the details.');
       restoreBtn(); return;
     }
@@ -3052,7 +3056,9 @@ async function submitOrder(e){
       // Bakas sa history kung SINO ang console user na nag-encode (monitoring, owner 2026-09-24).
       { const _u=window.dashUser||{}; histLog(jobId,`Encoded via console by ${_u.display_name||_u.username||'Console'}`); }
       // Leave a trace for the Validator when a warned duplicate was pushed through.
-      if(ordDupAck) histLog(jobId,`Encoded with duplicate warning: ${ordDupAck.pct}% match with ${ordDupAck.id}`);
+      if(ordDupAck) histLog(jobId, ordDupAck.level==='block'
+        ? `🚨 DUPLICATE ${ordDupAck.pct}% — match with ${ordDupAck.id} (backend proceeded; VALIDATOR DECISION REQUIRED)`
+        : `Encoded with duplicate warning: ${ordDupAck.pct}% match with ${ordDupAck.id}`);
     }
     if(ordType==='SLI') for(const cat of ['id','billing','premise']){
       for(let i=0;i<ordDocs[cat].length;i++){
