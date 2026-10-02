@@ -36,8 +36,20 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 // Once RLS is locked to authenticated-only, all data calls must carry this user token.
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
+// WRITE INTEGRITY (owner 2026-10-04, Phase 2B): ang raw fetch ay HINDI nag-eerror sa HTTP
+// 4xx/5xx, kaya dati ang palyadong PATCH (expired session, RLS, conflict) ay nagpapakita pa
+// rin ng success toast at nag-a-update ng screen. Bawat kritikal na write ay dumadaan na
+// dito: kapag hindi OK ang sagot ng server, mag-th-throw para ang catch ng tumawag ang
+// magpakita ng malinaw na error at HINDI ituloy ang local/UI success path.
+async function reqOk(r,what){
+  if(r && r.ok) return r;
+  let d=''; try{ d=(await r.text()).slice(0,140); }catch(e){}
+  const msg=(what||'Write')+' was NOT saved — HTTP '+(r?r.status:'network')+(d?' · '+d:'');
+  console.error('[AHBA write-check] '+msg);
+  throw new Error(msg);
+}
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-03.3';
+const APP_VERSION='2026-10-04.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -323,13 +335,14 @@ async function verifyTeamDeployed(code,val){
   const who=currentOperator(), now=new Date().toISOString();
   const payload=val?{deployed_verified:true,verified_by:who,verified_at:now}:{deployed_verified:false,verified_by:null,verified_at:null};
   try{
-    await fetch(`${SUPA_URL}/rest/v1/attendance?username=eq.${code}&work_date=eq.${date}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(payload)});
+    const _r=await fetch(`${SUPA_URL}/rest/v1/attendance?username=eq.${code}&work_date=eq.${date}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(payload)});
+    await reqOk(_r,'Deployment verification');
     await loadTeamShifts();
     renderTeams($('#teamSearch')?.value||'');
     if($('#expensesPage')?.classList.contains('active')) renderExpenses();
     if($('#teamDetailModal')?.open) openTeamDetail(code);
     showToast(val?`${code} verified as deployed`:`${code} verification removed`);
-  }catch(e){ showToast('Could not update verification'); }
+  }catch(e){ showToast('❌ Verification did not save — '+e.message); }
 }
 
 // ---- Live real-time clock (Manila / Philippine Standard Time) ----
@@ -2075,7 +2088,9 @@ async function decideValidation(jobId,approve){
     if(valDupTop && valDupTop.blocked && valDupTop.maxPct>=100){
       if(!u.is_super){ showToast('🚨 100% duplicate of '+valDupTop.id+' — only the SUPERADMIN can approve this order'); return; }
       if(!confirm(`🚨 This order is a 100% DUPLICATE of ${valDupTop.id}.\n\nApprove anyway as Superadmin?`)) return;
-      histLog(jobId,`Approved despite 100% duplicate of ${valDupTop.id} by ${who} (Superadmin)`);
+      // Itatala LANG pagkatapos kumpirmahin ng server ang approve (Phase 2B) — dati ay
+      // naisusulat ito kahit pumalya ang mismong PATCH.
+      var superDupNote=`Approved despite 100% duplicate of ${valDupTop.id} by ${who} (Superadmin)`;
     }
     const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
@@ -2096,7 +2111,9 @@ async function decideValidation(jobId,approve){
     body={status:'rejected', updated_at:new Date().toISOString(), validated_by:who, special_note:(rejReason?('REJECTED: '+rejReason):'REJECTED')};
   }
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    await reqOk(_r, approve?'Approve':'Reject');
+    if(typeof superDupNote!=='undefined' && superDupNote) histLog(jobId,superDupNote);
     // GC approver remark (GC console only) — save if the validator typed one on approve. Non-fatal.
     if(approve && isGcConsole()){ const _gnv=(($('#valGcNote')&&$('#valGcNote').value)||'').trim(); if(_gnv){ try{ await saveApproverNote(jobId,_gnv); gcNoteIds.add(jobId); }catch(_e){} } }
     // Append-only audit line so the JO Detail history shows WHO approved/rejected and when.
@@ -2109,7 +2126,7 @@ async function decideValidation(jobId,approve){
       ? {team:j.created_by, title:'✅ JO approved', body:`${j.subscriber||jobId} · JO ${body.job_order_no}`}
       : {team:j.created_by, title:'❌ JO rejected', body:`${j.subscriber||jobId}${rejReason?' — '+rejReason:''}`});
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
-  }catch(e){showToast('Action failed: '+e.message)}
+  }catch(e){showToast('❌ '+(approve?'APPROVE':'REJECT')+' did not save — '+e.message+' — nothing was changed; try again.')}
 }
 
 // ---------- Accounts (technician login accounts) ----------
@@ -2459,10 +2476,11 @@ async function validateJob(jobId){
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
   const now=new Date().toISOString();
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:now,validated_by:who})});
+    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:now,validated_by:who})});
+    await reqOk(_r,'QA validate');
     const cj=compJobs.find(x=>x.id===jobId); if(cj){ cj.validated=true; cj.validated_at=now; cj.validated_by=who; }
     showToast(`${jobId} validated (by ${who})`); renderCompleted();
-  }catch(e){showToast('Could not validate')}
+  }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
 }
 async function exportZip(){
   try{ await ensureXLSX(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
@@ -2552,10 +2570,12 @@ async function clearCloud(){
   showToast('Clearing photos from cloud…');
   try{
     for(let i=0;i<allPaths.length;i+=100){
-      await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
+      const _r=await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
+      await reqOk(_r,'Photo clear (batch '+(Math.floor(i/100)+1)+')');
     }
     const q=compJobs.map(j=>encodeURIComponent(j.id)).join(',');
-    await fetch(`${SUPA_URL}/rest/v1/job_photos?job_id=in.(${q})`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
+    const _r2=await fetch(`${SUPA_URL}/rest/v1/job_photos?job_id=in.(${q})`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
+    await reqOk(_r2,'Photo-record clear');
     showToast('Cloud photos cleared'); renderCompleted();
   }catch(e){showToast('Clear failed: '+e.message)}
 }
@@ -2748,7 +2768,8 @@ async function editPaymentMode(jobId, mode){
   const j=remJobs.find(x=>x.id===jobId); if(!j||j.payment_mode===mode) return;
   const who=currentOperator(), now=new Date().toISOString(), prev=j.payment_mode||'—';
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({payment_mode:mode,updated_at:now})});
+    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({payment_mode:mode,updated_at:now})});
+    await reqOk(_r,'Payment-mode edit');
     histLog(jobId, `Mode of payment corrected: ${prev} → ${mode} (by ${who})`);
     j.payment_mode=mode; remRefresh(); showToast(`${jobId}: mode → ${mode}`);
   }catch(e){ showToast('Update failed: '+(e.message||e)); }
@@ -2757,11 +2778,12 @@ async function markReceived(jobId){
   const j=remJobs.find(x=>x.id===jobId); if(!j)return;
   const who=currentOperator(), now=new Date().toISOString();
   try{
-    await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({remittance_received:true,remittance_received_by:who,remittance_received_at:now,updated_at:now})});
+    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({remittance_received:true,remittance_received_by:who,remittance_received_at:now,updated_at:now})});
+    await reqOk(_r,'Remittance received');
     histLog(jobId, `Remittance received (${j.payment_mode||''} ${j.payment_amount!=null?money(j.payment_amount):''}${j.ar_no?' · AR '+j.ar_no:''}) by ${who}`);
     j.remittance_received=true; j.remittance_received_by=who; j.remittance_received_at=now;
     renderRemittance(); showToast(`${jobId}: remittance received`);
-  }catch(e){ showToast('Could not mark received'); }
+  }catch(e){ showToast('❌ Remittance NOT marked received — '+e.message); }
 }
 async function exportRemittance(){
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
@@ -4609,9 +4631,16 @@ function init(){
   const _tan=$('#teamAnalyzeBtn'); if(_tan) _tan.onclick=teamAnalyzeOpen;
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
-  $('#expenseForm').onsubmit=e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
-    fetch(`${SUPA_URL}/rest/v1/expenses`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({team:f.team,category:f.category,description:f.description,amount:Number(f.amount),job_id:f.workOrder||null,status:'Pending',work_date:manilaToday()})}).then(()=>setTimeout(renderExpenses,400)).catch(()=>{});
-    e.target.reset();closeModals();showToast('Expense recorded for approval')};
+  // Phase 2B: ang expense ay "recorded" na LANG kapag kumpirmado ng server; kapag pumalya,
+  // nananatiling bukas ang form na buo ang laman para maisubmit ulit.
+  $('#expenseForm').onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
+    const btn=e.target.querySelector('button[type="submit"],button:not([type])'); if(btn){btn.disabled=true;}
+    try{
+      const r=await fetch(`${SUPA_URL}/rest/v1/expenses`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({team:f.team,category:f.category,description:f.description,amount:Number(f.amount),job_id:f.workOrder||null,status:'Pending',work_date:manilaToday()})});
+      await reqOk(r,'Expense');
+      e.target.reset();closeModals();showToast('Expense recorded for approval');setTimeout(renderExpenses,400);
+    }catch(err){ showToast('❌ Expense NOT recorded — '+err.message+' — your entries are still in the form; try again.'); }
+    finally{ if(btn){btn.disabled=false;} }};
 
   // Search + filters
   $('#teamSearch').oninput=e=>renderTeams(e.target.value);
