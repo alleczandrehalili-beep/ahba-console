@@ -43,7 +43,7 @@
     'dwelling_type','install_fee_type','amount_to_collect','completed_at','add_on','addon_count',
     'scheduled_at','est_minutes','district','deleted_at','deleted_by','load_type','current_plan','ticket_no','created_by',
     'new_address','cpe_option','birth_date','encoded_by',
-    'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark','email',
+    'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark','email','dup_exempt',
     'qa_audit_id','qa_status','qa_assessment','qa_inspected_at'];   // QA Audit mirror — server-owned (qa.sync_job), never written from here
     // NOTE: `lock_bypass` was missing here, so openJobDetail's unlock toggle always read
     // undefined and showed "locked" even for an already-unlocked job order. Fixed 2026-07-20.

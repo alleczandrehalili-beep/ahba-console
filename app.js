@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-01.2';
+const APP_VERSION='2026-10-03.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -622,6 +622,16 @@ function openJobDetail(jobId){
     F('Schedule',j.schedule),F('Negative remark',j.negative_remark),
     (j.status==='rejected'?F('Rejection reason',rejectionReason(j)):'')
   ].join('');
+  // 🔓 Allow re-encode (owner 2026-10-03): dispatcher/validator/superadmin — exempt THIS JO
+  // from the duplicate check upon the sales agent's request; logged in this JO's history.
+  if(window.dashUser&&(dashUser.is_super||dashCanEdit('validation')||hasDispatchAccess(dashUser))){
+    const _dx=document.createElement('div');
+    _dx.innerHTML=j.dup_exempt
+      ? '<b>Duplicate check</b>🔓 Exempted — re-encode of this subscriber is allowed'
+      : '<b>Duplicate check</b><button type="button" class="assign-btn" id="jdDupEx" style="color:#c2503a">🔓 Allow re-encode</button>';
+    $('#jdInfo').appendChild(_dx);
+    const _bx=$('#jdDupEx'); if(_bx) _bx.onclick=()=>jdDupExempt(j.id);
+  }
   // History is no longer carried in the live dashboard payload (it was ~half of it).
   // Rows that still carry it — e.g. the Validation tab, which keeps its own select=* —
   // render instantly; everything else pulls just this one job's history on demand.
@@ -2908,9 +2918,11 @@ function renderDupPanel(dup){
   const p=$('#ordDupPanel'); if(!p) return;
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const chip=(ok,label)=>`<span style="margin-right:10px;white-space:nowrap">${ok===null?'– ':(ok?'✓ ':'✗ ')}${label}</span>`;
-  // 🔓 Superadmin-only override (owner 2026-09-25): i-exempt ang LUMANG JO sa dup check
-  // (mananatili itong kita sa system — flag lang, hindi delete) para payagan ang re-encode.
-  const canOverride=!!(window.dashUser&&dashUser.is_super);
+  // 🔓 Override (owner 2026-10-03, dating superadmin-only 2026-09-25): i-exempt ang LUMANG
+  // JO sa dup check (mananatili itong kita sa system — flag lang, hindi delete) para payagan
+  // ang re-encode. Pwede na rin ito sa DISPATCHER at VALIDATOR upon request ng sales agent;
+  // laging nakatala sa history ng lumang JO kung SINO ang nag-allow.
+  const canOverride=!!(window.dashUser&&(dashUser.is_super||dashCanEdit('validation')||hasDispatchAccess(dashUser)));
   const row=m=>`<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)">
       <b>${m.pct}% match</b> — ${esc(m.id)} · ${esc(String(m.status||'').toUpperCase())} · encoded ${esc(m.encoded_on)} by ${esc(m.encoded_by)}<br>
       ${esc(m.name)} — ${esc(m.address)}<br>
@@ -2937,18 +2949,32 @@ function renderDupPanel(dup){
 }
 // Superadmin override: i-exempt ang lumang JO sa duplicate check, itala sa history nito,
 // tapos awtomatikong i-re-check ang encode (tuloy kung wala nang ibang nakaharang).
-async function dupExemptOld(oldId){
-  if(!confirm(`Allow re-encode?\n\nThe old JO ${oldId} will be EXEMPTED from the duplicate check. It stays visible everywhere in the system — only the duplicate check will skip it.`)) return;
-  const client=sbc(); if(!client){ showToast('Cloud client still loading — try again'); return; }
+async function dupExemptCore(oldId){
+  if(!confirm(`Allow re-encode?\n\nThe old JO ${oldId} will be EXEMPTED from the duplicate check. It stays visible everywhere in the system — only the duplicate check will skip it.\n\nYour name will be logged in this JO's history as the one who allowed it.`)) return false;
+  const client=sbc(); if(!client){ showToast('Cloud client still loading — try again'); return false; }
   try{
     const {error}=await client.from('jobs').update({dup_exempt:true,updated_at:new Date().toISOString()}).eq('id',oldId);
     if(error) throw error;
     const _u=window.dashUser||{};
-    histLog(oldId,`Duplicate-check override by ${_u.display_name||_u.username||'Superadmin'} — re-encode of this subscriber allowed`);
-    showToast('Override saved — re-checking the encode…');
-    ordDupClear();
-    $('#orderForm').requestSubmit($('#orderSubmit'));
-  }catch(e){ showToast('Override failed: '+(e.message||e)); }
+    const _who=(_u.display_name||_u.username||'Console')+(_u.is_super?' (Superadmin)':(_u.role_label?` (${_u.role_label})`:''));
+    histLog(oldId,`Duplicate-check override by ${_who} — re-encode of this subscriber allowed (requested by the sales agent)`);
+    const _j=findJob(oldId); if(_j) _j.dup_exempt=true;
+    return true;
+  }catch(e){ showToast('Override failed: '+(e.message||e)); return false; }
+}
+async function dupExemptOld(oldId){
+  if(!(await dupExemptCore(oldId))) return;
+  showToast('Override saved — re-checking the encode…');
+  ordDupClear();
+  $('#orderForm').requestSubmit($('#orderSubmit'));
+}
+// 🔓 From the JO DETAIL modal (owner 2026-10-03): dispatcher/validator exempts the old JO
+// na sinabi ng sales agent, nang hindi na kailangang i-type ulit ang buong encode form.
+async function jdDupExempt(oldId){
+  if(!(await dupExemptCore(oldId))) return;
+  showToast('Re-encode allowed — the sales agent can now submit this subscriber.');
+  const bx=$('#jdDupEx');
+  if(bx){ const d=bx.parentElement; if(d) d.innerHTML='<b>Duplicate check</b>🔓 Exempted — re-encode of this subscriber is allowed'; }
 }
 let ordSubmitBusy=false;   // in-flight guard — one click = one JO (owner 2026-10-01: twin-JO bug)
 async function submitOrder(e){
