@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-03.2';
+const APP_VERSION='2026-10-03.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1131,7 +1131,9 @@ function tlBuildOrgFilter(){
   // ONCE per session by loadOrgMap() (not on re-renders), so a manual switch afterwards persists.
   sel.value = gcOrgId || '';
   sel.style.display='';
-  try{ renderTimeline(); }catch(_){}
+  // FIX 2026-10-03: re-render LANG kapag bukas talaga ang Dashboard — ito dati ang
+  // walang-guard na entry point na nagpapaandar ng render loop kahit nasa Overview.
+  try{ if($('#timelinePage')?.classList.contains('active')) renderTimeline(); }catch(_){}
 }
 function tlBuildFilterOptions(pool){
   const dsel=$('#tlfDistrict'), bsel=$('#tlfBrgy');
@@ -1150,7 +1152,10 @@ function renderTimeline(){
   if(!hist) maybePromptRollover();
   const loadToday=d=>!d || String(d).slice(0,10)===(hist?date:manilaToday());
   // Pull online status + newly-created technicians, then re-render (live only).
-  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0),loadAgentNames().catch(()=>{})]).then(([,added])=>{ const sig=JSON.stringify(shiftByTeam)+JSON.stringify(agentNames); if(added||sig!==renderTimeline._sig){ renderTimeline._sig=sig; renderTimeline(); } });
+  // FIX 2026-10-03: self-rerender LANG kapag may TUNAY na nagbago (ayos na ang bilang ng
+  // syncTeamsFromDb) AT kitang-kita ang Dashboard — kaya hinding-hindi na ito iikot nang
+  // walang hanggan sa background. Ang sig ay ina-update pa rin para tama ang paghahambing.
+  if(!hist) Promise.all([loadTeamShifts().catch(()=>{}),syncTeamsFromDb().catch(()=>0),loadAgentNames().catch(()=>{})]).then(([,added])=>{ const sig=JSON.stringify(shiftByTeam)+JSON.stringify(agentNames); if(added||sig!==renderTimeline._sig){ renderTimeline._sig=sig; if($('#timelinePage')?.classList.contains('active')) renderTimeline(); } });
   // Build filter dropdowns (Load Type · District · Brgy) from the day's loads, then filter the view.
   const tlDayStr2=d=>new Date(d).toLocaleDateString('en-CA',{timeZone:TZ});
   const inDayPool=SRC.filter(j=>{ const st=(j.status||'').toLowerCase();
@@ -1436,7 +1441,7 @@ async function renderProductivityHistory(){
   const date=dEl?dEl.value:manilaToday();
   panel.innerHTML='<div class="empty-row">Loading…</div>';
   let snap=null, live=(date===manilaToday());
-  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; captureDailySnapshot(); }
+  if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; maybeCaptureSnapshot(); }   // FIX 2026-10-03: dumaan sa 3-min throttle — dati ay direktang POST sa BAWAT timeline render (503 storms)
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
   if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
   const d=snap.data||{}, c=d.counts||{};
@@ -1616,7 +1621,16 @@ async function syncTeamsFromDb(){
     const code=String(r.username||'').toUpperCase(); if(!code) return;
     const loc={loc_city:r.loc_city||'',loc_district:r.loc_district||'',loc_team:r.loc_team||'',loc_unit:r.loc_unit||''};
     const existing=byCode.get(code);
-    if(existing){ Object.assign(existing,loc); if(r.area) existing.area=r.area; changed++; return; }  // merge DB location onto existing team
+    if(existing){
+      // FIX 2026-10-03 (infinite Dashboard loop): dati ay changed++ sa BAWAT merge kahit
+      // walang tunay na pagbabago → laging ~47 ang balik → walang-hanggang self-rerender
+      // ng renderTimeline. Ngayon ay bumibilang LANG kapag may aktwal na nagbago.
+      let ch=false;
+      for(const k in loc){ if((existing[k]||'')!==loc[k]){ existing[k]=loc[k]; ch=true; } }
+      if(r.area && existing.area!==r.area){ existing.area=r.area; ch=true; }
+      if(ch) changed++;
+      return;
+    }
     const i=teams.length;
     const nt={id:i+1,name:code,code,short:((code.replace(/[^0-9]/g,'').slice(-3))||String(i+1)).padStart(3,'0'),
       status:'offline',area:r.area||'',jobs:0,completed:0,rating:'—',
