@@ -205,14 +205,29 @@
     let signature = '';
     let seeded = false;
     const refresh = async () => {
+      // AUTH GUARD (owner 2026-10-03, startup race): NEVER fetch protected data with the
+      // anon key while the session is still initializing — RLS answers 200 [] (hindi error),
+      // na nagpipinta ng blankong dashboard at nag-aarma pa ng onEmpty seeding. app.js
+      // triggers AHBACloud.refreshNow() the moment onAuthStateChange delivers a token.
+      if (!window.__ahbaTok) {
+        setStatus('syncing', 'Signing in…', 'Waiting for the login session before loading data');
+        console.info('[AHBA sync] jobs fetch skipped at ' + Math.round(performance.now()) + 'ms — auth not ready yet');
+        return;
+      }
+      const _t0 = Date.now();
       try {
         const cloudJobs = await getJobs();
         if (!cloudJobs.length && !seeded && typeof onEmpty === 'function') {
+          // Seeding is a DESTRUCTIVE bootstrap (bulk upsert of the local cache). Only a
+          // confirmed-authenticated empty read may ever arm it — an unauthenticated or
+          // mid-logout read must never overwrite the cloud with this browser's old cache.
+          if (!window.__ahbaTok) { console.warn('[AHBA sync] empty read without auth — ignoring (no seeding)'); return; }
           // Cloud is empty on a fresh project — push local seed ONCE to bootstrap it.
           seeded = true;
           await onEmpty();
           return refresh();
         }
+        console.info('[AHBA sync] jobs loaded: ' + cloudJobs.length + ' rows in ' + (Date.now() - _t0) + 'ms (at ' + Math.round(performance.now()) + 'ms since page start)');
         // Lightweight change signature (row count + newest updated_at) — avoids stringifying
         // the whole array on every 15s poll; any add/remove/edit still changes it.
         var maxUpd = 0; for (var _i = 0; _i < cloudJobs.length; _i++) { var _u = +new Date(cloudJobs[_i].updatedAt || 0); if (_u > maxUpd) maxUpd = _u; }
@@ -240,6 +255,10 @@
       if (_rt) return;
       _rt = setTimeout(function () { _rt = null; _rlast = Date.now(); refresh(); }, REFRESH_MIN_MS - gap);
     };
+    // Auth-ready hook (owner 2026-10-03): app.js calls this the moment the login session
+    // delivers a token, so the first REAL fetch happens right after auth instead of waiting
+    // for the 60s safety poll. Coalesced — repeated auth events can't double-fetch.
+    window.AHBACloud.refreshNow = refreshCoalesced;
     if (window.supabase?.createClient) {
       const realtime = window.supabase.createClient(config.url, config.anonKey);
       window.AHBACloud.realtime = realtime;

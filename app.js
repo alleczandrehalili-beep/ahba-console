@@ -37,7 +37,7 @@ const SUPA_KEY='sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 window.__ahbaTok = window.__ahbaTok || null;
 function dashTok(){ return window.__ahbaTok || SUPA_KEY; }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-03.1';
+const APP_VERSION='2026-10-03.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -278,6 +278,9 @@ function isOnline(loc){return loc && loc.location_at && (Date.now()-new Date(loc
 // ---- Live team shifts (account + crew) read from today's attendance ----
 let shiftByTeam={};   // { AHBA_SLI001: {account,driver,tech1,tech2,online,time_in} }
 async function loadTeamShifts(){
+  // Auth guard (owner 2026-10-03): anon read dito = RLS 200 [] → mukhang "walang shift"
+  // nang walang error. Hintayin ang token; authReadyRefetch() ang unang tatawag ulit.
+  if(!window.__ahbaTok){ console.info('[AHBA auth] shifts fetch skipped at '+Math.round(performance.now())+'ms — auth not ready yet'); return; }
   const today=manilaToday();
   const yd=new Date(); yd.setDate(yd.getDate()-1); const yest=yd.toLocaleDateString('en-CA',{timeZone:TZ});
   try{
@@ -1602,6 +1605,8 @@ async function tlSchedule(jobId, team, date, hour, est){
 // Merge technician accounts from the DB into the team list so NEWLY-created technicians
 // (made in Access Control) appear everywhere: dispatch assign, Field Teams, dropdowns, monitoring.
 async function syncTeamsFromDb(){
+  // Auth guard (owner 2026-10-03): see loadTeamShifts — same startup race, same skip.
+  if(!window.__ahbaTok){ console.info('[AHBA auth] teams fetch skipped at '+Math.round(performance.now())+'ms — auth not ready yet'); return 0; }
   let rows=[]; try{ rows=await fetchTechnicians(); }catch(e){}
   if(!rows||!rows.length) return 0;
   const byCode=new Map(teams.map(t=>[String(t.code).toUpperCase(),t]));
@@ -3535,12 +3540,27 @@ let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
 function dgErr(id,msg){const e=$(id); if(!e)return; e.textContent=msg||''; e.classList.toggle('show',!!msg);}
+// AUTH-READY REFETCH (owner 2026-10-03, startup race): the startup data fetches are
+// SKIPPED while the Supabase session is still initializing (auth guards sa
+// AHBACloud.refresh / loadTeamShifts / syncTeamsFromDb — anon reads lang sana ang mga
+// iyon: RLS answers 200 [] na walang error, blankong dashboard ang resulta). Pagdating
+// ng token, isang agarang refetch ng jobs + teams + shifts. Deduped by token value para
+// ang sunud-sunod na auth events (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED) ay hindi
+// makapagpaputok ng doble; ang jobs side ay coalesced pa sa AHBACloud (10s window).
+let _authRefTok=null;
+function authReadyRefetch(tok){
+  if(!tok || tok===_authRefTok) return;
+  _authRefTok=tok;
+  console.info('[AHBA auth] token ready at '+Math.round(performance.now())+'ms — triggering jobs/teams/shifts refetch');
+  try{ if(window.AHBACloud&&AHBACloud.refreshNow) AHBACloud.refreshNow(); }catch(e){}
+  try{ if(window.__refreshShiftsNow) window.__refreshShiftsNow(); }catch(e){}
+}
 function startDashAuth(){
   if(!window.supabase?.createClient){ console.warn('supabase-js not loaded'); return; }
   dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
   window.dashAuthClient=dashAuth;   // QA Audit module (console-qa.js) reuses the same authenticated client
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
-  dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); });
+  dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); authReadyRefetch(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
     window.__ahbaTok = data.session?.access_token || null;
     const _last=Number(localStorage.getItem('ahba_dash_active')||0);
@@ -3564,7 +3584,7 @@ async function ensureFreshTok(){
     if(!dashAuth) return false;
     const {data:s}=await dashAuth.auth.getSession();
     const tok=s&&s.session?s.session.access_token:null;
-    if(tok && tok!==window.__ahbaTok){ window.__ahbaTok=tok; setRealtimeAuth(tok); }
+    if(tok && tok!==window.__ahbaTok){ window.__ahbaTok=tok; setRealtimeAuth(tok); authReadyRefetch(tok); }
     if(!tok && window.dashUser) sessionDeadNudge();   // refresh token din ay patay na — kailangang mag-login muli
     return !!tok;
   }catch(e){ return false; }
@@ -4498,6 +4518,7 @@ function init(){
 
   // Live team shifts (account + crew, online status) — load now, then refresh every 20s
   const refreshShifts=()=>Promise.all([loadTeamShifts(), syncTeamsFromDb()]).then(()=>{ renderTeams($('#teamSearch')?.value||''); if($('#timelinePage')?.classList.contains('active')){ renderTimeline(); renderJobs(); } if($('#overviewPage')?.classList.contains('active')) renderOverview(); }).catch(()=>{ try{ renderTeams($('#teamSearch')?.value||''); }catch(e){} });
+  window.__refreshShiftsNow=refreshShifts;   // auth-ready hook (authReadyRefetch) fires this right after login
   refreshShifts(); setInterval(refreshShifts, 40000);   // was 20000 — lighter DB load; shifts change slowly
 
   // Metric cards → clickable shortcuts
