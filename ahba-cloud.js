@@ -309,6 +309,18 @@
         // when technicians update status on mobile (realtime + 15s poll).
         // Dashboard now holds BOTH the team timeline and the embedded dispatch board → refresh both.
         try { if (document.getElementById('timelinePage') && document.getElementById('timelinePage').classList.contains('active')) { if (typeof renderTimeline === 'function') renderTimeline(); if (typeof renderJobs === 'function') renderJobs(); } } catch (e) {}
+        // Phase 3 (owner 2026-10-04): Sales → Validator realtime. Kapag BUKAS ang Validation
+        // page at nagbago ang MEMBERSHIP ng for_validation queue (may pumasok/umalis), saka
+        // LANG i-refresh ang queue — server-sourced ang lahat (ang cloudJobs ay galing mismo
+        // sa refetch, at ang renderValidation ay muling kukuha sa server; walang optimistic
+        // na cross-user visibility). Walang bagong channel/poll; sakop din ito ng 60s
+        // safety poll bilang fallback kapag namatay ang realtime.
+        try {
+          if (document.getElementById('validationPage')?.classList.contains('active') && typeof renderValidation === 'function') {
+            var vSig = cloudJobs.filter(function (j) { return j.status === 'for_validation'; }).map(function (j) { return j.id; }).sort().join(',');
+            if (vSig !== window.__valQueueSig) { window.__valQueueSig = vSig; console.info('[AHBA val-rt] queue membership changed — refreshing the Validator queue'); renderValidation(); }
+          }
+        } catch (e) {}
       },
       () => upsertJobs(jobs) // onEmpty: bootstrap a brand-new/empty project once
     );
