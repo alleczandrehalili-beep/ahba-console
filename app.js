@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-05.1';
+const APP_VERSION='2026-10-06.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2182,8 +2182,26 @@ async function decideValidationInner(jobId,approve){
     body={status:'rejected', updated_at:new Date().toISOString(), validated_by:who, special_note:(rejReason?('REJECTED: '+rejReason):'REJECTED')};
   }
   try{
-    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(body)});
+    // 4B-2 (owner 2026-10-05): cross-user concurrency — ang desisyon ay tatanggapin LANG
+    // kung ang JO ay nasa for_validation PA RIN at hindi soft-deleted, kaya hindi na
+    // mapapatungan ng stale na Validator session ang desisyon ng iba (o maibabalik sa
+    // pending ang na-assign nang JO). return=representation + select=id ang TOTOONG
+    // patunay ng bilang ng na-update na row: ang dating return=minimal ay 204 kahit
+    // ZERO rows ang na-match, kaya mukhang success ang talo sa karera.
+    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}&status=eq.for_validation&deleted_at=is.null&select=id`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify(body)});
     await reqOk(_r, approve?'Approve':'Reject');
+    const _rows=await _r.json().catch(()=>null);
+    if(!Array.isArray(_rows)) throw new Error('server did not return a confirmation — refusing to treat as success');
+    if(_rows.length===0){
+      // CONFLICT — ibang validator/proseso na ang nauna, o wala na sa for_validation ang JO.
+      // WALANG success history/push/toast/superDupNote; isara ang stale modal at mag-reconcile.
+      showToast('⚠ '+jobId+' was already changed by another validator — refreshing the queue.');
+      closeModals(); renderValidation();
+      try{ refreshValBadge(); }catch(_e){}
+      try{ if(window.AHBACloud&&window.AHBACloud.refreshNow) window.AHBACloud.refreshNow(); }catch(_e){}
+      return;
+    }
+    if(_rows.length!==1) throw new Error('server reported '+_rows.length+' rows changed for one JO — refusing to treat as success');
     if(typeof superDupNote!=='undefined' && superDupNote) histLog(jobId,superDupNote);
     // GC approver remark (GC console only) — save if the validator typed one on approve. Non-fatal.
     if(approve && isGcConsole()){ const _gnv=(($('#valGcNote')&&$('#valGcNote').value)||'').trim(); if(_gnv){ try{ await saveApproverNote(jobId,_gnv); gcNoteIds.add(jobId); }catch(_e){} } }
