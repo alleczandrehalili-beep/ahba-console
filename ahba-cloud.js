@@ -288,7 +288,51 @@
     const saveLocally = save;
     save = function () { saveLocally(); };
 
+    // Phase 4B-1 (owner 2026-10-04): TARGETED dispatch writes. Ipinapadala na LANG ang mga
+    // column na PAG-AARI ng mismong aksyon (+updated_at) sa halip na ang buong row — ang
+    // full-row upsert ay napatunayang last-writer-wins: ang stale na kopya ng isang
+    // dispatcher ay tahimik na bumubura ng pagbabago ng iba (4B-1 audit, body inspection).
+    // opts.ifStatus = precondition para sa ASSIGN: kapag 0 rows ang tinamaan (nauna na ang
+    // ibang dispatcher), CONFLICT — hindi tahimik na tagumpay. Ang resulta ay laging
+    // resolve ({ok:true} | {ok:false, conflict?}) — hindi nagre-reject para ligtas ang
+    // fire-and-forget na mga tawag; sa anumang failure ay nagto-toast ito, nagseset ng
+    // error badge, at nagre-refreshNow() para ang optimistic na lokal na kopya ay agad
+    // maitama mula sa server.
+    window.AHBASyncFields = function (job, fields, opts) {
+      if (!job || !job.id) return Promise.resolve({ok: false});
+      setStatus('syncing', 'Saving…');
+      var body = {}; for (var k in fields) if (Object.prototype.hasOwnProperty.call(fields, k)) body[k] = fields[k];
+      body.updated_at = new Date().toISOString();
+      var path = 'jobs?id=eq.' + encodeURIComponent(job.id);
+      var pre = !!(opts && opts.ifStatus);
+      if (pre) path += '&status=eq.' + encodeURIComponent(opts.ifStatus);
+      // LAGING return=representation: ang 200/204 lang ay HINDI patunay — legal sa
+      // PostgREST ang mag-update ng ZERO rows (stale/na-delete nang id, RLS-filtered).
+      // Tagumpay = EKSAKTONG ISANG row ang kinumpirma ng server; 0 = hindi tagumpay
+      // (conflict kapag precondition, kundi stale/di-na-masusulatan); >1 = imposible
+      // para sa id=eq → invariant violation, hinding-hindi ituturing na tagumpay.
+      return request(path, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify(body)})
+        .then(function (rows) {
+          var n = Array.isArray(rows) ? rows.length : 0;
+          if (n === 1) { setStatus('live', 'Synced', 'Cloud sync active'); return {ok: true}; }
+          var e;
+          if (n === 0) { e = new Error(pre ? 'already changed by another dispatcher' : 'the record was not found or is no longer writable (stale view)'); e.conflict = pre; }
+          else { e = new Error('server reported ' + n + ' rows changed for one JO — refusing to treat as success'); }
+          throw e;
+        })
+        .catch(function (error) {
+          setStatus('error', 'Sync error', error.message);
+          console.warn('[AHBA dispatch-patch]', job.id, error.message);
+          try { if (typeof showToast === 'function') showToast(error.conflict
+            ? ('⚠ ' + job.id + ' was already changed by another dispatcher — refreshing the board.')
+            : ('❌ Change to ' + job.id + ' did NOT save — ' + error.message)); } catch (e) {}
+          try { if (window.AHBACloud.refreshNow) window.AHBACloud.refreshNow(); } catch (e) {}
+          return {ok: false, conflict: !!error.conflict};
+        });
+    };
+
     // Helper the app calls to persist ONE job to the cloud immediately.
+    // (4B-1: wala nang dispatch caller nito — nananatili bilang pansamantalang fallback.)
     window.AHBASync = function (job) {
       if (!job) return Promise.resolve();
       setStatus('syncing', 'Saving…');

@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-04.3';
+const APP_VERSION='2026-10-05.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -538,7 +538,8 @@ async function carryNegativesToDispatch(ids){
     if(!j || j.status!=='negative') continue;     // only still-incomplete loads
     j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=today; j.priority='1st Load';
     histLog(j.id, `Carried to For Dispatch from ${dashViewDate||'previous day'} (not a new turn-in)`);
-    if(window.AHBASync) window.AHBASync(j);
+    if(window.AHBASyncFields) AHBASyncFields(j,{status:'pending',team:null,scheduled_at:null,load_date:today,priority:'1st Load'});   // 4B-1: owned fields lang
+    else if(window.AHBASync) window.AHBASync(j);
     n++;
   }
   // Jump back to today's live view so the carried loads are visible in For Dispatch.
@@ -601,9 +602,11 @@ function maybePromptRollover(){
   rolloverChecking=false;
   if(!ok){ showToast('Left the incomplete loads for now.'); return; }
   cands.forEach(j=>{
-    if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; histLog(j.id,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
-    else { j.priority='1st Load'; j.load_date=today; histLog(j.id,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
-    if(window.AHBASync) window.AHBASync(j);
+    let _rf;   // 4B-1: owned fields lang ng branch na tinahak
+    if(j.status==='negative'){ j.status='pending'; j.team=null; j.priority='1st Load'; j.load_date=today; _rf={status:'pending',team:null,priority:'1st Load',load_date:today}; histLog(j.id,`Returned to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    else { j.priority='1st Load'; j.load_date=today; _rf={priority:'1st Load',load_date:today}; histLog(j.id,`Carried to For Dispatch (1st Load) by ${u.display_name||u.username}`); }
+    if(window.AHBASyncFields) AHBASyncFields(j,_rf);
+    else if(window.AHBASync) window.AHBASync(j);
   });
   showToast(`${cands.length} load(s) returned to For Dispatch.`);
   if(typeof renderOverview==='function') renderOverview();
@@ -614,7 +617,8 @@ function unassignJob(jobId){
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
   histLog(j.id, wasNeg?'Manually returned → For Dispatch (1st Load)':'Moved back to For Dispatch');
   save(); showToast(`${jobId} → For Dispatch${wasNeg?' (High priority)':''}`);
-  if(window.AHBASync) window.AHBASync(j);
+  if(window.AHBASyncFields){ const _f={status:'pending',team:null,scheduled_at:null,load_date:manilaToday()}; if(wasNeg)_f.priority='1st Load'; AHBASyncFields(j,_f); }   // 4B-1
+  else if(window.AHBASync) window.AHBASync(j);
   if(dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
 }
 function openJobDetail(jobId){
@@ -773,7 +777,8 @@ function deleteJobOrder(jobId){
   if(!confirm(`Delete job order ${jobId} (${j.subscriber||''})?\n\nIt will be hidden from the Dispatch Board and Timeline. The history stays in the records.\n\nOK = Delete   ·   Cancel = Keep`)) return;
   histLog(j.id,`🗑 Deleted by ${who} (status was: ${statusLabel(j.status||'')})`);
   j.deleted_at=new Date().toISOString(); j.deleted_by=who;
-  if(window.AHBASync) window.AHBASync(j);            // persist the soft-delete + history to cloud
+  if(window.AHBASyncFields) AHBASyncFields(j,{deleted_at:j.deleted_at,deleted_by:j.deleted_by});   // 4B-1: persist the soft-delete lang
+  else if(window.AHBASync) window.AHBASync(j);
   jobs=jobs.filter(x=>x.id!==jobId);                  // remove from the in-memory working set now
   save(); closeModals();
   renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline(); renderOverview();
@@ -784,7 +789,8 @@ function updatePriority(jobId,p){
   const j=findJob(jobId); if(!j||!p||j.priority===p)return;
   j.priority=p; histLog(j.id,`Priority → ${p} (by Dispatcher)`);
   save(); renderJobs(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId} priority → ${p}`);
-  if(window.AHBASync) window.AHBASync(j);
+  if(window.AHBASyncFields) AHBASyncFields(j,{priority:p});   // 4B-1: priority LANG ang ipinapadala
+  else if(window.AHBASync) window.AHBASync(j);
 }
 // A REJECTED order never passed validation, so it must never be pushed straight into
 // For Dispatch — it has to be corrected and sent back to the Validator first.
@@ -802,10 +808,11 @@ function applyStatusUpdate(jobId,choice,reason){
   const j=findJob(jobId); if(!j)return;
   // anything that is not completed/cancelled/incomplete is the re-dispatch branch below
   if(!['completed','cancelled','incomplete'].includes(choice) && blockRejectedToDispatch(j)) return;
-  if(choice==='completed'){ j.status='completed'; j.completed_at=new Date().toISOString(); }
-  else if(choice==='cancelled'){ j.status='cancelled'; if(reason) j.cancel_remark=reason; }
-  else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); }  // stays in the Incomplete bar (keeps its team)
-  else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); }  // re-dispatch → CURRENT For Dispatch (today)
+  let _sf;   // 4B-1: owned fields lang ng piniling status change
+  if(choice==='completed'){ j.status='completed'; j.completed_at=new Date().toISOString(); _sf={status:'completed',completed_at:j.completed_at}; }
+  else if(choice==='cancelled'){ j.status='cancelled'; if(reason) j.cancel_remark=reason; _sf={status:'cancelled'}; if(reason)_sf.cancel_remark=reason; }
+  else if(choice==='incomplete'){ j.status='negative'; j.negative_at=new Date().toISOString(); _sf={status:'negative',negative_at:j.negative_at}; }  // stays in the Incomplete bar (keeps its team)
+  else { j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); _sf={status:'pending',team:null,scheduled_at:null,load_date:j.load_date}; }  // re-dispatch → CURRENT For Dispatch (today)
   const label={completed:'Completed',incomplete:'Incomplete',redispatch:'Re-dispatch → For Dispatch',cancelled:'Cancelled'}[choice];
   histLog(j.id, `Status → ${label}${(choice==='cancelled'&&reason)?': '+reason:''} (by Dispatcher)`);
   // Phone push: encoder sa bawat pagtatapos ng JO + technician team kapag kinansela ang naka-assign na load.
@@ -817,7 +824,8 @@ function applyStatusUpdate(jobId,choice,reason){
   if(choice==='cancelled' && j.team) pushNotify({team:j.team,title:'🚫 Load cancelled',body:(j.subscriber||jobId)});
   j.updatedAt=new Date().toISOString();
   save(); closeModals(); if($('#historyPage')?.classList.contains('active'))renderHistory(); showToast(`${jobId}: ${label}`);
-  if(window.AHBASync) window.AHBASync(j);
+  if(window.AHBASyncFields) AHBASyncFields(j,_sf);   // 4B-1
+  else if(window.AHBASync) window.AHBASync(j);
   // If moved to For Dispatch while viewing a PAST date, jump to today's live view so it shows up.
   if(choice!=='completed'&&choice!=='incomplete'&&choice!=='cancelled'&&dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
 }
@@ -1544,7 +1552,10 @@ function tlReturnToDispatch(jobId){
   const wasNeg=j.status==='negative';
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';
   histLog(j.id, wasNeg?'Returned → For Dispatch (1st Load)':'Returned → For Dispatch');
-  save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
+  save();
+  if(window.AHBASyncFields){ const _f={status:'pending',team:null,scheduled_at:null,load_date:j.load_date}; if(wasNeg)_f.priority='1st Load'; AHBASyncFields(j,_f); }   // 4B-1
+  else if(window.AHBASync) window.AHBASync(j);
+  renderTimeline(); renderJobs();
   showToast(`${jobId} → For Dispatch${wasNeg?' (1st Load)':''}`);
 }
 let tlDragId=null;
@@ -1600,25 +1611,41 @@ async function tlSchedule(jobId, team, date, hour, est){
   if(blockRejectedToDispatch(j)) return;
   const hh=Math.floor(hour), mm=Math.round((hour-hh)*60);
   const iso=new Date(`${date}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00+08:00`).toISOString();
+  // 4B-1: owned fields lang + precondition sa pending→assigned; ang history/push/toast ay
+  // pagkatapos LANG ng kumpirmadong save (walang pekeng tagumpay sa conflict/failure).
+  const wasPending=j.status==='pending';
+  let _tf={}, _after=null;
   if(j.team!==team){
     // Assigning to a (new) team needs a unique J.O. Number, same rule as the dispatch board.
-    let jo=j.job_order_no;
+    let jo=j.job_order_no; const _joNew=!jo;
     if(!jo){ jo=(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||'').trim(); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }
     // Ang tinitingnang araw sa Timeline ang nagiging load date (dati'y pilit na today,
     // kahit sa ibang araw ka nag-i-schedule — advance dispatch na ngayon).
     const _adv=date>manilaToday();
-    j.team=team; if(j.status==='pending') j.status='assigned'; j.load_date=date; j.dispatch_count=(j.dispatch_count||0)+1;
-    histLog(j.id,`Scheduled to ${team}${_adv?' for '+date:''} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
-    pushNotify&&pushNotify({team,title:_adv?('📅 New load for '+date):'New load assigned',body:(j.subscriber||jobId)});
-    if(j.created_by) pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+date:'')+' @ '+tlFmtHour(hour)});
+    j.team=team; if(wasPending) j.status='assigned'; j.load_date=date; j.dispatch_count=(j.dispatch_count||0)+1;
+    _tf={team:team, load_date:date, dispatch_count:j.dispatch_count};
+    if(wasPending)_tf.status='assigned'; if(_joNew)_tf.job_order_no=jo;
+    _after=()=>{
+      histLog(j.id,`Scheduled to ${team}${_adv?' for '+date:''} @ ${tlFmtHour(hour)} (#${j.dispatch_count})`);
+      pushNotify&&pushNotify({team,title:_adv?('📅 New load for '+date):'New load assigned',body:(j.subscriber||jobId)});
+      if(j.created_by) pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+date:'')+' @ '+tlFmtHour(hour)});
+    };
   } else {
-    histLog(j.id,`Rescheduled @ ${tlFmtHour(hour)}`);
-    // Sabihan ang technician team na lumipat ang oras ng load nila.
-    pushNotify&&pushNotify({team,title:'🕐 Load rescheduled',body:(j.subscriber||jobId)+' @ '+tlFmtHour(hour)});
+    _after=()=>{
+      histLog(j.id,`Rescheduled @ ${tlFmtHour(hour)}`);
+      // Sabihan ang technician team na lumipat ang oras ng load nila.
+      pushNotify&&pushNotify({team,title:'🕐 Load rescheduled',body:(j.subscriber||jobId)+' @ '+tlFmtHour(hour)});
+    };
   }
   j.scheduled_at=iso; j.est_minutes=est||j.est_minutes||TL_DEFMIN;
-  save(); if(window.AHBASync) window.AHBASync(j); renderTimeline(); renderJobs();
-  showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`);
+  _tf.scheduled_at=iso; _tf.est_minutes=j.est_minutes;
+  save();
+  if(window.AHBASyncFields){
+    const _res=await AHBASyncFields(j,_tf,(j.team===team&&wasPending&&_tf.status==='assigned')?{ifStatus:'pending'}:undefined);
+    if(_res&&_res.ok){ _after(); showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`); }
+    // conflict/failure: ang helper na ang nag-toast + refreshNow (maitatama ang lokal na kopya)
+  } else { if(window.AHBASync) window.AHBASync(j); _after(); showToast(`${jobId} → ${team} @ ${tlFmtHour(hour)}`); }
+  renderTimeline(); renderJobs();
 }
 // Merge technician accounts from the DB into the team list so NEWLY-created technicians
 // (made in Access Control) appear everywhere: dispatch assign, Field Teams, dropdowns, monitoring.
@@ -1691,7 +1718,40 @@ async function joTaken(jo,exceptId){
     return rows.some(x=>String(x.id)!==String(exceptId));
   }catch(e){ return false; }
 }
-async function assignTeam(jobId,team){const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;} if(blockRejectedToDispatch(j))return; const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();const joFinal=j.job_order_no||joVal;if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}if(!j.job_order_no)j.job_order_no=joVal;const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim();if(rem)j.dispatched_remarks=rem;const _ld=(($('#assignLoadDate')&&$('#assignLoadDate').value)||manilaToday());if(_ld<manilaToday()){showToast('Load date cannot be in the past');return;}const _adv=_ld>manilaToday();j.team=team;j.status='assigned';j.load_date=_ld;j.dispatch_count=(j.dispatch_count||0)+1;if(!j.scheduled_at||_adv){let h=_adv?TL_START:new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${_ld}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;}histLog(j.id,`Dispatched to ${team}${_adv?' for '+_ld:''} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();showToast(`${team} assigned to ${jobId}`);if(window.AHBASync)window.AHBASync(j);pushNotify({team,title:_adv?('📅 New load for '+_ld):'New load assigned',body:(j.subscriber||jobId)});if(j.created_by)pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+_ld:'')})}
+async function assignTeam(jobId,team){
+  const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;}
+  if(blockRejectedToDispatch(j))return;
+  const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();
+  const joFinal=j.job_order_no||joVal;
+  if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}
+  if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}
+  const _joNew=!j.job_order_no; if(_joNew)j.job_order_no=joVal;
+  const rem=(($('#assignRemarks')&&$('#assignRemarks').value)||'').trim(); if(rem)j.dispatched_remarks=rem;
+  const _ld=(($('#assignLoadDate')&&$('#assignLoadDate').value)||manilaToday());
+  if(_ld<manilaToday()){showToast('Load date cannot be in the past');return;}
+  const _adv=_ld>manilaToday();
+  // 4B-1: tandaan ang dating status — precondition sa pending→assigned (dobleng-assign guard)
+  const wasPending=j.status==='pending';
+  j.team=team;j.status='assigned';j.load_date=_ld;j.dispatch_count=(j.dispatch_count||0)+1;
+  let _schedSet=false;
+  if(!j.scheduled_at||_adv){let h=_adv?TL_START:new Date().getHours();if(h<TL_START)h=TL_START;if(h>TL_END-1)h=TL_END-1;j.scheduled_at=new Date(`${_ld}T${String(h).padStart(2,'0')}:00:00+08:00`).toISOString();j.est_minutes=j.est_minutes||TL_DEFMIN;_schedSet=true;}
+  save();closeModals();renderJobs();if($('#timelinePage')?.classList.contains('active'))renderTimeline();
+  // 4B-1: owned fields LANG ang ipinapadala; history/toast/push pagkatapos LANG ng kumpirmadong save
+  const _af={team:team,status:'assigned',load_date:_ld,dispatch_count:j.dispatch_count};
+  if(_joNew)_af.job_order_no=j.job_order_no; if(rem)_af.dispatched_remarks=j.dispatched_remarks;
+  if(_schedSet){_af.scheduled_at=j.scheduled_at;_af.est_minutes=j.est_minutes;}
+  const _done=()=>{
+    histLog(j.id,`Dispatched to ${team}${_adv?' for '+_ld:''} (#${j.dispatch_count})${j.job_order_no?' · JO '+j.job_order_no:''}`);
+    showToast(`${team} assigned to ${jobId}`);
+    pushNotify({team,title:_adv?('📅 New load for '+_ld):'New load assigned',body:(j.subscriber||jobId)});
+    if(j.created_by)pushNotify({team:j.created_by,title:'🚚 JO dispatched',body:(j.subscriber||jobId)+' → '+team+(_adv?' · for '+_ld:'')});
+  };
+  if(window.AHBASyncFields){
+    const _res=await AHBASyncFields(j,_af,wasPending?{ifStatus:'pending'}:undefined);
+    if(_res&&_res.ok)_done();
+    // conflict (nauna na ang ibang dispatcher) o failure: ang helper na ang nag-toast + refreshNow
+  } else { if(window.AHBASync)window.AHBASync(j); _done(); }
+}
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}
 
