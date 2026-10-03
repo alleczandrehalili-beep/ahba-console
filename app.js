@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-04.2';
+const APP_VERSION='2026-10-04.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1783,7 +1783,7 @@ window.addEventListener('message', function(e){
 let valJobs=[], valDocs={}, valRejected=[];
 async function refreshValBadge(){
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation&deleted_at=is.null`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});   // 4A: huwag bilangin ang soft-deleted
     const n=r.ok?(await r.json()).length:0; const b=$('#valBadge');
     if(b){ b.textContent=n; b.style.display=n?'':'none'; }
   }catch(e){}
@@ -1806,9 +1806,9 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , cntRows] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&deleted_at=is.null&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),   // 4A: ang soft-deleted ay hindi na lalabas sa queue (dating kita — zombie approvals)
     loadAgentNames(),
-    fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])
+    fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&deleted_at=is.null&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])   // 4A: itugma ang counters sa nakikitang listahan
   ]);
   valJobs=Array.isArray(valRes)?valRes:[];
   valDocs=await fetchDocsFor(valJobs.map(j=>j.id));   // depends on valJobs, so it follows
@@ -2077,7 +2077,18 @@ async function openValidate(jobId){
   $$('#valVasInputs .valVas').forEach(e=>e.readOnly=!canVal);
   openModal($('#valModal'));
 }
+// 4A (owner 2026-10-04): in-flight lock — sa sandaling pindutin ang Approve O Reject,
+// parehong button ay naka-disable hanggang matapos ang request; ang double-click ay
+// hindi na makagagawa ng pangalawang epektibong desisyon. Sa failure, bumabalik ang
+// mga button (buo ang modal/data — Phase 2B behavior) para ligtas ang retry.
 async function decideValidation(jobId,approve){
+  const _bA=$('#valApprove'), _bR=$('#valReject');
+  if(_bA&&_bA.disabled) return;   // may tumatakbo nang desisyon — balewalain ang sunod na click
+  if(_bA)_bA.disabled=true; if(_bR)_bR.disabled=true;
+  try{ await decideValidationInner(jobId,approve); }
+  finally{ if(_bA)_bA.disabled=false; if(_bR)_bR.disabled=false; }
+}
+async function decideValidationInner(jobId,approve){
   if(!dashCanEdit('validation')){ showToast('Validation is GC-only'); return; }
   const j=valJobs.find(x=>x.id===jobId)||{};
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Validator';   // sino ang nag-desisyon
