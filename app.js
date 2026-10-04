@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-07.1';
+const APP_VERSION='2026-10-07.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -187,7 +187,7 @@ async function opsSystemCheck(){
   // DB internals: superadmin lang ang kumukuha at nakakakita
   let h=null; if(isSuper){ try{ h=await fetch(`${SUPA_URL}/rest/v1/rpc/system_health`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:'{}'}).then(r=>r.ok?r.json():null); }catch(e){} }
   let jobsN='—', jobsMs=0;
-  try{ const s=performance.now(); const rows=await AHBACloud.getJobs(); jobsMs=Math.round(performance.now()-s); jobsN=rows.length; jobs=rows; try{ localStorage.setItem('fieldflow_jobs',JSON.stringify(rows)); }catch(e){} renderJobs(); }catch(e){}
+  try{ const s=performance.now(); const rows=await AHBACloud.getJobs(); jobsMs=Math.round(performance.now()-s); jobsN=rows.length; jobs=rows; renderJobs(); }catch(e){}
   const dbBad=h && (h.connections>=h.max_connections*0.8 || h.long_running>0);
   let verdict, tone;
   if(api401){ verdict='⚠ Your session has expired — press HARD RELOAD below to log in again. Nothing is lost.'; tone='#c2503a'; }
@@ -217,7 +217,13 @@ const activity=[];
 let mapFilter='all';
 let notifReadAt=Number(localStorage.getItem('ahba_notif_read')||0);
 
-function save(){localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs));localStorage.setItem('fieldflow_expenses',JSON.stringify(expenses))}
+// 4C F3 (owner 2026-10-07): ang fieldflow_jobs/fieldflow_expenses localStorage cache ay
+// DEAD — walang kahit isang bumabasa nito kahit saan. Ang dating body ng save() ay
+// nagse-serialize ng BUONG jobs array bawat mutation (at quota-full na device ay
+// nag-th-throw dito, naputputol ang render chain). Mananatili ang save() bilang no-op
+// para sa mga caller; ang lumang naipon na cache ay nililinis nang isang beses.
+function save(){}
+try{ localStorage.removeItem('fieldflow_jobs'); localStorage.removeItem('fieldflow_expenses'); }catch(e){}
 function statusLabel(s){ if(!s)return '—'; if(s==='negative')return 'Incomplete'; return s.split('-').map(x=>x?(x[0].toUpperCase()+x.slice(1)):'').join(' ')}
 function todayTotal(){return expenses.reduce((a,b)=>a+Number(b.amount),0)}
 function showToast(msg){$('#toast span').textContent=msg;$('#toast').classList.add('show');clearTimeout(showToast._t);showToast._t=setTimeout(()=>$('#toast').classList.remove('show'),2600)}
@@ -985,13 +991,18 @@ async function loadTeamChat(code){
   }catch(e){ el.innerHTML='<span style="color:#c2503a">Could not load messages.</span>'; }
 }
 async function sendTeamChat(code){
-  const inp=$('#tdChatInput'); const v=(inp.value||'').trim(); if(!v)return; inp.value='';
+  // 4C F2 (owner 2026-10-07): HINDI nililinis ang input bago kumpirmahin ng server —
+  // dating nabubura ang na-type na mensahe sa palyadong send (at walang toast sa 4xx),
+  // tapos pinapadalhan pa ng push ang team para sa mensaheng hindi naman nai-save.
+  const inp=$('#tdChatInput'); const v=(inp.value||'').trim(); if(!v)return;
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Dispatcher';
   try{
-    await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify({team:code,sender:who,role:'dispatch',body:v})});
+    const r=await fetch(`${SUPA_URL}/rest/v1/team_messages`,{method:'POST',headers:DH(),body:JSON.stringify({team:code,sender:who,role:'dispatch',body:v})});
+    await reqOk(r,'Chat message');
+    inp.value='';                                   // kumpirmado nang nai-save — saka lang lilinisin
     pushNotify({team:code,title:'Message from Dispatch',body:v});
     loadTeamChat(code);
-  }catch(e){ showToast('Send failed'); }
+  }catch(e){ showToast('❌ Message NOT sent — '+e.message+' — your message is still in the box; try again.'); }
 }
 const PER_HEAD=955;       // bawat driver / technician na naka-declare sa Start shift
 const GAS_PER_TEAM=400;   // gasolina kada na-deploy na team
@@ -1847,9 +1858,16 @@ window.addEventListener('message', function(e){
 // ---------- Validator (sales-agent job orders awaiting approval) ----------
 let valJobs=[], valDocs={}, valRejected=[];
 async function refreshValBadge(){
+  // 4C F5 (owner 2026-10-07): HEAD + Prefer:count=exact — eksaktong bilang mula sa
+  // Content-Range nang WALANG rows na dine-download (dating lahat ng id bawat 30s).
+  // Parehong 4A filters (for_validation + hindi soft-deleted). Kapag pumalya ang count
+  // request, HINDI ginagalaw ang badge — dating nagre-reset ito sa 0 nang mali.
   try{
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation&deleted_at=is.null`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});   // 4A: huwag bilangin ang soft-deleted
-    const n=r.ok?(await r.json()).length:0; const b=$('#valBadge');
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&status=eq.for_validation&deleted_at=is.null`,{method:'HEAD',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'count=exact'}});
+    if(!r.ok) return;
+    const n=parseInt(String(r.headers.get('content-range')||'').split('/')[1],10);
+    if(!Number.isFinite(n)) return;
+    const b=$('#valBadge');
     if(b){ b.textContent=n; b.style.display=n?'':'none'; }
   }catch(e){}
 }
@@ -3253,7 +3271,7 @@ async function submitOrderInner(e){
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
     closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
-    if(!toValidate && !wasEdit){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
+    if(!toValidate && !wasEdit){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
   }catch(e2){
     const _m2=String(e2.message||e2);
     // JO-NORM: duplicate JO Number (unique index) → malinaw na mensahe, buo ang form/data.
@@ -3834,7 +3852,7 @@ async function deleteAllLoads(){
     // Soft-delete the active loads only. Photos + docs are kept (the rows remain, so nothing orphans).
     const r=await fetch(`${SUPA_URL}/rest/v1/jobs?deleted_at=is.null`,{method:'PATCH',headers:H,body:JSON.stringify({deleted_at:new Date().toISOString(), deleted_by:who})});
     if(!r.ok){ throw new Error('HTTP '+r.status+' '+(await r.text()).slice(0,120)); }
-    jobs=[]; try{ localStorage.setItem('fieldflow_jobs','[]'); }catch(e){}
+    jobs=[];
     renderJobs(); renderOverview(); showToast('✓ All loads cleared (kept for Superadmin).');
   }catch(e){ showToast('Clear failed: '+e.message); }
 }
@@ -4128,9 +4146,12 @@ async function saveAccess(username){
   const pages=[], editPages=[];
   sels.forEach(s=>{ const v=s.value; if(v==='view'||v==='edit') pages.push(s.dataset.pg); if(v==='edit') editPages.push(s.dataset.pg); });
   try{
-    await fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({allowed_pages:pages,edit_pages:editPages,updated_at:new Date().toISOString()})});
+    // 4C F1 (owner 2026-10-07): ang access-control save ay dating "updated" kahit 4xx —
+    // kumpirmadong OK muna ang server bago ang success toast (2B pattern).
+    const r=await fetch(`${SUPA_URL}/rest/v1/dashboard_users?username=eq.${encodeURIComponent(username)}`,{method:'PATCH',headers:DH(),body:JSON.stringify({allowed_pages:pages,edit_pages:editPages,updated_at:new Date().toISOString()})});
+    await reqOk(r,'Access change');
     showToast(`${username}: access updated (View/Edit saved)`);
-  }catch(e){ showToast('Could not save access'); }
+  }catch(e){ showToast('❌ '+username+': access was NOT saved — '+e.message+' — nothing was changed; try again.'); }
 }
 // ---- Secure admin actions via the admin-reset Edge Function ----
 // Re-confirm the acting user's OWN password before a sensitive action (replaces the shared admin secret).
@@ -4644,7 +4665,7 @@ async function importJobsFromRows(rows){
       if(!r.ok){ const t=await r.text(); throw new Error(t.slice(0,200)); }
     }
     // refresh from cloud so the new jobs appear on the board
-    if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} }
+    if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); }catch(e){} }
     switchPage('timeline'); renderOverview();
     alert(`✅ Imported ${out.length} job order(s) → For Dispatch.`+(skipped?`\n${skipped} blank/invalid row(s) skipped.`:''));
   }catch(e){ alert('Import failed: '+(e.message||e)); }

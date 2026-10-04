@@ -352,7 +352,6 @@
     startDashboard(
       cloudJobs => {
         jobs = cloudJobs;
-        localStorage.setItem('fieldflow_jobs', JSON.stringify(jobs));
         renderOverview();
         // Live-refresh the active tab too, so the Dispatch Board and Timeline stay in sync
         // when technicians update status on mobile (realtime + 15s poll).
