@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-07.2';
+const APP_VERSION='2026-10-08.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1735,6 +1735,14 @@ async function joTaken(jo,exceptId){
   }catch(e){ return false; }
 }
 async function assignTeam(jobId,team){
+  // F7 (owner 2026-10-08): same-browser in-flight lock — ang double-tap sa team row habang
+  // tumatakbo ang joTaken/dup check ay gumagawa dati ng DOBLENG assign (dobleng
+  // dispatch_count, dobleng history, 4 pushes) dahil stale na ang wasPending sa
+  // pangalawang click. Ang lock ay naka-set BAGO ang unang await; laging nire-release
+  // sa finally (success/failure/conflict/throw) para ligtas ang retry.
+  if(assignTeam._busy) return;
+  assignTeam._busy=true;
+  try{
   const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;}
   if(blockRejectedToDispatch(j))return;
   const joVal=normJO(($('#assignJONum')&&$('#assignJONum').value)||'');   // JO-NORM
@@ -1767,6 +1775,7 @@ async function assignTeam(jobId,team){
     if(_res&&_res.ok)_done();
     // conflict (nauna na ang ibang dispatcher) o failure: ang helper na ang nag-toast + refreshNow
   } else { if(window.AHBASync)window.AHBASync(j); _done(); }
+  } finally { assignTeam._busy=false; }   // F7: laging bitawan ang lock
 }
 function openModal(modal){$('#modalBackdrop').classList.add('show');modal.showModal()}
 function closeModals(){$$('dialog[open]').forEach(d=>d.close());$('#modalBackdrop').classList.remove('show')}

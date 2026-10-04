@@ -180,8 +180,18 @@
       ids = (ids && ids.length) ? ids : selIds(); if (!ids.length) return;
       modal('<h3 style="margin:0 0 10px">Assign / redispatch ' + ids.length + ' audit(s)</h3><div class="cq-bar"><label>Inspector <select id="as_insp">' + inspectorOpts() + '</select></label><label>Date <input type="date" id="as_date" value="' + today() + '"></label><label>Start sequence # <input type="number" id="as_seq" value="1" min="1" style="width:70px"></label></div><div class="cq-age" style="margin-bottom:10px">Sequence = order of visits for that day. The inspector sees them in this order (push notification is wired at deploy). Tickets already assigned or in progress are pulled from their current inspector.</div><div class="cq-bar" style="justify-content:flex-end"><button class="cq-btn ghost" id="as_cancel">Cancel</button><button class="cq-btn" id="as_ok">Assign</button></div>');
       $('#as_cancel').onclick = closeModal;
-      $('#as_ok').onclick = function () { var insp = $('#as_insp').value, date = $('#as_date').value, seq = Number($('#as_seq').value || 1); if (!insp || !date) { toast('Pick an inspector and a date'); return; } closeModal();
+      $('#as_ok').onclick = function () {
+        // F8 (owner 2026-10-08): same-browser in-flight lock — ang dobleng click sa Assign ay
+        // dating dobleng RPC + dobleng push/toast (idempotent ang data, pero dobleng ingay).
+        // Naka-disable agad ang button sa unang pindot; nire-release sa success AT failure.
+        if (assignDialog._busy) return;
+        var insp = $('#as_insp').value, date = $('#as_date').value, seq = Number($('#as_seq').value || 1);
+        if (!insp || !date) { toast('Pick an inspector and a date'); return; }
+        var btn = $('#as_ok'); assignDialog._busy = true; if (btn) btn.disabled = true;
+        closeModal();
         var p = api.assignAudits(ids, { inspector: insp, date: date, startSeq: seq, by: user.username }).then(function (n) { fireAssigned(insp, date, ids.length); return n; });
+        var rel = function () { assignDialog._busy = false; if (btn) btn.disabled = false; };   // F8: laging bitawan
+        p.then(rel, rel);
         if (done) p.then(function (n) { toast(n + ' audit(s) assigned to ' + insp); done(); }).catch(function (e) { toast('Failed: ' + e.message); });
         else act(p, 'assigned to ' + insp); };
     }
