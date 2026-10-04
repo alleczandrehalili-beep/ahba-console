@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-08.1';
+const APP_VERSION='2026-10-08.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1893,22 +1893,31 @@ async function renderValidation(){
   const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
   const today=manilaToday();
   const ds=(today+'T00:00:00+08:00').replace('+','%2B'), de=(today+'T23:59:59.999+08:00').replace('+','%2B');
-  // "today" counters are scoped on the SERVER (bounded) so this never pulls the whole table.
-  const cq=`or=(and(status.eq.pending,validated_at.gte.${ds},validated_at.lte.${de}),and(status.eq.rejected,updated_at.gte.${ds},updated_at.lte.${de}))`;
+  // F6 (owner 2026-10-08): ang dalawang "today" counter ay exact HEAD counts na —
+  // Prefer:count=exact + Content-Range total: ZERO row download at WALA nang 2000 cap
+  // (dating GET ng hanggang 2000 rows × 3 cols na binibilang pa sa client). EKSAKTONG
+  // parehong Manila-day bounds at status/deleted_at semantics — transport lang ang nagbago.
+  const cntHead=q=>fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{method:'HEAD',headers:{...H,Prefer:'count=exact'}})
+    .then(r=>{ if(!r.ok) return null; const n=parseInt(String(r.headers.get('content-range')||'').split('/')[1],10); return Number.isFinite(n)?n:null; })
+    .catch(()=>null);
+  // Failure honesty: kapag WALA PANG matagumpay na bilang (first load) at pumalya ang
+  // count, '—' ang ipapakita (ang "0" sa markup ay hindi dapat magmukhang totoo);
+  // pagkatapos ng tagumpay, ang palyadong refresh ay nagpapanatili ng huling totoong bilang.
+  const _setCnt=(sel,n)=>{ const el=$(sel); if(!el) return; if(n!=null){ el.textContent=n; el.dataset.known='1'; } else if(!el.dataset.known){ el.textContent='—'; } };
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
-  const [valRes, , cntRows] = await Promise.all([
+  const [valRes, , apN, rjN] = await Promise.all([
     fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&deleted_at=is.null&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),   // 4A: ang soft-deleted ay hindi na lalabas sa queue (dating kita — zombie approvals)
     loadAgentNames(),
-    fetch(`${SUPA_URL}/rest/v1/jobs?select=status,validated_at,updated_at&deleted_at=is.null&${cq}&limit=2000`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[])   // 4A: itugma ang counters sa nakikitang listahan
+    cntHead(`select=id&status=eq.pending&validated_at=gte.${ds}&validated_at=lte.${de}&deleted_at=is.null`),
+    cntHead(`select=id&status=eq.rejected&updated_at=gte.${ds}&updated_at=lte.${de}&deleted_at=is.null`)
   ]);
   valJobs=Array.isArray(valRes)?valRes:[];
   valDocs=await fetchDocsFor(valJobs.map(j=>j.id));   // depends on valJobs, so it follows
   $('#valPending').textContent=valJobs.length;
   $('#valAgents').textContent=new Set(valJobs.map(j=>j.created_by).filter(Boolean)).size||'—';
-  const rows=Array.isArray(cntRows)?cntRows:[];
-  $('#valApproved').textContent=rows.filter(x=>x.status==='pending'&&x.validated_at&&new Date(x.validated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
-  $('#valRejected').textContent=rows.filter(x=>x.status==='rejected'&&x.updated_at&&new Date(x.updated_at).toLocaleDateString('en-CA',{timeZone:TZ})===today).length;
+  _setCnt('#valApproved',apN);
+  _setCnt('#valRejected',rjN);
   // SEPARATE TABS: bagong encode vs FSOI (dating na-reject, in-edit at ni-resubmit).
   // Ang FSOI ay may validated_by na (ang unang nag-check); ang tunay na bago ay wala pa.
   valNewJ=valJobs.filter(j=>!j.validated_by); valFsoiJ=valJobs.filter(j=>!!j.validated_by);
