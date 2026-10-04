@@ -323,7 +323,12 @@
         .catch(function (error) {
           setStatus('error', 'Sync error', error.message);
           console.warn('[AHBA dispatch-patch]', job.id, error.message);
-          try { if (typeof showToast === 'function') showToast(error.conflict
+          // JO-NORM (owner 2026-10-06): ang duplicate-JO-number rejection ng unique index ay
+          // malinaw na mensahe, hindi raw database text.
+          var _joDup = /duplicate key|jobs_job_order_no_uniq|23505/i.test(error.message || '');
+          try { if (typeof showToast === 'function') showToast(_joDup
+            ? ('That JO Number is already being used by another job order — ' + job.id + ' was NOT saved. Please use a different JO Number.')
+            : error.conflict
             ? ('⚠ ' + job.id + ' was already changed by another dispatcher — refreshing the board.')
             : ('❌ Change to ' + job.id + ' did NOT save — ' + error.message)); } catch (e) {}
           try { if (window.AHBACloud.refreshNow) window.AHBACloud.refreshNow(); } catch (e) {}

@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-06.1';
+const APP_VERSION='2026-10-07.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1618,7 +1618,7 @@ async function tlSchedule(jobId, team, date, hour, est){
   if(j.team!==team){
     // Assigning to a (new) team needs a unique J.O. Number, same rule as the dispatch board.
     let jo=j.job_order_no; const _joNew=!jo;
-    if(!jo){ jo=(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||'').trim(); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }
+    if(!jo){ jo=normJO(prompt(`J.O. Number for ${jobId} (required to dispatch):`,'')||''); if(!jo){ showToast('JO Number required to assign'); return; } if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); return; } j.job_order_no=jo; }   // JO-NORM
     // Ang tinitingnang araw sa Timeline ang nagiging load date (dati'y pilit na today,
     // kahit sa ibang araw ka nag-i-schedule — advance dispatch na ngayon).
     const _adv=date>manilaToday();
@@ -1707,9 +1707,14 @@ async function openAssign(jobId){
   $('#assignmentList').innerHTML=html;
   $$('#assignmentList [data-team]').forEach(b=>b.onclick=()=>assignTeam(jobId,b.dataset.team));
 }
+// JO-NORM (owner 2026-10-06): IISANG canonical na anyo ng bawat J.O. Number sa buong
+// FieldOps — trim + UPPERCASE (" r123 " → "R123"). Ginagamit ito PAREHO sa availability
+// check (joTaken) at sa mismong isusulat sa server, para hindi na makalusot ang
+// case-only na magkapareho (tulad ng legacy na MDU/mdu).
+function normJO(v){ return String(v==null?'':v).trim().toUpperCase(); }
 // Job Order numbers must be unique — checks the WHOLE jobs table (incl. completed/history)
 async function joTaken(jo,exceptId){
-  jo=(jo||'').trim(); if(!jo) return false;
+  jo=normJO(jo); if(!jo) return false;
   try{
     // Soft-deleted job orders DON'T reserve the J.O. Number — a new one can reuse it.
     const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id&deleted_at=is.null&job_order_no=eq.${encodeURIComponent(jo)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
@@ -1721,7 +1726,7 @@ async function joTaken(jo,exceptId){
 async function assignTeam(jobId,team){
   const j=jobs.find(x=>x.id===jobId); if(!j){showToast('Job no longer available');return;}
   if(blockRejectedToDispatch(j))return;
-  const joVal=(($('#assignJONum')&&$('#assignJONum').value)||'').trim();
+  const joVal=normJO(($('#assignJONum')&&$('#assignJONum').value)||'');   // JO-NORM
   const joFinal=j.job_order_no||joVal;
   if(!joFinal){showToast('Enter the J.O. Number first');$('#assignJONum')&&$('#assignJONum').focus();return;}
   if(!j.job_order_no&&joVal&&await joTaken(joVal,jobId)){showToast('JO Number already used by another job order');$('#assignJONum')&&$('#assignJONum').focus();return;}
@@ -2163,7 +2168,7 @@ async function decideValidationInner(jobId,approve){
       // naisusulat ito kahit pumalya ang mismong PATCH.
       var superDupNote=`Approved despite 100% duplicate of ${valDupTop.id} by ${who} (Superadmin)`;
     }
-    const jo=($('#valJONum').value||'').trim(), ibas=($('#valIbas').value||'').trim();
+    const jo=normJO($('#valJONum').value), ibas=($('#valIbas').value||'').trim();   // JO-NORM: canonical bago ang check AT ang write
     if(!jo){ showToast('Enter the JO Number before validating'); $('#valJONum').focus(); return; }
     if(!ibas){ showToast('Enter the IBAS Number before validating'); $('#valIbas').focus(); return; }
     if(await joTaken(jo,jobId)){ showToast('JO Number already used by another job order'); $('#valJONum').focus(); return; }
@@ -2215,7 +2220,17 @@ async function decideValidationInner(jobId,approve){
       ? {team:j.created_by, title:'✅ JO approved', body:`${j.subscriber||jobId} · JO ${body.job_order_no}`}
       : {team:j.created_by, title:'❌ JO rejected', body:`${j.subscriber||jobId}${rejReason?' — '+rejReason:''}`});
     closeModals(); showToast(approve?`${jobId} approved → sent to dispatch`:`${jobId} rejected`); renderValidation();
-  }catch(e){showToast('❌ '+(approve?'APPROVE':'REJECT')+' did not save — '+e.message+' — nothing was changed; try again.')}
+  }catch(e){
+    // JO-NORM: ang unique-index rejection (23505/409 duplicate key) ay HINDI ipinapakita
+    // bilang raw database error — malinaw na mensahe, buo ang modal at data, ligtas ang retry.
+    if(approve && /duplicate key|jobs_job_order_no_uniq|23505/i.test(e.message||'')){
+      var _dj=normJO(($('#valJONum')||{}).value);
+      showToast('JO Number '+_dj+' is already being used by another job order. Please enter a different JO Number.');
+      try{ $('#valJONum').focus(); }catch(_e){}
+      return;
+    }
+    showToast('❌ '+(approve?'APPROVE':'REJECT')+' did not save — '+e.message+' — nothing was changed; try again.');
+  }
 }
 
 // ---------- Accounts (technician login accounts) ----------
@@ -3239,7 +3254,12 @@ async function submitOrderInner(e){
     closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
     if(!toValidate && !wasEdit){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); localStorage.setItem('fieldflow_jobs',JSON.stringify(jobs)); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
-  }catch(e2){ err('Submit failed: '+(e2.message||e2)); }
+  }catch(e2){
+    const _m2=String(e2.message||e2);
+    // JO-NORM: duplicate JO Number (unique index) → malinaw na mensahe, buo ang form/data.
+    if(/duplicate key|jobs_job_order_no_uniq|23505/i.test(_m2)) err('JO Number '+normJO(f&&f.trf_jo)+' is already being used by another job order. Please enter a different JO Number.');
+    else err('Submit failed: '+_m2);
+  }
   btn.disabled=false; btn.textContent=(($('#orderForm').dataset.ordtype)==='SLI'?'Submit for validation':'Dispatch Load');
 }
 
@@ -4608,7 +4628,7 @@ async function importJobsFromRows(rows){
       status:'pending', wait_time:'Imported', priority:g.priority||'1st Load', schedule:'Today', team:g.team||null, load_date:today, created_by:'IMPORT', encoded_by:((window.dashUser&&(dashUser.username||dashUser.display_name))||null), created_at:now, updated_at:now,
       first_name:g.first_name,middle_name:g.middle_name,last_name:g.last_name,primary_no:g.primary_no,other_contact_no:g.other_contact_no,
       house_no:g.house_no,street_name:g.street_name,village:g.village,brgy:g.brgy,city:g.city,
-      ibass_acct_no:g.ibass_acct_no,job_order_no:g.job_order_no,vas_no:g.vas_no,play_type:g.play_type,ref_no:g.ref_no,new_ref:g.new_ref,
+      ibass_acct_no:g.ibass_acct_no,job_order_no:normJO(g.job_order_no),vas_no:g.vas_no,play_type:g.play_type,ref_no:g.ref_no,new_ref:g.new_ref,   // JO-NORM: pati import, canonical
       dispatch_status:g.dispatch_status,driver:g.driver,tech1:g.tech1,mapping_team:g.mapping_team,mapping_remarks:g.mapping_remarks,dispatched_remarks:g.dispatched_remarks,
       in_charge:g.in_charge,source_of_sales:g.source_of_sales,referral_name:g.referral_name,special_note:g.special_note };
     // keep identical keys across all rows (PostgREST bulk insert requires it); blanks → null
