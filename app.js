@@ -655,7 +655,8 @@ function openJobDetail(jobId){
     $('#jdInfo').appendChild(_rq);
   }
   // ↩ Return a COMPLETED JO to its team so they replace a photo and re-complete it.
-  if(j.status==='completed' && j.team && (dashCanEdit('timeline')||dashCanEdit('qaaudit'))){
+  // gate = GC console / super (same as qa.is_head() on the server: GC console token or platform admin), or QA-audit editors
+  if(j.status==='completed' && j.team && (isGcConsole()||dashCanEdit('qaaudit'))){
     const _rb=document.createElement('div'); _rb.style.gridColumn='1/-1';
     _rb.innerHTML='<b>QA</b><button type="button" class="assign-btn" id="jdReturnTeam" style="color:#c2503a">↩ Return to team (replace photo)</button>';
     $('#jdInfo').appendChild(_rb);
@@ -790,7 +791,8 @@ async function jdReturnToTeam(jobId){
     if(error) throw error;
     const row=(Array.isArray(data)?data[0]:data)||{};
     const team=j.team, u=window.dashUser||{}, now=new Date().toISOString();
-    const upd={status:'in-progress',completed_at:null,qa_return_remarks:remarks,qa_returned_at:now,qa_returned_by:u.display_name||u.username||'',qa_return_resolved_at:null,qa_status:'RETURNED TO TEAM'};
+    // completed_at is KEPT (owner decision: the team only replaces a photo) — not part of the local patch
+    const upd={status:'in-progress',qa_return_remarks:remarks,qa_returned_at:now,qa_returned_by:u.display_name||u.username||'',qa_return_resolved_at:null,qa_status:'RETURNED TO TEAM'};
     Object.keys(upd).forEach(k=>{ if(row[k]!==undefined) upd[k]=row[k]; });
     if(row.history!=null) upd.history=row.history;
     upd.updatedAt=row.updated_at||now; upd.updated_at=row.updated_at||now;
