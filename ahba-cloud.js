@@ -44,7 +44,8 @@
     'scheduled_at','est_minutes','district','deleted_at','deleted_by','load_type','current_plan','ticket_no','created_by',
     'new_address','cpe_option','birth_date','encoded_by',
     'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark','email','dup_exempt',
-    'qa_audit_id','qa_status','qa_assessment','qa_inspected_at'];   // QA Audit mirror — server-owned (qa.sync_job), never written from here
+    'qa_audit_id','qa_status','qa_assessment','qa_inspected_at',   // QA Audit mirror — server-owned (qa.sync_job), never written from here
+    'qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at'];   // ↩ Returned-by-QA (qa.return_job_for_photos) — server-owned too (serializeJob skips qa_*)
     // NOTE: `lock_bypass` was missing here, so openJobDetail's unlock toggle always read
     // undefined and showed "locked" even for an already-unlocked job order. Fixed 2026-07-20.
 
@@ -109,8 +110,13 @@
   // column is picked up automatically and can never be silently dropped.
   const BASE_COLS = ['id','subscriber','service_type','plan','area','address','status',
     'wait_time','priority','schedule','team','updated_at','validated','validated_at'];
+  // ↩ If the qa_return_* SQL is not applied yet, PostgREST answers 400 (42703 undefined
+  // column) and the WHOLE live dashboard would fail — so on that error we drop just
+  // those four columns and retry (see getJobs).
+  var QA_RETURN_COLS = ['qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at'];
+  var qaReturnColsOk = true;
   function liveSelect() {
-    var cols = BASE_COLS.concat(EXTRA.filter(function (k) { return k !== 'history'; }));
+    var cols = BASE_COLS.concat(EXTRA.filter(function (k) { return k !== 'history' && (qaReturnColsOk || QA_RETURN_COLS.indexOf(k) < 0); }));
     return cols.filter(function (c, i) { return cols.indexOf(c) === i; }).join(',');
   }
 
@@ -149,10 +155,18 @@
     // PostgREST caps every request at 1,000 rows no matter the limit — the live window
     // passed that size (jobs table ~4k), silently dropping JOs from every dashboard.
     // Same pagination fix as Billing Validation: pull 1,000-row pages until short page.
-    const path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
+    let path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
     const rows = [];
     for (let off = 0; off < 10000; off += 1000) {
-      const page = await request(path + '&limit=1000&offset=' + off);
+      let page;
+      try { page = await request(path + '&limit=1000&offset=' + off); }
+      catch (e) {
+        if (off === 0 && qaReturnColsOk && /42703|qa_return/i.test(String(e && e.message || ''))) {
+          qaReturnColsOk = false;
+          path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
+          page = await request(path + '&limit=1000&offset=' + off);
+        } else throw e;
+      }
       if (!page || !page.length) break;
       rows.push.apply(rows, page);
       if (page.length < 1000) break;

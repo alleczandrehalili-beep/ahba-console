@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-08.2';
+const APP_VERSION='2026-10-09.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -648,6 +648,19 @@ function openJobDetail(jobId){
     F('Schedule',j.schedule),F('Negative remark',j.negative_remark),
     (j.status==='rejected'?F('Rejection reason',rejectionReason(j)):'')
   ].join('');
+  // ↩ Returned-by-QA (qa.return_job_for_photos): who/when/why + resolved once the team re-completes.
+  if(j.qa_returned_at){
+    const _rq=document.createElement('div'); _rq.style.gridColumn='1/-1';
+    _rq.innerHTML=`<b>↩ QA return</b><span style="color:${j.qa_return_resolved_at?'#586965':'#c2503a'};font-weight:600">↩ Returned to team ${esc(fmtWhen(j.qa_returned_at))} by ${esc(j.qa_returned_by||'—')}: ${esc(j.qa_return_remarks||'')}</span>`+(j.qa_return_resolved_at?` <span style="color:#0e7a59;font-weight:700">(resolved ${esc(fmtWhen(j.qa_return_resolved_at))})</span>`:'');
+    $('#jdInfo').appendChild(_rq);
+  }
+  // ↩ Return a COMPLETED JO to its team so they replace a photo and re-complete it.
+  if(j.status==='completed' && j.team && (dashCanEdit('timeline')||dashCanEdit('qaaudit'))){
+    const _rb=document.createElement('div'); _rb.style.gridColumn='1/-1';
+    _rb.innerHTML='<b>QA</b><button type="button" class="assign-btn" id="jdReturnTeam" style="color:#c2503a">↩ Return to team (replace photo)</button>';
+    $('#jdInfo').appendChild(_rb);
+    const _bt=$('#jdReturnTeam'); if(_bt) _bt.onclick=()=>jdReturnToTeam(j.id);
+  }
   // 🔓 Allow re-encode (owner 2026-10-03): dispatcher/validator/superadmin — exempt THIS JO
   // from the duplicate check upon the sales agent's request; logged in this JO's history.
   if(window.dashUser&&(dashUser.is_super||dashCanEdit('validation')||hasDispatchAccess(dashUser))){
@@ -761,6 +774,36 @@ function openJobDetail(jobId){
     ub.onclick=()=>toggleJobLockBypass(jobId,!on);
   }
   openModal($('#jobDetailModal'));
+}
+// ↩ Return a completed JO to its team (replace a photo, then re-complete). Server: qa.return_job_for_photos
+// sets status in-progress + the qa_return_* columns; a trigger resolves it when the team completes again.
+async function jdReturnToTeam(jobId){
+  const j=findJob(jobId); if(!j||!j.team){ showToast('This JO has no team to return it to'); return; }
+  const raw=prompt('Which photo must the team replace? (required — the team sees this)');
+  if(raw===null) return;
+  const remarks=String(raw).trim();
+  if(!remarks){ showToast('Remarks are required — the JO was not returned'); return; }
+  if(!window.dashAuthClient){ showToast('Not signed in — reload the page'); return; }
+  const btn=$('#jdReturnTeam'); if(btn){ btn.disabled=true; btn.textContent='Returning…'; }
+  try{
+    const {data,error}=await window.dashAuthClient.schema('qa').rpc('return_job_for_photos',{p_job_id:jobId,p_remarks:remarks});
+    if(error) throw error;
+    const row=(Array.isArray(data)?data[0]:data)||{};
+    const team=j.team, u=window.dashUser||{}, now=new Date().toISOString();
+    const upd={status:'in-progress',completed_at:null,qa_return_remarks:remarks,qa_returned_at:now,qa_returned_by:u.display_name||u.username||'',qa_return_resolved_at:null,qa_status:'RETURNED TO TEAM'};
+    Object.keys(upd).forEach(k=>{ if(row[k]!==undefined) upd[k]=row[k]; });
+    if(row.history!=null) upd.history=row.history;
+    upd.updatedAt=row.updated_at||now; upd.updated_at=row.updated_at||now;
+    const live=jobs.find(x=>x.id===jobId);
+    [j,live].forEach(o=>{ if(o) Object.assign(o,upd); });
+    showToast(`JO returned to ${team}`);
+    pushNotify({team,title:'↩ JO returned by QA',body:remarks.slice(0,120),url:'mobile.html'});
+    renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline();
+    if($('#jdTitle').textContent.startsWith(jobId)) openJobDetail(jobId);
+  }catch(e){
+    showToast('Return failed: '+(e&&e.message||e));
+    if(btn){ btn.disabled=false; btn.textContent='↩ Return to team (replace photo)'; }
+  }
 }
 // Let the technician see/start this job order even while another load is active (serial-lock bypass).
 async function toggleJobLockBypass(jobId,on){
@@ -1830,7 +1873,8 @@ function initQA(){
     onBadge:n=>{const b=document.getElementById('qaBadge'); if(b){ b.textContent=n; b.style.display=n?'':'none'; }},
     onAssigned:({inspector,date,count})=>{ // push sa inspector (existing send-push Edge Function; team = inspector username)
       try{ fetch(`${SUPA_URL}/functions/v1/send-push`,{method:'POST',headers:DH(),body:JSON.stringify({team:inspector,title:'New QA assignment',body:`${count} inspection(s) for ${date}`,url:'mobile.html'})}).catch(()=>{}); }catch(e){}
-    }});
+    },
+    onJobReturned:({job,team,remarks})=>{ try{ pushNotify({team, title:'↩ JO returned by QA', body:String(remarks||'').slice(0,120), url:'mobile.html'}); }catch(e){} }});
 }
 let _qaFindMount=null;
 function initQAFindings(){
