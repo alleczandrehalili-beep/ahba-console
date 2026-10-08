@@ -159,6 +159,10 @@
         var ch = client.channel('qa-audits-' + Math.random().toString(36).slice(2, 8)).on('postgres_changes', { event: '*', schema: 'qa', table: 'audits' }, function (m) { cb({ type: 'audit', row: m.eventType === 'DELETE' ? m.old : m.new }); }).subscribe();
         return function () { try { client.removeChannel(ch); } catch (e) {} };
       },
+      // ----- return JO to the team for photo replacement (qa-05h) -----
+      // security definer RPC: head or inspector only, remarks required, JO must be completed with a team → JO back to in-progress.
+      returnJobForPhotos: function (jobId, remarks, o) { return rpc('return_job_for_photos', { p_job_id: jobId, p_remarks: remarks }); },
+      jobReturnStatus: function (jobId) { return unwrap(client.from('jobs').select('status,team,qa_return_remarks,qa_returned_at,qa_returned_by,qa_return_resolved_at').eq('id', jobId).maybeSingle()); },
       photoUrl: function (path) { return unwrap(client.storage.from(BUCKET).createSignedUrl(path, 3600)).then(function (d) { return (d && d.signedUrl) || ''; }); }
     };
     return api;

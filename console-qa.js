@@ -180,18 +180,8 @@
       ids = (ids && ids.length) ? ids : selIds(); if (!ids.length) return;
       modal('<h3 style="margin:0 0 10px">Assign / redispatch ' + ids.length + ' audit(s)</h3><div class="cq-bar"><label>Inspector <select id="as_insp">' + inspectorOpts() + '</select></label><label>Date <input type="date" id="as_date" value="' + today() + '"></label><label>Start sequence # <input type="number" id="as_seq" value="1" min="1" style="width:70px"></label></div><div class="cq-age" style="margin-bottom:10px">Sequence = order of visits for that day. The inspector sees them in this order (push notification is wired at deploy). Tickets already assigned or in progress are pulled from their current inspector.</div><div class="cq-bar" style="justify-content:flex-end"><button class="cq-btn ghost" id="as_cancel">Cancel</button><button class="cq-btn" id="as_ok">Assign</button></div>');
       $('#as_cancel').onclick = closeModal;
-      $('#as_ok').onclick = function () {
-        // F8 (owner 2026-10-08): same-browser in-flight lock — ang dobleng click sa Assign ay
-        // dating dobleng RPC + dobleng push/toast (idempotent ang data, pero dobleng ingay).
-        // Naka-disable agad ang button sa unang pindot; nire-release sa success AT failure.
-        if (assignDialog._busy) return;
-        var insp = $('#as_insp').value, date = $('#as_date').value, seq = Number($('#as_seq').value || 1);
-        if (!insp || !date) { toast('Pick an inspector and a date'); return; }
-        var btn = $('#as_ok'); assignDialog._busy = true; if (btn) btn.disabled = true;
-        closeModal();
+      $('#as_ok').onclick = function () { var insp = $('#as_insp').value, date = $('#as_date').value, seq = Number($('#as_seq').value || 1); if (!insp || !date) { toast('Pick an inspector and a date'); return; } closeModal();
         var p = api.assignAudits(ids, { inspector: insp, date: date, startSeq: seq, by: user.username }).then(function (n) { fireAssigned(insp, date, ids.length); return n; });
-        var rel = function () { assignDialog._busy = false; if (btn) btn.disabled = false; };   // F8: laging bitawan
-        p.then(rel, rel);
         if (done) p.then(function (n) { toast(n + ' audit(s) assigned to ' + insp); done(); }).catch(function (e) { toast('Failed: ' + e.message); });
         else act(p, 'assigned to ' + insp); };
     }
@@ -413,6 +403,8 @@
         var byItem = {}; r.items.forEach(function (i) { byItem[i.item_id] = i; });
         var html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><h3 style="margin:0">' + esc(a.id) + ' · ' + esc(a.subscriber || '') + '</h3><div class="cq-age">' + esc(a.contractor_name || '') + ' · ' + pill(a.status) + ' · ' + esc(a.visit_status || '') + (a.assessment ? ' · <b>' + esc(a.assessment) + '</b>' : '') + (a.rectification_id ? ' · <a href="#" id="dt_rect">' + esc(a.rectification_id) + '</a>' : '') + (a.source === 'reinspection' ? ' · <span class="cq-pill queued">RE-INSPECTION' + (r.previous ? ' of ' + esc(r.previous.audit.id) : '') + '</span>' : '') + '</div></div><div style="display:flex;gap:6px"><button class="cq-btn ghost" id="dt_print">🖨 Print / PDF</button>' + (canEdit && a.status === 'done' && a.assigned_to ? '<button class="cq-btn warn" id="dt_reopen">Reopen</button>' : '') + '<button class="cq-btn ghost" id="dt_close">Close</button></div></div>' +
           '<div class="cq-sec">Header</div><div class="cq-grid"><div><b>Inspection date</b>' + fmtWhen(a.inspected_at) + '</div><div><b>Inspector</b>' + esc(a.inspector || '—') + '</div><div><b>Contractor\'s rep</b>' + esc(a.contractor_rep || '—') + '</div><div><b>Installer/s</b>' + esc(a.installers_text || '—') + '</div><div><b>Account no.</b>' + esc(a.acct_no || '—') + '</div><div><b>JO no.</b>' + esc(a.jo_no || '—') + '</div><div><b>Address</b>' + esc(a.address || '') + ' ' + esc(a.barangay || '') + '</div><div><b>NAP / Port / S/N</b>' + esc(a.nap_code || '—') + ' / ' + esc(a.port_no || '—') + ' / ' + esc(a.serial_no || '—') + '</div><div><b>GPS</b>' + (a.lat != null ? '<a href="https://www.google.com/maps/search/?api=1&query=' + a.lat + ',' + a.lng + '" target="_blank" rel="noopener">' + a.lat.toFixed(5) + ', ' + a.lng.toFixed(5) + '</a>' : '—') + '</div><div><b>Wire</b>' + esc(a.wire || '—') + '</div><div><b>QA / GC</b>' + esc(a.qa_gc || '—') + '</div><div><b>Commercial</b>' + (a.found_business ? 'YES' + ((a.old_plan || a.new_plan) ? ' · old ' + esc(a.old_plan || '—') + ' · new ' + esc(a.new_plan || '—') : '') : 'NO') + '</div></div>' +
+          // qa-05h: the technician's own close-out photos + "return JO to team (replace photo)" for the head / dispatcher
+          (a.job_id ? '<div class="cq-sec">Install close-out photos (technician)</div><div class="cq-thumbs" id="dt_iph"><span class="cq-age">Loading…</span></div>' + (canEdit ? '<div id="dt_ret" style="margin-top:8px"></div>' : '') : '') +
           (r.previous ? '<div class="cq-sec">Previous inspection · ' + esc(r.previous.audit.id) + ' · ' + fmtWhen(r.previous.audit.inspected_at) + '</div><div class="cq-age">Failed: ' + S.cfg.checklist.filter(function (c) { return r.previous.items.some(function (i) { return i.item_id === c.id && i.result === 'fail'; }); }).map(function (c) { return esc(c.label); }).join(' · ') + '</div>' + (r.previous.violations.length ? violRows(r.previous.violations, false) : '') : '') +
           (r.items.length ? '<div class="cq-sec">Checklist</div><table><thead><tr><th>Item</th><th>Result</th><th>Remark</th><th>Photos</th></tr></thead><tbody>' + S.cfg.checklist.map(function (c) { var i = byItem[c.id] || {}; return '<tr><td>' + esc(c.label) + '<div class="cq-age">' + esc(c.section) + '</div></td><td>' + (i.result ? '<span class="cq-pill ' + (i.result === 'fail' ? 'fail' : i.result === 'pass' ? 'done' : '') + '">' + i.result.toUpperCase() + '</span>' : '—') + '</td><td>' + esc(i.remark || '') + '</td><td><div class="cq-thumbs" data-ph="' + c.id + '"></div></td></tr>'; }).join('') + '</tbody></table>' : '') +
           (r.violations.length ? '<div class="cq-sec">Violations</div>' + violRows(r.violations, canEdit && a.status === 'done') + '<div class="cq-age"><b>TOTAL VIOLATION FOUND: ' + a.total_violations + ' · TOTAL PENALTY ' + peso(a.total_penalty) + '</b></div>' : '') +
@@ -426,9 +418,39 @@
         fill(a.subscriber_signature_path, '[data-sig="' + a.subscriber_signature_path + '"]'); fill(a.inspector_signature_path, '[data-sig="' + a.inspector_signature_path + '"]');
         $('#dt_print').onclick = function () { printForm(r, urls); };
         var re = $('#dt_reopen'); if (re) re.onclick = function () { var why = prompt('Reason for reopening ' + a.id + ' (the inspector will be able to edit and resubmit):'); if (why == null) return; api.reopenAudit(a.id, { by: user.username, reason: why }).then(function () { toast(a.id + ' reopened'); closeModal(); render(); }).catch(function (e) { toast('Failed: ' + e.message); }); };
+        if (a.job_id) {
+          api.getInstallPhotos(a.job_id).then(function (ps) {
+            var box = $('#dt_iph'); if (!box) return;
+            box.innerHTML = ps.length ? '' : '<span class="cq-age">No close-out photos on the JO.</span>';
+            ps.forEach(function (p) { var img = document.createElement('img'); img.src = p.url; img.alt = p.label || ''; img.title = p.label || ''; img.style.cursor = 'pointer'; img.onclick = function () { window.open(p.url, '_blank', 'noopener'); }; box.appendChild(img); });
+          }).catch(function (e) { var box = $('#dt_iph'); if (box) box.innerHTML = '<span class="cq-age">Could not load close-out photos: ' + esc(e.message) + '</span>'; });
+          if (canEdit) loadJobReturn(a, id);
+        }
         wireOverride(rootEl, function () { openDetail(id); });
         var rl = $('#dt_rect'); if (rl) rl.onclick = function (e) { e.preventDefault(); openRect(a.rectification_id); };
       }).catch(function (e) { modal('<div class="cq-empty">Could not load: ' + esc(e.message) + '</div><button class="cq-btn ghost" onclick="this.parentNode.parentNode.innerHTML=\'\'">Close</button>'); });
+    }
+    // qa-05h: status line + "↩ Return JO to team (replace photo)". The RPC sends a COMPLETED JO back to the team that closed
+    // it (status in-progress, remarks shown on their phone); the audit itself is untouched. o.onJobReturned lets the host push.
+    function loadJobReturn(a, id) {
+      api.jobReturnStatus(a.job_id).then(function (st) {
+        var el = $('#dt_ret'); if (!el) return;
+        st = st || {};
+        var open = st.qa_returned_at && !st.qa_return_resolved_at;
+        var line = open ? '<div class="cq-banner" style="background:#fff4dc;color:#7a5200;border-color:#f0dca8">↩ Returned to ' + esc(st.team || '—') + ' on ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + '</div>'
+          : st.qa_return_resolved_at ? '<div class="cq-banner" style="background:#e2f4ea;color:#0f6b4f;border-color:#bfe3cf">Photo replaced by team on ' + fmtWhen(st.qa_return_resolved_at) + '</div>' : '';
+        el.innerHTML = line + '<button class="cq-btn warn" id="dt_return"' + (st.status === 'completed' ? '' : ' disabled title="Only a completed JO can be returned (JO is ' + esc(st.status || 'not readable') + ')"') + '>↩ Return JO to team (replace photo)</button>';
+        $('#dt_return').onclick = function () {
+          var remarks = prompt('Which photo must the team replace? (required — the team sees this)'); if (remarks == null) return;
+          remarks = remarks.trim(); if (!remarks) { toast('Remarks required (which photo to replace)'); return; }
+          api.returnJobForPhotos(a.job_id, remarks, { by: user.username }).then(function (job) {
+            var team = (job && job.team) || st.team || '';
+            toast('JO returned to ' + team);
+            try { if (o.onJobReturned) o.onJobReturned({ job: job, team: team, remarks: remarks }); } catch (e) { }
+            openDetail(id);
+          }).catch(function (e) { toast('Failed: ' + e.message); });
+        };
+      }).catch(function (e) { var el = $('#dt_ret'); if (el) el.innerHTML = '<span class="cq-age">JO return status unavailable: ' + esc(e.message) + '</span>'; });
     }
     // Paper-form replica (QUALITY ASSURANCE INSPECTION FORM) → new window → print/PDF.
     function printForm(r, urls) {
