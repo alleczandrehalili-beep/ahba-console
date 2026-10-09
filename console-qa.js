@@ -458,7 +458,7 @@
       if (note == null) return;
       note = String(note).trim();
       if (!ok && !note) { toast('Remarks required (what is still wrong with the photo)'); return; }
-      api.closeReturn(jobId, st.qa_returned_at, ok, note).then(function (job) {
+      api.closeReturn(jobId, st.qa_returned_at, ok, note, { by: user.username }).then(function (job) {
         toast(ok ? 'Return closed — photo replacement verified' : 'JO returned again to ' + ((job && job.team) || st.team || 'the team'));
         if (!ok) { try { if (o.onJobReturned) o.onJobReturned({ job: job, team: (job && job.team) || st.team || '', remarks: note }); } catch (e) { } }
         if (after) after(job);
