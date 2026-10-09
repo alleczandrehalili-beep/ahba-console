@@ -651,12 +651,15 @@ function openJobDetail(jobId){
   // ↩ Returned-by-QA (qa.return_job_for_photos): who/when/why + resolved once the team re-completes.
   if(j.qa_returned_at){
     const _rq=document.createElement('div'); _rq.style.gridColumn='1/-1';
-    _rq.innerHTML=`<b>↩ QA return</b><span style="color:${j.qa_return_resolved_at?'#586965':'#c2503a'};font-weight:600">↩ Returned to team ${esc(fmtWhen(j.qa_returned_at))} by ${esc(j.qa_returned_by||'—')}: ${esc(j.qa_return_remarks||'')}</span>`+(j.qa_return_resolved_at?` <span style="color:#0e7a59;font-weight:700">(resolved ${esc(fmtWhen(j.qa_return_resolved_at))})</span>`:'');
+    _rq.innerHTML=`<b>↩ QA return</b><span style="color:${j.qa_return_resolved_at?'#586965':'#c2503a'};font-weight:600">↩ Returned to team ${esc(fmtWhen(j.qa_returned_at))} by ${esc(j.qa_returned_by||'—')}: ${esc(j.qa_return_remarks||'')}</span>`
+      +(j.qa_return_resolved_at?` <span style="color:#0e7a59;font-weight:700">(✔ verified by ${esc(j.qa_return_checked_by||'QA')} ${esc(fmtWhen(j.qa_return_resolved_at))})</span>`
+        :j.qa_return_submitted_at?` <span style="color:#1d4f8a;font-weight:700">(📸 FOR QA CHECK — team re-submitted ${esc(fmtWhen(j.qa_return_submitted_at))}; the QA reviewer verifies in QA Audit → Returned JOs)</span>`
+        :` <span style="color:#a4690f;font-weight:700">(waiting for the team — status, payment, crew and WIMS are locked)</span>`);
     $('#jdInfo').appendChild(_rq);
   }
   // ↩ Return a COMPLETED JO to its team so they replace a photo and re-complete it.
   // gate = GC console / super (same as qa.is_head() on the server: GC console token or platform admin), or QA-audit editors
-  if(j.status==='completed' && j.team && (isGcConsole()||dashCanEdit('qaaudit'))){
+  if(j.status==='completed' && j.team && !qaReturnOpen(j) && (isGcConsole()||dashCanEdit('qaaudit'))){
     const _rb=document.createElement('div'); _rb.style.gridColumn='1/-1';
     _rb.innerHTML='<b>QA</b><button type="button" class="assign-btn" id="jdReturnTeam" style="color:#c2503a">↩ Return to team (replace photo)</button>';
     $('#jdInfo').appendChild(_rb);
@@ -777,7 +780,7 @@ function openJobDetail(jobId){
   openModal($('#jobDetailModal'));
 }
 // ↩ Return a completed JO to its team (replace a photo, then re-complete). Server: qa.return_job_for_photos
-// sets status in-progress + the qa_return_* columns; a trigger resolves it when the team completes again.
+// sets status in-progress + the qa_return_* columns; Gate B: the team re-submits (RPC), the QA reviewer closes the return.
 async function jdReturnToTeam(jobId){
   const j=findJob(jobId); if(!j||!j.team){ showToast('This JO has no team to return it to'); return; }
   const raw=prompt('Which photo must the team replace? (required — the team sees this)');
@@ -792,7 +795,7 @@ async function jdReturnToTeam(jobId){
     const row=(Array.isArray(data)?data[0]:data)||{};
     const team=j.team, u=window.dashUser||{}, now=new Date().toISOString();
     // completed_at is KEPT (owner decision: the team only replaces a photo) — not part of the local patch
-    const upd={status:'in-progress',qa_return_remarks:remarks,qa_returned_at:now,qa_returned_by:u.display_name||u.username||'',qa_return_resolved_at:null,qa_status:'RETURNED TO TEAM'};
+    const upd={status:'in-progress',qa_return_remarks:remarks,qa_returned_at:now,qa_returned_by:u.display_name||u.username||'',qa_return_resolved_at:null,qa_return_submitted_at:null,qa_return_checked_by:null,qa_status:'RETURNED TO TEAM'};
     Object.keys(upd).forEach(k=>{ if(row[k]!==undefined) upd[k]=row[k]; });
     if(row.history!=null) upd.history=row.history;
     upd.updatedAt=row.updated_at||now; upd.updated_at=row.updated_at||now;
@@ -855,8 +858,17 @@ function blockRejectedToDispatch(j){
   }
   return false;
 }
+// ↩ Phase 1 (2026-10-09): while a QA return is open the server freezes status/team/payment/crew/completed_at (trg_jobs_return_freeze);
+// say so up front instead of letting the sync fail. The QA reviewer closes the return (QA Audit → Queue → Returned JOs).
+function qaReturnOpen(j){ return !!(j && j.qa_returned_at && !j.qa_return_resolved_at); }
+function blockReturnedJo(j){
+  if(!qaReturnOpen(j)) return false;
+  showToast('This JO is returned by QA for photo replacement — only the team\'s photo + Re-complete and the QA reviewer\'s close are allowed until the return is closed.');
+  return true;
+}
 function applyStatusUpdate(jobId,choice,reason){
   const j=findJob(jobId); if(!j)return;
+  if(blockReturnedJo(j)) return;
   // anything that is not completed/cancelled/incomplete is the re-dispatch branch below
   if(!['completed','cancelled','incomplete'].includes(choice) && blockRejectedToDispatch(j)) return;
   let _sf;   // 4B-1: owned fields lang ng piniling status change
@@ -1604,6 +1616,7 @@ function tlSearchOtherDays(q,hasLocalHit){
 function tlReturnToDispatch(jobId){
   const j=jobs.find(x=>x.id===jobId); if(!j) return;
   if(blockRejectedToDispatch(j)) return;
+  if(blockReturnedJo(j)) return;
   if(j.status==='pending' && !j.scheduled_at) return;      // already in For Dispatch
   const wasNeg=j.status==='negative';
   j.status='pending'; j.team=null; j.scheduled_at=null; j.load_date=manilaToday(); if(wasNeg) j.priority='1st Load';

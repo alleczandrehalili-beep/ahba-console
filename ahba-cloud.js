@@ -45,7 +45,8 @@
     'new_address','cpe_option','birth_date','encoded_by',
     'org_id','assigned_org_id','validated_by','lock_bypass','cancel_remark','email','dup_exempt',
     'qa_audit_id','qa_status','qa_assessment','qa_inspected_at',   // QA Audit mirror — server-owned (qa.sync_job), never written from here
-    'qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at'];   // ↩ Returned-by-QA (qa.return_job_for_photos) — server-owned too (serializeJob skips qa_*)
+    'qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at',   // ↩ Returned-by-QA (qa.return_job_for_photos) — server-owned too (serializeJob skips qa_*)
+    'qa_return_submitted_at','qa_return_checked_by'];   // Gate B (qa-06): team re-submit stamp + the reviewer who closed the return
     // NOTE: `lock_bypass` was missing here, so openJobDetail's unlock toggle always read
     // undefined and showed "locked" even for an already-unlocked job order. Fixed 2026-07-20.
 
@@ -113,7 +114,7 @@
   // ↩ If the qa_return_* SQL is not applied yet, PostgREST answers 400 (42703 undefined
   // column) and the WHOLE live dashboard would fail — so on that error we drop just
   // those four columns and retry (see getJobs).
-  var QA_RETURN_COLS = ['qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at'];
+  var QA_RETURN_COLS = ['qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at','qa_return_submitted_at','qa_return_checked_by'];
   var qaReturnColsOk = true;
   function liveSelect() {
     var cols = BASE_COLS.concat(EXTRA.filter(function (k) { return k !== 'history' && (qaReturnColsOk || QA_RETURN_COLS.indexOf(k) < 0); }));

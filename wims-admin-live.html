@@ -313,6 +313,13 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>⚠ Duplicate declarations — one JO, more than one WIMS report</h2><p class="desc" style="margin:0">Bawat JO na may HIGIT SA ISANG declaration (installs). Mula Phase 1 (qa-06) ay hinaharang na ito ng server; ang mga LUMA ay naka-quarantine (<i>duplicate_declaration</i>) hanggang i-reconcile ng warehouse — walang buburahin, compensating adjustment lang.</p></div>
+        <button class="btn" id="dupExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div id="dupTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
         <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
@@ -1079,6 +1086,7 @@
     if(e.target.id==='audExport'){exportAud();return;}
     if(e.target.id==='cretExport'){exportCret();return;}
     if(e.target.id==='pulledExport'){exportPulled();return;}
+    if(e.target.id==='dupExport'){exportDupDecl();return;}
     if(e.target.id==='crecvExport'){exportCrecv();return;}
     var plr=e.target.closest&&e.target.closest('[data-pulledret]');
     if(plr){
@@ -1448,6 +1456,29 @@
     }).catch(function(e){
       el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run wims-PULLED-STEP1 + STEP2 first for the pulled-CPE tracker.':e.message)+'</span>';
     });
+  }
+  // ---- ⚠ duplicate declarations (Phase 1, wims.v_duplicate_declarations) ----
+  var dupRows=[];
+  function loadDupDecl(){
+    var el=$('#dupTable'); if(!el) return;
+    apiAll('/v_duplicate_declarations?select=*&order=last_filed.desc').then(function(rows){
+      dupRows=rows||[];
+      if(!dupRows.length){ el.innerHTML='<span class="empty">Walang JO na may dobleng declaration. ✔</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>JO</th><th>Declarations</th><th>Active</th><th>Modems</th><th>Tasks</th><th>Teams</th><th>First filed</th><th>Last filed</th><th>Reconciliation</th></tr></thead><tbody>'+
+        dupRows.map(function(r){
+          var rec=r.reconciliation||'';
+          var pill=/resolved/.test(rec)?'<span class="pill installed">✔ reconciled</span>':rec?'<span class="pill" style="background:#fdf6ea;color:#8a6a24;border:1px solid #f0d9a8">quarantined · '+rec+'</span>':'<span class="pill" style="background:#fdecea;color:#a3261a;border:1px solid #e0857a">unreviewed</span>';
+          return '<tr><td class="tnum"><b>'+(r.jo_key||r.job_key||'—')+'</b>'+(r.job_id?'<div style="font-size:10px;color:#8a9894">'+r.job_id+'</div>':'')+'</td><td class="tnum">'+r.declarations+'</td><td class="tnum">'+r.active_declarations+'</td><td class="tnum">'+(r.modems||'—')+'</td><td>'+(r.tasks||'—')+'</td><td>'+(r.teams||'—')+'</td><td>'+(r.first_filed?new Date(r.first_filed).toLocaleString():'—')+'</td><td>'+(r.last_filed?new Date(r.last_filed).toLocaleString():'—')+'</td><td>'+pill+'</td></tr>';
+        }).join('')+'</tbody></table>';
+    }).catch(function(e){
+      el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first for the duplicate-declarations report.':e.message)+'</span>';
+    });
+  }
+  function exportDupDecl(){
+    if(!dupRows.length){ toast('Nothing to export',true); return; }
+    var rows=[['JO','Job id','Declarations','Active','Modems','Tasks','Teams','First filed','Last filed','Reconciliation']].concat(
+      dupRows.map(function(r){return [r.jo_key||r.job_key||'',r.job_id||'',r.declarations,r.active_declarations,r.modems||'',r.tasks||'',r.teams||'',r.first_filed?new Date(r.first_filed).toLocaleString():'',r.last_filed?new Date(r.last_filed).toLocaleString():'',r.reconciliation||''];}));
+    downloadXlsx('wims-duplicate-declarations.xlsx',rows);
   }
   function exportPulled(){
     if(!pulledRows.length){ toast('Nothing to export',true); return; }
@@ -1835,6 +1866,7 @@
     loadInventory();
     loadCpeReturns();
     loadPulled();
+    loadDupDecl();
     loadCentralRecv();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }

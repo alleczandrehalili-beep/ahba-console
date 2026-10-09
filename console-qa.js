@@ -93,7 +93,7 @@
     // ---------------- QUEUE ----------------
     function renderQueue() {
       var f = S.filter;
-      $('#cqBody').innerHTML = '<div class="cq-stats" id="cqQStats"></div><div class="cq-bar">' +
+      $('#cqBody').innerHTML = '<div class="cq-stats" id="cqQStats"></div><div id="cqReturns"></div><div class="cq-bar">' +
         '<select id="qf_status"><option value="queued">Queued (to assign)</option><option value="pool">Pool (in-house, not selected)</option><option value="assigned,in_progress">Assigned / in progress (redispatch)</option><option value="queued,assigned,in_progress">All open</option></select>' +
         '<select id="qf_contractor">' + contractorOpts() + '</select><select id="qf_kind"><option value="">Subcon + in-house</option><option value="subcon">Subcon only</option><option value="inhouse">In-house only</option></select>' +
         '<select id="qf_district">' + districtOpts() + '</select>' +
@@ -110,7 +110,7 @@
       $('#q_prev').onclick = function () { if (S.filter.page > 1) { S.filter.page--; loadQueue(); } };
       $('#q_next').onclick = function () { S.filter.page++; loadQueue(); };
       if (canEdit) { $('#q_assign').onclick = function () { assignDialog(); }; $('#q_pick').onclick = function () { act(api.queuePool(selIds(), { by: user.username }), 'queued'); }; $('#q_unassign').onclick = function () { var ids = selIds(); if (!ids.length) return; api.unassignAudits(ids, { by: user.username }).then(function (n) { toast(n ? (n + ' audit(s) unassigned') : 'Nothing unassigned (ticket already moved)'); S.sel = {}; loadQueue(); loadQueueStats(); }).catch(function (e) { toast('Failed: ' + e.message); }); }; $('#q_sample').onclick = sampleDialog; if ($('#q_sync')) $('#q_sync').onclick = function () { doSync('tail', $('#q_sync'), '🔄 Sync sheet now'); }; }
-      loadQueue(); loadQueueStats();
+      loadQueue(); loadQueueStats(); loadReturns();
     }
     // Populates the barangay select from the chosen district (all six districts' barangays, sorted, when none is chosen).
     function fillBrgyOptions(distSel, brgySel, selected) {
@@ -440,17 +440,41 @@
         var rl = $('#dt_rect'); if (rl) rl.onclick = function (e) { e.preventDefault(); openRect(a.rectification_id); };
       }).catch(function (e) { modal('<div class="cq-empty">Could not load: ' + esc(e.message) + '</div><button class="cq-btn ghost" onclick="this.parentNode.parentNode.innerHTML=\'\'">Close</button>'); });
     }
-    // qa-05h: status line + "↩ Return JO to team (replace photo)". The RPC sends a COMPLETED JO back to the team that closed
-    // it (status in-progress, remarks shown on their phone); the audit itself is untouched. o.onJobReturned lets the host push.
+    // qa-05h + qa-06 Gate B: the JO's return state under the technician's photos.
+    //   open, not re-submitted  → amber "returned … waiting for the team"
+    //   open, re-submitted      → "FOR QA CHECK": ✔ Verify (closes the EXACT return by token) · ↩ Not fixed (returns it again)
+    //   resolved                → green "verified by X on …"
+    // The token is st.qa_returned_at exactly as PostgREST returned it; a newer return has a newer token, so a stale screen can
+    // never close the wrong cycle (the server answers RETURN_TOKEN_MISMATCH). o.onJobReturned lets the host push to the team.
+    function returnBanner(st) {
+      var open = st.qa_returned_at && !st.qa_return_resolved_at;
+      if (open && st.qa_return_submitted_at) return '<div class="cq-banner" style="background:#e8f1fb;color:#1d4f8a;border-color:#bcd3ee">📸 FOR QA CHECK — ' + esc(st.team || '—') + ' re-submitted on ' + fmtWhen(st.qa_return_submitted_at) + ' (returned ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + ')</div>';
+      if (open) return '<div class="cq-banner" style="background:#fff4dc;color:#7a5200;border-color:#f0dca8">↩ Returned to ' + esc(st.team || '—') + ' on ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + ' — waiting for the team to replace the photo</div>';
+      if (st.qa_return_resolved_at) return '<div class="cq-banner" style="background:#e2f4ea;color:#0f6b4f;border-color:#bfe3cf">✔ Photo replacement verified by ' + esc(st.qa_return_checked_by || 'QA') + ' on ' + fmtWhen(st.qa_return_resolved_at) + '</div>';
+      return '';
+    }
+    function closeReturnDialog(jobId, st, ok, after) {
+      var note = ok ? (prompt('Verify: the requested photo was replaced correctly? Optional note:', '') ) : prompt('Not fixed — what is still wrong with the photo? (required — the team sees this)');
+      if (note == null) return;
+      note = String(note).trim();
+      if (!ok && !note) { toast('Remarks required (what is still wrong with the photo)'); return; }
+      api.closeReturn(jobId, st.qa_returned_at, ok, note).then(function (job) {
+        toast(ok ? 'Return closed — photo replacement verified' : 'JO returned again to ' + ((job && job.team) || st.team || 'the team'));
+        if (!ok) { try { if (o.onJobReturned) o.onJobReturned({ job: job, team: (job && job.team) || st.team || '', remarks: note }); } catch (e) { } }
+        if (after) after(job);
+      }).catch(function (e) { toast('Failed: ' + e.message); });
+    }
     function loadJobReturn(a, id) {
       api.jobReturnStatus(a.job_id).then(function (st) {
         var el = $('#dt_ret'); if (!el) return;
         st = st || {};
         var open = st.qa_returned_at && !st.qa_return_resolved_at;
-        var line = open ? '<div class="cq-banner" style="background:#fff4dc;color:#7a5200;border-color:#f0dca8">↩ Returned to ' + esc(st.team || '—') + ' on ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + '</div>'
-          : st.qa_return_resolved_at ? '<div class="cq-banner" style="background:#e2f4ea;color:#0f6b4f;border-color:#bfe3cf">Photo replaced by team on ' + fmtWhen(st.qa_return_resolved_at) + '</div>' : '';
-        el.innerHTML = line + '<button class="cq-btn warn" id="dt_return"' + (st.status === 'completed' ? '' : ' disabled title="Only a completed JO can be returned (JO is ' + esc(st.status || 'not readable') + ')"') + '>↩ Return JO to team (replace photo)</button>';
-        $('#dt_return').onclick = function () {
+        el.innerHTML = returnBanner(st) +
+          (open && st.qa_return_submitted_at ? '<button class="cq-btn" id="dt_verify">✔ Verify — photo replaced (close return)</button> <button class="cq-btn warn" id="dt_again">↩ Not fixed — return again</button>' : '') +
+          (!open ? '<button class="cq-btn warn" id="dt_return"' + (st.status === 'completed' ? '' : ' disabled title="Only a completed JO can be returned (JO is ' + esc(st.status || 'not readable') + ')"') + '>↩ Return JO to team (replace photo)</button>' : '');
+        if ($('#dt_verify')) $('#dt_verify').onclick = function () { closeReturnDialog(a.job_id, st, true, function () { openDetail(id); }); };
+        if ($('#dt_again')) $('#dt_again').onclick = function () { closeReturnDialog(a.job_id, st, false, function () { openDetail(id); }); };
+        if ($('#dt_return')) $('#dt_return').onclick = function () {
           var remarks = prompt('Which photo must the team replace? (required — the team sees this)'); if (remarks == null) return;
           remarks = remarks.trim(); if (!remarks) { toast('Remarks required (which photo to replace)'); return; }
           api.returnJobForPhotos(a.job_id, remarks, { by: user.username }).then(function (job) {
@@ -461,6 +485,23 @@
           }).catch(function (e) { toast('Failed: ' + e.message); });
         };
       }).catch(function (e) { var el = $('#dt_ret'); if (el) el.innerHTML = '<span class="cq-age">JO return status unavailable: ' + esc(e.message) + '</span>'; });
+    }
+    // Queue tab worklist: every JO with an open return — the ones the team re-submitted (FOR QA CHECK) first.
+    function loadReturns() {
+      var el = $('#cqReturns'); if (!el || !api.listReturnedJobs) return;
+      api.listReturnedJobs().then(function (rows) {
+        if (!$('#cqReturns')) return;
+        if (!rows.length) { $('#cqReturns').innerHTML = ''; return; }
+        $('#cqReturns').innerHTML = '<div class="cq-sec">↩ Returned JOs (' + rows.length + ')</div><table><thead><tr><th>JO</th><th>Subscriber</th><th>Team</th><th>Returned</th><th>Remarks</th><th>State</th>' + (canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
+          rows.map(function (r, i) {
+            var sub = !!r.qa_return_submitted_at;
+            return '<tr><td><b>' + esc(r.job_order_no || r.id) + '</b></td><td>' + esc(r.subscriber || '') + '</td><td>' + esc(r.team || '') + '</td><td class="cq-age">' + fmtWhen(r.qa_returned_at) + ' · ' + esc(r.qa_returned_by || '') + '</td><td>' + esc(r.qa_return_remarks || '') + '</td>' +
+              '<td>' + (sub ? '<span class="cq-pill in_progress">FOR QA CHECK · ' + fmtWhen(r.qa_return_submitted_at) + '</span>' : '<span class="cq-pill queued">WAITING FOR TEAM</span>') + '</td>' +
+              (canEdit ? '<td style="white-space:nowrap">' + (sub ? '<button class="cq-btn" data-rv="' + i + '">✔ Verify</button> <button class="cq-btn warn" data-ra="' + i + '">↩ Return again</button>' : '') + '</td>' : '') + '</tr>';
+          }).join('') + '</tbody></table>';
+        rootEl.querySelectorAll('[data-rv]').forEach(function (b) { b.onclick = function () { closeReturnDialog(rows[+b.dataset.rv].id, rows[+b.dataset.rv], true, loadReturns); }; });
+        rootEl.querySelectorAll('[data-ra]').forEach(function (b) { b.onclick = function () { closeReturnDialog(rows[+b.dataset.ra].id, rows[+b.dataset.ra], false, loadReturns); }; });
+      }).catch(function (e) { if ($('#cqReturns')) $('#cqReturns').innerHTML = '<span class="cq-age">Returned JOs unavailable: ' + esc(e.message) + '</span>'; });
     }
     // Paper-form replica (QUALITY ASSURANCE INSPECTION FORM) → new window → print/PDF.
     function printForm(r, urls) {
