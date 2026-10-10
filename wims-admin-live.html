@@ -320,6 +320,19 @@
     </div>
     <div class="panel">
       <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>⚠ Declaration conflicts — for warehouse review</h2><p class="desc" style="margin:0">Mga pagtatangkang mag-file ng IBANG entries sa JO na may declaration na (ibang modem / materials / pulled device). HINDI na-file at WALANG nabawas sa stock; ang orihinal na declaration ang nananatili. I-review: kung tama ang bagong entries, ayusin sa Stock (adjust) o reconcile, tapos markahan dito.</p></div>
+        <button class="btn" id="cfExport" style="margin-left:auto">⬇ Export Excel</button>
+      </div>
+      <div id="cfTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div><h2>🔁 Re-used / ambiguous JO numbers — bind to a generation</h2><p class="desc" style="margin:0">Lumang declaration sa JO number na ni-re-encode (may deleted na lumang JO at bagong live na JO). Hanggang hindi naka-bind, "under review" ang number: hindi makakapag-file ang bagong JO. Piliin kung aling JO (luma o bago) ang may-ari ng lumang declaration.</p></div>
+      </div>
+      <div id="rjTable" style="margin-top:12px;overflow:auto;max-height:360px"><span class="empty">Loading…</span></div>
+    </div>
+    <div class="panel">
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
         <div><h2>Total inventory on hand</h2><p class="desc" style="margin:0">Unused stock — warehouse + materials/CPE already issued to teams but not yet installed.</p></div>
         <button class="btn" id="invExport" style="margin-left:auto">⬇ Export Excel</button>
       </div>
@@ -1087,6 +1100,9 @@
     if(e.target.id==='cretExport'){exportCret();return;}
     if(e.target.id==='pulledExport'){exportPulled();return;}
     if(e.target.id==='dupExport'){exportDupDecl();return;}
+    if(e.target.id==='cfExport'){exportConflicts();return;}
+    var cfb=e.target.closest&&e.target.closest('[data-cfrev]'); if(cfb){ reviewConflict(cfb.getAttribute('data-cfrev'), cfb.getAttribute('data-cfst')); return; }
+    var rjb=e.target.closest&&e.target.closest('[data-rjbind]'); if(rjb){ bindReusedJo(rjb.getAttribute('data-rjbind')); return; }
     if(e.target.id==='crecvExport'){exportCrecv();return;}
     var plr=e.target.closest&&e.target.closest('[data-pulledret]');
     if(plr){
@@ -1473,6 +1489,55 @@
     }).catch(function(e){
       el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first for the duplicate-declarations report.':e.message)+'</span>';
     });
+  }
+  // ---- ⚠ declaration conflicts (Phase 1, wims.declaration_conflicts) ----
+  var cfRows=[];
+  function cfArgs(a){ a=a||{}; var parts=[]; if(a.p_modem_serial) parts.push('modem '+a.p_modem_serial); if(a.p_iptv_serials&&a.p_iptv_serials.length) parts.push('iptv '+a.p_iptv_serials.join('/')); if(a.p_materials&&Object.keys(a.p_materials).length) parts.push('materials '+JSON.stringify(a.p_materials)); if(a.p_kit&&Object.keys(a.p_kit).length) parts.push('kit '+JSON.stringify(a.p_kit)); if(a.p_pulled_serials&&a.p_pulled_serials.length) parts.push('pulled '+a.p_pulled_serials.join('/')); if(a.p_foc_start!=null||a.p_foc_end!=null) parts.push('FOC '+a.p_foc_start+'→'+a.p_foc_end); return parts.join(' · ')||'—'; }
+  function loadConflicts(){
+    var el=$('#cfTable'); if(!el) return;
+    apiAll('/declaration_conflicts?select=*&order=created_at.desc').then(function(rows){
+      cfRows=rows||[];
+      var open=cfRows.filter(function(r){ return r.status==='open'; });
+      if(!cfRows.length){ el.innerHTML='<span class="empty">Walang declaration conflict. ✔</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>When</th><th>JO</th><th>Team</th><th>Reason</th><th>Attempted entries</th><th>Status</th><th></th></tr></thead><tbody>'+
+        cfRows.map(function(r){
+          var st=r.status==='open'?'<span class="pill" style="background:#fdecea;color:#a3261a;border:1px solid #e0857a">open</span>':'<span class="pill installed">✔ '+r.status+(r.reviewed_by?' · '+r.reviewed_by:'')+'</span>';
+          return '<tr><td>'+new Date(r.created_at).toLocaleString()+'</td><td class="tnum"><b>'+(r.jo_key||'—')+'</b>'+(r.job_id?'<div style="font-size:10px;color:#8a9894">'+r.job_id+'</div>':'')+'</td><td>'+teamCode(r.team_id)+'</td><td>'+(r.reason||'')+' <span style="font-size:10px;color:#8a9894">('+(r.rpc||'')+')</span></td><td style="font-size:11px">'+cfArgs(r.args)+(r.note?'<div style="color:#4a5c56">📝 '+r.note+'</div>':'')+'</td><td>'+st+'</td><td style="white-space:nowrap">'+(r.status==='open'?'<button class="btn" data-cfrev="'+r.id+'" data-cfst="reviewed" style="padding:5px 10px;font-size:11px">✔ Reviewed</button> <button class="btn" data-cfrev="'+r.id+'" data-cfst="filed" style="padding:5px 10px;font-size:11px">📦 Filed by warehouse</button>':'')+'</td></tr>';
+        }).join('')+'</tbody></table>'+(open.length?'<div style="font-size:11px;color:#8a9894;margin-top:6px">'+open.length+' open</div>':'');
+    }).catch(function(e){ el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first for the conflict review.':e.message)+'</span>'; });
+  }
+  function exportConflicts(){
+    if(!cfRows.length){ toast('Nothing to export',true); return; }
+    var rows=[['When','JO','Job id','Team','Reason','RPC','Attempted entries','Status','Reviewed by','Note']].concat(cfRows.map(function(r){ return [new Date(r.created_at).toLocaleString(),r.jo_key||'',r.job_id||'',teamCode(r.team_id),r.reason||'',r.rpc||'',cfArgs(r.args),r.status,r.reviewed_by||'',r.note||'']; }));
+    downloadXlsx('wims-declaration-conflicts.xlsx',rows);
+  }
+  async function reviewConflict(id, status){
+    var note=prompt(status==='filed'?'Note: paano na-file / na-adjust ng warehouse ang tamang materials?':'Note (optional): bakit OK ang orihinal na declaration?','');
+    if(note===null) return;
+    try{ await rpc('review_conflict',{p_id:id,p_status:status,p_note:note}); toast('Conflict marked '+status); loadConflicts(); }
+    catch(e){ toast('Failed: '+e.message,true); }
+  }
+  // ---- 🔁 re-used / ambiguous JO numbers (wims.install_reconciliation) ----
+  var rjRows=[];
+  function loadReusedJo(){
+    var el=$('#rjTable'); if(!el) return;
+    apiAll('/install_reconciliation?select=*&reason=in.(reused_jo,ambiguous_job)&order=created_at.desc').then(function(rows){
+      rjRows=rows||[];
+      if(!rjRows.length){ el.innerHTML='<span class="empty">Walang re-used / ambiguous JO number na naghihintay. ✔</span>'; return; }
+      el.innerHTML='<table><thead><tr><th>JO number</th><th>Reason</th><th>Declarations</th><th>Candidate job</th><th>Status</th><th></th></tr></thead><tbody>'+
+        rjRows.map(function(r){
+          var open=!r.resolved_at;
+          return '<tr><td class="tnum"><b>'+r.jo_key+'</b></td><td>'+r.reason+'</td><td class="tnum">'+((r.install_ids||[]).length)+'</td><td style="font-size:11px">'+(r.job_id||'—')+'</td><td>'+(open?'<span class="pill" style="background:#fdf6ea;color:#8a6a24;border:1px solid #f0d9a8">under review</span>':'<span class="pill installed">✔ '+(r.resolution||'resolved')+'</span>')+'</td><td>'+(open?'<button class="btn" data-rjbind="'+r.jo_key+'" style="padding:5px 10px;font-size:11px">🔗 Bind to a job</button>':'')+'</td></tr>';
+        }).join('')+'</tbody></table>';
+    }).catch(function(e){ el.innerHTML='<span class="empty">'+(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first.':e.message)+'</span>'; });
+  }
+  async function bindReusedJo(joKey){
+    var jobId=prompt('JO '+joKey+': which FieldOps job id OWNS the old declaration? (the deleted old JO id, or the live one — check Load History)','');
+    if(!jobId||!jobId.trim()) return;
+    var note=prompt('Note (required): evidence (team confirmation, account number, subscriber)','');
+    if(!note||!note.trim()){ toast('Note is required',true); return; }
+    try{ await rpc('resolve_reused_jo',{p_jo_key:joKey,p_bind_to_job:jobId.trim(),p_note:note.trim()}); toast('Bound to '+jobId.trim()); loadReusedJo(); loadDupDecl(); }
+    catch(e){ toast('Failed: '+e.message,true); }
   }
   function exportDupDecl(){
     if(!dupRows.length){ toast('Nothing to export',true); return; }
@@ -1867,6 +1932,8 @@
     loadCpeReturns();
     loadPulled();
     loadDupDecl();
+    loadConflicts();
+    loadReusedJo();
     loadCentralRecv();
     var sel=$('#repTeam');
     if(sel && sel.options.length<=1 && teams.length){ sel.innerHTML='<option value="">All technicians</option>'+teams.map(function(t){return '<option value="'+t.code+'">'+t.code+'</option>';}).join(''); }
