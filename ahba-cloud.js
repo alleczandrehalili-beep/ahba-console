@@ -114,10 +114,19 @@
   // ↩ If the qa_return_* SQL is not applied yet, PostgREST answers 400 (42703 undefined
   // column) and the WHOLE live dashboard would fail — so on that error we drop just
   // those four columns and retry (see getJobs).
-  var QA_RETURN_COLS = ['qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at','qa_return_submitted_at','qa_return_checked_by'];
-  var qaReturnColsOk = true;
+  // Column tiers: Gate B pair → original four → none. The original four are KEPT when only the Gate B pair is missing, so a
+  // returned JO never loads without its return identity (the dashboard would otherwise allow the ordinary completion route).
+  var QA_RETURN_COLS4 = ['qa_return_remarks','qa_returned_at','qa_returned_by','qa_return_resolved_at'];
+  var QA_RETURN_COLS6 = ['qa_return_submitted_at','qa_return_checked_by'];
+  var QA_RETURN_COLS = QA_RETURN_COLS4.concat(QA_RETURN_COLS6);
+  var qaReturnColsOk = true, qaReturn4ColsOk = true;
   function liveSelect() {
-    var cols = BASE_COLS.concat(EXTRA.filter(function (k) { return k !== 'history' && (qaReturnColsOk || QA_RETURN_COLS.indexOf(k) < 0); }));
+    var cols = BASE_COLS.concat(EXTRA.filter(function (k) {
+      if (k === 'history') return false;
+      if (QA_RETURN_COLS6.indexOf(k) >= 0) return qaReturnColsOk;
+      if (QA_RETURN_COLS4.indexOf(k) >= 0) return qaReturn4ColsOk;
+      return true;
+    }));
     return cols.filter(function (c, i) { return cols.indexOf(c) === i; }).join(',');
   }
 
@@ -163,9 +172,15 @@
       try { page = await request(path + '&limit=1000&offset=' + off); }
       catch (e) {
         if (off === 0 && qaReturnColsOk && /42703|qa_return/i.test(String(e && e.message || ''))) {
-          qaReturnColsOk = false;
+          qaReturnColsOk = false;   // tier 2: original four return columns only
           path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
-          page = await request(path + '&limit=1000&offset=' + off);
+          try { page = await request(path + '&limit=1000&offset=' + off); }
+          catch (e2) {
+            if (!/42703|qa_return/i.test(String(e2 && e2.message || ''))) throw e2;
+            qaReturn4ColsOk = false;   // tier 3: no return columns at all (pre-qa-05h server)
+            path = 'jobs?select=' + liveSelect() + '&deleted_at=is.null&' + orExpr + '&order=updated_at.desc';
+            page = await request(path + '&limit=1000&offset=' + off);
+          }
         } else throw e;
       }
       if (!page || !page.length) break;
