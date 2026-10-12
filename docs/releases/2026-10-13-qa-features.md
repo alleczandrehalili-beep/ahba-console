@@ -59,3 +59,9 @@ ZIP photos now have New Install and Service Repair groups, in that order, with s
 The Completed sheet follows the same job-type and surname order and retains each actual WO/SLRT ID. Duplicate subscriber folders receive deterministic numeric suffixes, checked without case sensitivity. Photos are inserted into the ZIP in planned order after bounded concurrent retrieval; original bytes, formats, six-request speedup and failure handling remain intact. Live selected job order is not mutated.
 
 Verified: 83 tests, deployment guard, actual JSZip/XLSX extraction with mixed WO/SLRT jobs and 24 original PNG payloads, duplicate subscriber folders, delayed out-of-order fetches, matching Excel row order, and eight real redacted declarations with exact existing usage values. This frontend release changes extraction presentation only.
+
+## AR–BA heading cleanup — version 2026-10-13.8
+
+Removed the leading WIMS text from the ten extraction headings in columns AR through BA: team, declared by, task, modem/IPTV serial numbers and reel numbers/readings. Column AQ (WIMS STATUS), subsequent material headings and hidden audit metadata retain their existing labels. Column order, values, reading widths, green usage styling and photo archive behavior are preserved.
+
+Verified: all 83 tests, deployment/version guard, and the actual ZIP/XLSX exporter with eight real redacted declarations. The actual workbook asserts the exact AR–BA range and unchanged adjacent headings, quantities, serials and reel values. Extract a fresh ZIP after updating/reopening the console.
