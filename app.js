@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-09.1';
+const APP_VERSION='2026-10-13.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -689,7 +689,7 @@ function openJobDetail(jobId){
     pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
     fetchPhotosFor([jobId]).then(m=>{
       const list=m[jobId]||[];
-      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
+      renderQaPhotoTiles(pg,j,list);
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   // WIMS materials used sa JO na ito (wims.jo_materials RPC — read-only, any console user)
@@ -2616,12 +2616,84 @@ async function fetchCompleted(date){
   }catch(e2){ fetchCompleted._err=String(e2&&e2.message||e2); return[]; }
 }
 async function fetchPhotosFor(ids){
-  if(!ids.length)return{};
-  try{
-    const q=ids.map(encodeURIComponent).join(',');
-    const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?select=job_id,path,label&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push({path:x.path,label:x.label||''})}); return m;
-  }catch(e){return{}}
+  const m={}; if(!ids.length)return m;
+  const unique=[...new Set(ids.map(String))];
+  unique.forEach(id=>{m[id]=[];});
+  for(let start=0;start<unique.length;start+=100){
+    const q=unique.slice(start,start+100).map(encodeURIComponent).join(',');
+    for(let offset=0;;offset+=1000){
+      const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?select=id::text,job_id,path,label,created_at,team,org_id&job_id=in.(${q})&order=id.asc&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      await reqOk(r,'Load JO photos'); const rows=await r.json();
+      if(!Array.isArray(rows))throw new Error('Photo list was unreadable');
+      rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push({id:String(x.id),path:x.path,label:x.label||'',created_at:x.created_at,team:x.team,org_id:x.org_id});});
+      if(rows.length<1000)break;
+    }
+  }
+  return m;
+}
+function qaPhotoText(value){ return String(value==null?'':value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function qaCorrectionClient(){ return QaPhotoCorrections.createClient({url:SUPA_URL,key:SUPA_KEY,token:dashTok}); }
+function renderQaPhotoTiles(container,job,photos){
+  if(!container)return;
+  const mayCorrect=!!(window.QaPhotoCorrections&&QaPhotoCorrections.canReplace(window.dashUser));
+  const mayReadHistory=!!(window.QaPhotoCorrections&&QaPhotoCorrections.canViewHistory?.(window.dashUser));
+  container.innerHTML=photos.length?photos.map((p,i)=>{
+    const label=qaPhotoText(p.label||('Photo '+(i+1))), url=qaPhotoText(photoBase(p.path));
+    return `<div class="qa-proof-tile"><a class="ph" href="${url}" target="_blank" rel="noopener" title="${label}"><img src="${url}" alt="${label}" loading="lazy"><span class="qa-proof-label">${label}</span></a>${(mayCorrect||mayReadHistory)&&p.id?`<div class="qa-proof-actions">${mayCorrect?`<button type="button" class="assign-btn" data-qa-replace="${i}">Replace this photo</button>`:''}${mayReadHistory?`<button type="button" class="assign-btn" data-qa-history="${i}">History</button>`:''}</div>`:''}</div>`;
+  }).join(''):'<div class="none">No photos uploaded for this job.</div>';
+  container.querySelectorAll('[data-qa-replace]').forEach(b=>b.onclick=()=>openQaPhotoReplacement(job,photos[Number(b.dataset.qaReplace)]));
+  container.querySelectorAll('[data-qa-history]').forEach(b=>b.onclick=()=>openQaPhotoHistory(job,photos[Number(b.dataset.qaHistory)]));
+}
+async function openQaPhotoReplacement(job,photo){
+  if(!window.QaPhotoCorrections||!QaPhotoCorrections.canReplace(window.dashUser)){showToast('Dispatcher edit access is required');return;}
+  if(!photo||!photo.id){showToast('Reload the selected photo first');return;}
+  let current;
+  try{ current=await fetchFullJob(job.id); if(!current)throw new Error('JO could not be loaded'); }catch(e){showToast(e.message);return;}
+  let dlg=document.getElementById('qaCorrectionModal');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='qaCorrectionModal';dlg.className='modal';document.body.appendChild(dlg);}
+  dlg.innerHTML='<div class="modal-head"><div><span class="eyebrow">QA · PHOTO CORRECTION</span><h2>Replace this photo</h2><p id="qaCorrectionTarget"></p></div></div><div class="qa-correction-body"><div class="qa-correction-preview"><div><strong>Current photo</strong><img id="qaCorrectionOld" alt="Current selected proof"></div><div><strong>Replacement preview</strong><img id="qaCorrectionNew" alt="Replacement preview" hidden></div></div><label class="field"><span>Replacement image (JPG, PNG or WebP; up to 10 MB)</span><input id="qaCorrectionFile" type="file" accept="image/jpeg,image/png,image/webp"></label><label class="field"><span>Reason for correction</span><textarea id="qaCorrectionReason" rows="3" maxlength="2000" required></textarea></label><p>Original and replacement history are kept. This JO will require QA review.</p><p id="qaCorrectionError" role="alert" class="qa-correction-error"></p></div><div class="modal-actions"><button type="button" class="secondary-btn" id="qaCorrectionCancel">Cancel</button><button type="button" class="primary-btn" id="qaCorrectionSave">Save replacement</button></div>';
+  dlg.querySelector('#qaCorrectionTarget').textContent=current.id+' · '+(photo.label||'Selected photo');
+  dlg.querySelector('#qaCorrectionOld').src=photoBase(photo.path);
+  const fileInput=dlg.querySelector('#qaCorrectionFile'), reason=dlg.querySelector('#qaCorrectionReason'), error=dlg.querySelector('#qaCorrectionError'), save=dlg.querySelector('#qaCorrectionSave'), cancel=dlg.querySelector('#qaCorrectionCancel');
+  let previewUrl='', operation=null, busy=false;
+  const releasePreview=()=>{if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl='';}};
+  fileInput.onchange=()=>{releasePreview();const file=fileInput.files[0], image=dlg.querySelector('#qaCorrectionNew');image.hidden=!file;if(file){previewUrl=URL.createObjectURL(file);image.src=previewUrl;}error.textContent='';};
+  cancel.onclick=()=>{if(!busy)dlg.close();};
+  dlg.oncancel=e=>{if(busy)e.preventDefault();};dlg.onclose=releasePreview;
+  save.onclick=async()=>{
+    if(busy)return;error.textContent='';
+    try{
+      operation=QaPhotoCorrections.prepareOperation({jobId:current.id,photoId:photo.id,expectedPath:photo.path,expectedReturnedAt:current.qa_returned_at||'',reason:reason.value,file:fileInput.files[0]},operation);
+      busy=true;save.disabled=true;cancel.disabled=true;fileInput.disabled=true;reason.disabled=true;save.textContent='Saving…';
+      const result=await qaCorrectionClient().submit(operation);
+      const updated=result.job||{validated:false,validated_at:null,validated_by:null,qa_returned_at:result.returned_at};
+      Object.assign(job,updated);const local=findJob(current.id);if(local)Object.assign(local,updated);const completed=compJobs.find(x=>x.id===current.id);if(completed)Object.assign(completed,updated);
+      dlg.close();showToast('Photo replaced — Pending QA review');
+      try{
+        const list=(await fetchPhotosFor([current.id]))[current.id]||[];compPhotos[current.id]=list;
+        const full=await fetchFullJob(current.id);if(full){Object.assign(job,full);if(completed)Object.assign(completed,full);}
+        if($('#photoModal')&&$('#photoModal').open&&$('#photoTitle').textContent.startsWith(current.id+' ·'))openGallery(current.id);
+        if($('#jdPhotos')&&$('#jdTitle')&&$('#jdTitle').textContent.startsWith(current.id))renderQaPhotoTiles($('#jdPhotos'),job,list);
+        if($('#completedPage')&&$('#completedPage').classList.contains('active'))renderCompleted();
+      }catch(e){
+        delete compPhotos[current.id];
+        if($('#photoModal')&&$('#photoModal').open&&$('#photoTitle').textContent.startsWith(current.id+' ·'))openGallery(current.id);
+        if($('#jdPhotos')&&$('#jdTitle')&&$('#jdTitle').textContent.startsWith(current.id))$('#jdPhotos').innerHTML='<div class="none">Replacement saved. Reopen this JO to load its current photos.</div>';
+        showToast('Replacement saved. Reopen this JO to load its updated photos.');
+      }
+    }catch(e){error.textContent=e.message||'Photo replacement could not be saved. Your chosen image and reason are kept for retry.';}
+    finally{busy=false;save.disabled=false;cancel.disabled=false;fileInput.disabled=false;reason.disabled=false;save.textContent='Save replacement';}
+  };
+  dlg.showModal();
+}
+async function openQaPhotoHistory(job,photo){
+  let result;try{result=await qaCorrectionClient().history({jobId:job.id,photoId:photo.id});}catch(e){showToast('Photo history: '+e.message);return;}
+  let dlg=document.getElementById('qaPhotoHistoryModal');if(!dlg){dlg=document.createElement('dialog');dlg.id='qaPhotoHistoryModal';dlg.className='modal';document.body.appendChild(dlg);}
+  dlg.innerHTML='<div class="modal-head"><div><span class="eyebrow">QA · PHOTO HISTORY</span><h2>Photo corrections</h2><p id="qaHistoryTarget"></p></div></div><div class="qa-correction-body" id="qaHistoryRows"></div><div class="modal-actions"><button type="button" class="secondary-btn" id="qaHistoryClose">Close</button></div>';
+  dlg.querySelector('#qaHistoryTarget').textContent=job.id+' · '+(photo.label||'Selected photo');
+  const rows=Array.isArray(result.revisions)?result.revisions:[];
+  dlg.querySelector('#qaHistoryRows').innerHTML=rows.length?rows.map(r=>`<section class="qa-history-item"><strong>${qaPhotoText(r.actor_label||r.actor_id||'Dispatcher')}</strong><span> · ${qaPhotoText(fmtWhen(r.corrected_at))}</span><p>${qaPhotoText(r.reason)}</p><div class="qa-correction-preview">${[['Original',r.old_url],['Replacement',r.new_url]].map(([label,url])=>url?`<a href="${qaPhotoText(url)}" target="_blank" rel="noopener"><strong>${label}</strong><img src="${qaPhotoText(url)}" alt="${label} photo"></a>`:'').join('')}</div></section>`).join(''):'<p>No dispatcher corrections recorded for this photo.</p>';
+  dlg.querySelector('#qaHistoryClose').onclick=()=>dlg.close();dlg.showModal();
 }
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
@@ -2630,7 +2702,8 @@ async function renderCompleted(){
   const body=$('#completedBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
   compJobs=await fetchCompleted(date);
-  compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id));
+  compPhotos={};
+  try{ compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id)); }catch(e){ body.innerHTML='<tr><td colspan="7" class="empty-cell">Photos could not be loaded — retry this day.</td></tr>'; showToast('❌ '+e.message); return; }
   const totalPhotos=Object.values(compPhotos).reduce((a,b)=>a+b.length,0);
   const val=compJobs.filter(j=>j.validated).length;
   $('#compTotal').textContent=compJobs.length;
@@ -2648,22 +2721,33 @@ async function renderCompleted(){
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
 }
-function openGallery(jobId){
-  const j=compJobs.find(x=>x.id===jobId)||{}; const paths=compPhotos[jobId]||[];
+async function openGallery(jobId){
+  const seq=(openGallery._seq||0)+1;openGallery._seq=seq;
+  const j=compJobs.find(x=>x.id===jobId)||{};
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
-  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
-  $$('#photoGrid .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
-  const vb=$('#validateBtn'); vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
+  $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
+  const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
   openModal($('#photoModal'));
+  try{
+    const paths=(await fetchPhotosFor([jobId]))[jobId]||[];if(seq!==openGallery._seq)return;
+    compPhotos[jobId]=paths;
+    $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
+    renderQaPhotoTiles($('#photoGrid'),j,paths);
+    vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':'';vb.onclick=()=>{validateJob(jobId);closeModals();};
+  }catch(e){
+    if(seq!==openGallery._seq)return;delete compPhotos[jobId];
+    $('#photoSub').textContent='Current photos could not be loaded';$('#photoGrid').innerHTML='<div class="none">Reopen this JO to retry loading its current photos before QA validation.</div>';
+    showToast('Photos could not be loaded: '+e.message);
+  }
 }
 async function validateJob(jobId){
   if(!dashCanEdit('completed')){ showToast('QA validation is GC-only'); return; }
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
   const now=new Date().toISOString();
   try{
-    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:now,validated_by:who})});
-    await reqOk(_r,'QA validate');
+    const snapshot=(compPhotos[jobId]||[]).map(p=>({id:p.id,path:p.path}));
+    const _r=await fetch(`${SUPA_URL}/rest/v1/rpc/validate_photo_evidence`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json','Content-Profile':'qa',Prefer:'return=representation'},body:JSON.stringify({p_job_id:jobId,p_expected_photos:snapshot})});
+    await reqOk(_r,'QA validate current photos');
     const cj=compJobs.find(x=>x.id===jobId); if(cj){ cj.validated=true; cj.validated_at=now; cj.validated_by=who; }
     showToast(`${jobId} validated (by ${who})`); renderCompleted();
   }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
@@ -2671,13 +2755,22 @@ async function validateJob(jobId){
 async function exportZip(){
   try{ await ensureXLSX(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
   if(!compJobs.length){showToast('Nothing to export for this day');return}
+  if(compJobs.some(j=>!Object.prototype.hasOwnProperty.call(compPhotos,j.id))){showToast('Reload the QA day or reopen this JO to load current photos before exporting.');return;}
   const date=$('#compDate').value||manilaToday();
   showToast('Building archive (Excel + photos)…');
+  const exportJobs=compJobs.map(j=>({...j}));
+  const exportPhotos=Object.fromEntries(exportJobs.map(j=>[j.id,(compPhotos[j.id]||[]).map(p=>({...p}))]));
+  let wims, wimsColumns={};
+  try{
+    if(!window.QaWimsExport)throw new Error('WIMS export module is unavailable');
+    wims=await QaWimsExport.load(exportJobs,{url:SUPA_URL,key:SUPA_KEY,token:dashTok()});
+    exportJobs.forEach(j=>{wimsColumns[j.id]=QaWimsExport.columnsFor(j.id,wims);});
+  }catch(e){ showToast('❌ QA export stopped: '+e.message+' — no incomplete WIMS archive was downloaded.'); return; }
   await loadAgentNames();
   const zip=new JSZip();
 
   // --- Excel with all subscriber info (matches the NEW LOADS layout) ---
-  const rows=compJobs.map(j=>({
+  const rows=exportJobs.map(j=>({
     'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
     'DISPATCH STATUS': j.dispatch_status||'',
     'TEAM ASSIGNED': j.team||'',
@@ -2718,8 +2811,9 @@ async function exportZip(){
     'AR NO.': j.ar_no||'',
     'COMPLETED AT': j.updated_at?fmtWhen(j.updated_at):'',
     'VALIDATED': j.validated?'YES':'NO',
-    'PHOTOS': (compPhotos[j.id]||[]).length,
-    'WO ID': j.id
+    'PHOTOS': (exportPhotos[j.id]||[]).length,
+    'WO ID': j.id,
+    ...wimsColumns[j.id]
   }));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(rows)), 'Completed');
@@ -2727,8 +2821,8 @@ async function exportZip(){
 
   // --- Photos: one folder per subscriber, files named with the subscriber name ---
   const photosRoot=zip.folder('photos'); const used={};
-  for(const j of compJobs){
-    const paths=compPhotos[j.id]||[]; if(!paths.length)continue;
+  for(const j of exportJobs){
+    const paths=exportPhotos[j.id]||[]; if(!paths.length)continue;
     let name=safeName(j.subscriber || [j.first_name,j.last_name].filter(Boolean).join(' '));
     if(used[name]){ used[name]++; name=`${name} (${used[name]})`; } else used[name]=1;
     const folder=photosRoot.folder(`${name} - ${j.id}`);
@@ -2736,8 +2830,15 @@ async function exportZip(){
     for(let i=0;i<paths.length;i++){
       const p=paths[i]; const lbl=safeName(p.label||('Photo '+(i+1)));
       lblUsed[lbl]=(lblUsed[lbl]||0)+1; const suffix=lblUsed[lbl]>1?` (${lblUsed[lbl]})`:'';
-      try{ const blob=await (await fetch(photoBase(p.path))).blob(); folder.file(`${name} - ${lbl}${suffix}.jpg`, blob); }
-      catch(e){ console.warn('zip fetch',e.message); }
+      try{
+        const response=await fetch(photoBase(p.path));await reqOk(response,'Load QA archive photo');const blob=await response.blob();
+        const mime=String(blob.type||'').split(';')[0].toLowerCase();
+        const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','image/heic':'heic','image/heif':'heif','image/tiff':'tif','image/bmp':'bmp','image/svg+xml':'svg'};
+        const pathExt=String(p.path).match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
+        const ext=mimeExt[mime]||(!mime||mime==='application/octet-stream'?pathExt||'jpg':'');
+        if(!ext||!blob.size)throw new Error('Photo was empty or its image format could not be verified');
+        folder.file(`${name} - ${lbl}${suffix}.${ext}`,blob);
+      }catch(e){showToast('❌ QA archive stopped: photo '+(p.label||p.id||j.id)+' could not be downloaded — '+e.message);return;}
     }
   }
 
@@ -2749,21 +2850,28 @@ async function exportZip(){
 async function clearCloud(){
   if(!dashCanEdit('completed')){ showToast('Clearing QA photos is GC-only'); return; }
   const date=$('#compDate').value||manilaToday();
-  if(!compJobs.length){showToast('Nothing to clear for this day');return}
-  const allPaths=compJobs.flatMap(j=>(compPhotos[j.id]||[]).map(p=>p.path));
-  if(!allPaths.length){showToast('No photos to clear');return}
-  if(!confirm(`Delete ${allPaths.length} photo(s) from the cloud for ${date}?\n\nDownload the ZIP archive FIRST. Job records are kept — only the images are removed. This cannot be undone.`))return;
-  showToast('Clearing photos from cloud…');
+  if(!compJobs.length){showToast('Nothing to clear for this day');return;}
+  const snapshot=compJobs.flatMap(j=>(compPhotos[j.id]||[]).map(p=>({...p,job_id:j.id})));
+  const retained=snapshot.filter(p=>String(p.path).startsWith('qa-corrections/')).length;
+  const selected=snapshot.filter(p=>!String(p.path).startsWith('qa-corrections/'));
+  if(!selected.length){showToast(retained?'Corrected photos and their history are retained.':'No photos to clear');return;}
+  if(selected.some(p=>!/^\d+$/.test(String(p.id)))){showToast('Reload the current photos before clearing them.');return;}
+  const allPaths=[...new Set(selected.map(p=>p.path))];
+  if(!confirm(`Delete ${allPaths.length} ordinary photo(s) from the cloud for ${date}?\n\nDownload the ZIP archive FIRST. ${retained} corrected photo(s) and their history will be retained. Job records are kept. Ordinary image removal cannot be undone.`))return;
+  showToast('Clearing ordinary photos from cloud…');
   try{
     for(let i=0;i<allPaths.length;i+=100){
-      const _r=await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
-      await reqOk(_r,'Photo clear (batch '+(Math.floor(i/100)+1)+')');
+      const r=await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
+      await reqOk(r,'Photo clear (batch '+(Math.floor(i/100)+1)+')');
     }
-    const q=compJobs.map(j=>encodeURIComponent(j.id)).join(',');
-    const _r2=await fetch(`${SUPA_URL}/rest/v1/job_photos?job_id=in.(${q})`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
-    await reqOk(_r2,'Photo-record clear');
-    showToast('Cloud photos cleared'); renderCompleted();
-  }catch(e){showToast('Clear failed: '+e.message)}
+    const quote=value=>'"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+    for(let i=0;i<selected.length;i+=25){
+      const filters=selected.slice(i,i+25).map(p=>`and(job_id.eq.${quote(p.job_id)},id.eq.${p.id},path.eq.${quote(p.path)})`);
+      const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?or=${encodeURIComponent('('+filters.join(',')+')')}`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
+      await reqOk(r,'Selected photo-record clear');
+    }
+    showToast('Ordinary cloud photos cleared; corrected photos and history retained.');renderCompleted();
+  }catch(e){showToast('Clear failed: '+e.message);}
 }
 
 // ---------- Load History (weekly archive of all loads) ----------

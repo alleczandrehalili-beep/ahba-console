@@ -1,0 +1,21 @@
+# Photo correction HTTP conflict proof
+
+On 2026-10-13 the root team's actual PostgREST 12.2.3 test observed a stale-gallery RPC remaining active until 10-second and 45-second client timeouts. The corresponding direct PostgreSQL call finished in under 0.05 seconds, and the database inspection found no blocking lock. This was an intentional application conflict raised as `40001`, rather than a PostgreSQL serialization anomaly.
+
+The source explains why the HTTP call behaved differently. [PostgREST v12.2.3 Query.hs](https://raw.githubusercontent.com/PostgREST/postgrest/v12.2.3/src/PostgREST/Query.hs) imports Hasql transaction sessions and calls their transaction runner at lines 75–77. Its [dependency declaration](https://raw.githubusercontent.com/PostgREST/postgrest/v12.2.3/postgrest.cabal) selects hasql-transaction versions from 1.0.1 up to, but excluding, 1.1. [Hasql 1.0.1's runner](https://raw.githubusercontent.com/nikita-volkov/hasql-transaction/1.0.1/library/Hasql/Transaction/Private/Sessions.hs) recursively retries the transaction on SQLSTATE `40001`, while propagating other errors. A deterministic stale-gallery mismatch remains stale on every retry. This source behavior matches the observed HTTP failure.
+
+[Supabase's troubleshooting guidance](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b) also identifies custom `40001` exceptions as a cause of repeated PostgREST transactions and recommends a non-retryable application exception. [PostgREST 12.2's custom-error documentation](https://docs.postgrest.org/en/v12/references/errors.html#raise-errors-with-http-status-codes) supports `PTxyz` codes for explicit HTTP status responses. The feature now raises `PT409` for its seven deterministic operation, path, return-token, stale-gallery, and not-submitted conflicts.
+
+Only qa-07b's intentional domain-conflict codes change. Authentication errors, input errors, row protections, true engine failures, and qa-06 remain unchanged. The Edge handler already propagates HTTP 409; its transport fixtures now use the actual `PT409` response shape.
+
+Verification evidence:
+
+- Initial real HTTP failure: root measured direct SQL under 0.05 seconds versus HTTP timeouts at 10 and 45 seconds without a blocking lock.
+- SQL regression RED: root ran the updated `PT409` expectations against the previous migration; `conflict-http-code-sql-red.log` records exit 3 with `PHOTO_PATH_MISMATCH` still raised as `40001`.
+- Replacement migration contains exactly seven `PT409` domain-conflict raises.
+- SQL GREEN: `conflict-http-code-sql-green.log` records exit 0 for both the updated migration and the full photo-corrections SQL suite.
+- Actual HTTP GREEN: `feature-http-proof.log` records 42 passing checks across 40 HTTP requests, 0 failures, and a maximum HTTP response latency of 0.028 seconds after the root installed the migration. Stale prepare paths, stale return tokens, changed-file operation replay, and stale validation galleries return HTTP 409 with code `PT409`. Their measured times are 0.004, 0.004, 0.003, and 0.003 seconds respectively; stale-gallery rejection after correction takes 0.002 seconds. The proof also checks protected rows, permission boundaries, exact ordinary-photo cleanup, and immutable revision replay. Full synthetic response bodies are saved in `feature-http-proof-responses.json`.
+- Post-request pool check: the HTTP proof agent found zero active PostgREST backends and a stable database rollback count over a one-second observation, confirming that the tested domain conflicts no longer kept retry transactions running.
+- Fresh Node GREEN: the patch's bare `node --test` run passes all 72 tests, with no failures or skipped tests, including the Edge transport conflict fixtures.
+
+The HTTP proof uses a real local PostgREST server with plain-PostgreSQL Supabase Auth/Storage stand-ins. It does not exercise the Edge runtime, GoTrue identity lookup, binary Storage upload/download, browser UI, or workbook rendering. Existing in-flight retry loops were handled by the root team; no shared database or container operations were performed by the backend implementation agent.
