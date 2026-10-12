@@ -9,7 +9,7 @@ const exportBody=src.slice(src.indexOf('let qaArchiveBusy=false;'),src.indexOf('
 function context(fail=false){
  const books=[], downloads=[], toasts=[], files=[];
  const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs','WIMS MODEM SERIAL NO.':'ModemCase001','WIMS REEL 1 NO.':'ReelCase001','FOC USED (M)':128},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
- class Zip {file(name,data){files.push({name,data});return this;} folder(){return this;}async generateAsync(){return new Blob(['zip']);}}
+ class Zip {constructor(prefix=''){this.prefix=prefix;}file(name,data){files.push({name,path:this.prefix+name,data});return this;} folder(name){return new Zip(this.prefix+name+'/');}async generateAsync(){return new Blob(['zip']);}}
  const ctx={Blob,AbortController,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
   ensureXLSX:async()=>{},ensureXLSXStyle:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
   compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',payment_amount:400}],compPhotos:{J1:[],J2:[]},
@@ -150,4 +150,30 @@ test('duplicate photo labels and an existing numbered label cannot overwrite an 
  const {ctx,files}=context();ctx.compPhotos.J1=['Router','Router (2)','Router'].map((label,i)=>({id:String(i+1),path:'photo-'+i+'.jpg',label}));ctx.photoBase=p=>p;ctx.reqOk=async()=>{};
  ctx.fetch=async path=>({ok:true,blob:async()=>new Blob([path],{type:'image/jpeg'})});await ctx.exportZip();
  const photos=files.filter(f=>f.data instanceof Blob);assert.equal(new Set(photos.map(p=>p.name)).size,3);
+});
+
+
+test('archive groups New Install first and sorts subscribers by structured last name without changing selected jobs',async()=>{
+ const {ctx,books,files}=context();
+ ctx.compJobs=[{id:'SLRT-3',first_name:'Amy',last_name:'Abad'},{id:'WO-2',first_name:'Ben',last_name:'Zulu'},{id:'WO-1',first_name:'Zoe',middle_name:'M',last_name:'De la Cruz'},{id:'SLRT-4',first_name:'Ben',last_name:'Zulu'}];
+ ctx.compPhotos=Object.fromEntries(ctx.compJobs.map(j=>[j.id,[{path:j.id+'.png',label:'Router'}]]));
+ ctx.QaWimsExport.load=async()=>({});ctx.QaWimsExport.usageColumnsFor=()=>({'WIMS STATUS':'NOT DECLARED'});
+ ctx.photoBase=p=>p;ctx.reqOk=async()=>{};
+ ctx.fetch=async path=>{await new Promise(r=>setTimeout(r,path==='WO-1.png'?20:1));return{ok:true,blob:async()=>new Blob([path],{type:'image/png'})};};
+ const before=JSON.stringify(ctx.compJobs);await ctx.exportZip();
+ assert.deepEqual(Array.from(books[0].sheets[0].rows,r=>r['WO ID']),['WO-1','WO-2','SLRT-3','SLRT-4']);assert.equal(JSON.stringify(ctx.compJobs),before);
+ const photos=files.filter(f=>f.data instanceof Blob);
+ assert.deepEqual(photos.map(f=>f.path),[
+  'photos/New Install/De la Cruz, Zoe M (New Install)/De la Cruz, Zoe M - Router.png',
+  'photos/New Install/Zulu, Ben (New Install)/Zulu, Ben - Router.png',
+  'photos/Service Repair/Abad, Amy (Service Repair)/Abad, Amy - Router.png',
+  'photos/Service Repair/Zulu, Ben (Service Repair)/Zulu, Ben - Router.png']);
+ assert.deepEqual(await Promise.all(photos.map(f=>f.data.text())),['WO-1.png','WO-2.png','SLRT-3.png','SLRT-4.png']);
+});
+test('same subscriber and job type retain separate folders, including literal numbered subscriber names',async()=>{
+ const {ctx,files}=context();ctx.compJobs=[{id:'WO-1',first_name:'Ana',last_name:'Reyes'},{id:'WO-2',first_name:'Ana',last_name:'Reyes'},{id:'WO-3',subscriber:'Reyes, Ana (2)'}];
+ ctx.compPhotos=Object.fromEntries(ctx.compJobs.map(j=>[j.id,[{path:j.id+'.jpg',label:'Proof'}]]));ctx.QaWimsExport.load=async()=>({});ctx.QaWimsExport.usageColumnsFor=()=>({'WIMS STATUS':'NOT DECLARED'});
+ ctx.photoBase=p=>p;ctx.reqOk=async()=>{};ctx.fetch=async path=>({ok:true,blob:async()=>new Blob([path],{type:'image/jpeg'})});
+ await ctx.exportZip();const photos=files.filter(f=>f.data instanceof Blob);assert.equal(photos.length,3);assert.equal(new Set(photos.map(f=>f.path)).size,3);
+ assert.ok(photos.every(f=>/\(New Install\)/.test(f.path)&&!f.path.includes('WO-')));assert.ok(photos.every(f=>f.path.startsWith('photos/New Install/Reyes,')));
 });

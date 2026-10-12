@@ -51,3 +51,11 @@ The Completed worksheet restores all 42 original subscriber/JO/customer, crew, p
 Removed the dedicated Pulled Serial No., Usage Remarks and Review Note columns from extraction. Kit, buffer, FOC and each drop-material heading now omit the WIMS prefix while retaining their quantities and units. Formatting continues to recognize the renamed material columns. Complete subscriber/JO information stays first and fast ZIP extraction stays intact. Declaration records, photo evidence and stock are unchanged.
 
 Verified: all 81 tests, version/syntax deployment check, actual XLSX export with eight real redacted WIMS rows, and rendered material-header inspection. Reopen/update and extract a fresh archive to get the cleaned headers.
+
+## Photo extraction order — version 2026-10-13.7
+
+ZIP photos now have New Install and Service Repair groups, in that order, with subscribers alphabetized by last name within each group. Structured subscriber names display as Last Name, First Middle. JO code suffixes on subscriber folders become (New Install) for WO IDs and (Service Repair) for SLRT IDs. Unrecognized IDs remain available under Unclassified. Older display-only names are preserved and use their comma-leading surname or final name word as the fallback sort key.
+
+The Completed sheet follows the same job-type and surname order and retains each actual WO/SLRT ID. Duplicate subscriber folders receive deterministic numeric suffixes, checked without case sensitivity. Photos are inserted into the ZIP in planned order after bounded concurrent retrieval; original bytes, formats, six-request speedup and failure handling remain intact. Live selected job order is not mutated.
+
+Verified: 83 tests, deployment guard, actual JSZip/XLSX extraction with mixed WO/SLRT jobs and 24 original PNG payloads, duplicate subscriber folders, delayed out-of-order fetches, matching Excel row order, and eight real redacted declarations with exact existing usage values. This frontend release changes extraction presentation only.
