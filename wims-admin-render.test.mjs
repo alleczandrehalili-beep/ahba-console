@@ -59,3 +59,13 @@ test('generation picker: candidates come from the server RPC (same normalization
   assert.ok(!/rest\/v1\/jobs\?select=id,subscriber,ibass_acct_no,team,status,created_at,deleted_at&or=\(job_order_no\.eq\./.test(html2), 'no exact-equality public query for generations');
   assert.ok(html2.includes("' · evidence '+(g.evidence||'—')"), 'the menu shows the identity-rule verdict');
 });
+
+test('RC6: an ambiguous_replay conflict offers the two DECISIONS (replay of the old receipt / confirm new work for the team), never the status-only Filed', () => {
+  const out = R.wimsRenderConflictRows([{ ...row, reason: 'ambiguous_replay', existing_id: 'e1' }], () => 'T', {});
+  assert.ok(out.includes('data-cfst="confirm"') && out.includes('Confirm NEW work'), 'confirm action present');
+  assert.ok(out.includes('data-cfst="reviewed"') && out.includes('replay of the old receipt'), 'replay decision present');
+  assert.ok(!out.includes('data-cfst="filed"'), 'no status-only filed for an ambiguous case');
+  const plain = R.wimsRenderConflictRows([row], () => 'T', {});
+  assert.ok(plain.includes('data-cfst="filed"') && !plain.includes('data-cfst="confirm"'), 'other reasons keep the usual actions');
+  assert.ok(html2.includes("rpc('confirm_new_work',{p_id:id,p_note:note})"), 'confirm calls wims.confirm_new_work');
+});

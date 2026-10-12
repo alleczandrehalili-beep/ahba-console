@@ -1525,7 +1525,9 @@
           '<details style="margin-top:3px"><summary style="font-size:10px;color:#8a9894;cursor:pointer">full attempted payload</summary><pre style="font-size:10px;white-space:pre-wrap;margin:4px 0">'+wimsEsc(JSON.stringify(r.args||{},null,1))+'</pre></details>'+orig+
           (r.note?'<div style="color:#4a5c56">📝 '+wimsEsc(r.note)+'</div>':'')+'</td>'+
         '<td>'+st+'</td>'+
-        '<td style="white-space:nowrap">'+(r.status==='open'?'<button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="reviewed" style="padding:5px 10px;font-size:11px">✔ Reviewed</button> <button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="filed" style="padding:5px 10px;font-size:11px">📦 Filed by warehouse</button>':'')+'</td></tr>';
+        '<td style="white-space:nowrap">'+(r.status==='open'?(r.reason==='ambiguous_replay'
+            ?'<button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="reviewed" style="padding:5px 10px;font-size:11px">↩ It was a replay of the old receipt</button> <button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="confirm" style="padding:5px 10px;font-size:11px">✅ Confirm NEW work — file it for the team</button>'
+            :'<button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="reviewed" style="padding:5px 10px;font-size:11px">✔ Reviewed</button> <button class="btn" data-cfrev="'+wimsAttr(r.id)+'" data-cfst="filed" style="padding:5px 10px;font-size:11px">📦 Filed by warehouse</button>'):'')+'</td></tr>';
     }).join('');
   }
   function wimsRenderReusedRows(rows){
@@ -1571,11 +1573,20 @@
         k(a,'p_modem_serial'),k(a,'p_iptv_serials'),k(a,'p_kit'),k(a,'p_materials'),k(a,'p_foc_reel'),k(a,'p_foc_start'),k(a,'p_foc_end'),k(a,'p_foc2_reel'),k(a,'p_foc2_end'),k(a,'p_pulled_serials'),k(a,'p_pulled_note'),k(a,'p_kit_remarks'),k(a,'p_work_account'),k(a,'p_photos'),k(a,'p_subscriber'),k(a,'p_account'),k(a,'p_job_id')]; }));
     downloadXlsx('wims-declaration-conflicts.xlsx',rows);
   }
+  // ambiguous_replay (RC6): the warehouse DECIDES — "reviewed" = it was a replay of the old generation's receipt (the phone's retry is
+  // then answered as that replay), "confirm" = wims.confirm_new_work files the retained report AS THE FIELD TEAM's receipt on the new
+  // job (the team's stock, the team's receipt; the phone's retry is then answered as a replay of it). Never a status-only label.
   async function reviewConflict(id, status){
-    var note=prompt(status==='filed'?'REQUIRED — correction reference: what was adjusted and where (e.g. "Stock adjust #… / reconcile …")?':'Note (optional): why is the original declaration correct?','');
+    var note=prompt(status==='filed'?'REQUIRED — correction reference: what was adjusted and where (e.g. "Stock adjust #… / reconcile …")?'
+                   :status==='confirm'?'REQUIRED — evidence that this is NEW work (team confirmation, photos, date), not a retry of the old receipt:'
+                   :'Note (optional): why is the original declaration correct?','');
     if(note===null) return;
-    if(status==='filed'&&!note.trim()){ toast('A correction reference is required to mark a conflict as filed',true); return; }
-    try{ await rpc('review_conflict',{p_id:id,p_status:status,p_note:note}); toast('Conflict marked '+status); loadConflicts(); }
+    if((status==='filed'||status==='confirm')&&!note.trim()){ toast(status==='confirm'?'Evidence is required to confirm new work':'A correction reference is required to mark a conflict as filed',true); return; }
+    try{
+      if(status==='confirm'){ var rid=await rpc('confirm_new_work',{p_id:id,p_note:note}); toast('Filed for the team — receipt '+String(rid||'').slice(0,8)); }
+      else { await rpc('review_conflict',{p_id:id,p_status:status,p_note:note}); toast('Conflict marked '+status); }
+      loadConflicts(); loadDupDecl();
+    }
     catch(e){ toast('Failed: '+e.message,true); }
   }
   // ---- 🔁 re-used / ambiguous JO numbers (wims.install_reconciliation) ----
