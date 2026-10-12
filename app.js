@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.2';
+const APP_VERSION='2026-10-13.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2753,7 +2753,7 @@ async function validateJob(jobId){
   }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
 }
 async function exportZip(){
-  try{ await ensureXLSX(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
+  try{ await ensureXLSXStyle(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
   if(!compJobs.length){showToast('Nothing to export for this day');return}
   if(compJobs.some(j=>!Object.prototype.hasOwnProperty.call(compPhotos,j.id))){showToast('Reload the QA day or reopen this JO to load current photos before exporting.');return;}
   const date=$('#compDate').value||manilaToday();
@@ -2764,7 +2764,7 @@ async function exportZip(){
   try{
     if(!window.QaWimsExport)throw new Error('WIMS export module is unavailable');
     wims=await QaWimsExport.load(exportJobs,{url:SUPA_URL,key:SUPA_KEY,token:dashTok()});
-    exportJobs.forEach(j=>{wimsColumns[j.id]=QaWimsExport.columnsFor(j.id,wims);});
+    exportJobs.forEach(j=>{wimsColumns[j.id]=QaWimsExport.usageColumnsFor(j.id,wims);});
   }catch(e){ showToast('❌ QA export stopped: '+e.message+' — no incomplete WIMS archive was downloaded.'); return; }
   await loadAgentNames();
   const zip=new JSZip();
@@ -2812,11 +2812,28 @@ async function exportZip(){
     'COMPLETED AT': j.updated_at?fmtWhen(j.updated_at):'',
     'VALIDATED': j.validated?'YES':'NO',
     'PHOTOS': (exportPhotos[j.id]||[]).length,
-    'WO ID': j.id,
-    ...wimsColumns[j.id]
+    'WO ID': j.id
   }));
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(rows)), 'Completed');
+  // Put JO identity and actual WIMS usage together; keep all original QA/customer fields.
+  // Preserve CPE/reel case exactly rather than uppercasing identifiers.
+  const sheetRows=rows.map(row=>{
+    const core=upperRows([row])[0];
+    return {'WO ID':core['WO ID'],'JOB ORDER NO.':core['JOB ORDER NO.'],
+      'IBASS ACCT NO.':core['IBASS ACCT NO.'],'TEAM ASSIGNED':core['TEAM ASSIGNED'],
+      ...wimsColumns[row['WO ID']],...core};
+  });
+  const usageHeaders=Object.keys(wimsColumns[exportJobs[0].id]);
+  const headers=[...new Set(sheetRows.flatMap(row=>Object.keys(row)))];
+  // Move audit metadata after all visible columns, regardless of the first JO's data.
+  const orderedHeaders=headers.filter(k=>!QaWimsExport.isAuditColumn(k)).concat(usageHeaders.filter(QaWimsExport.isAuditColumn));
+  const ws=XLSX.utils.json_to_sheet(sheetRows,{header:orderedHeaders});
+  const layout=QaWimsExport.worksheetLayout(sheetRows);
+  const byHeader=Object.fromEntries(headers.map((name,i)=>[name,layout.columns[i]]));
+  ws['!cols']=orderedHeaders.map(name=>byHeader[name]);
+  ws['!autofilter']={ref:ws['!ref']};
+  QaWimsExport.styleWorksheet(ws,sheetRows,orderedHeaders);
+  XLSX.utils.book_append_sheet(wb, ws, 'Completed');
   zip.file(`AHBA_completed_${date}.xlsx`, XLSX.write(wb,{type:'array',bookType:'xlsx'}));
 
   // --- Photos: one folder per subscriber, files named with the subscriber name ---

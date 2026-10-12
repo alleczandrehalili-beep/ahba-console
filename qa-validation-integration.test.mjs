@@ -2,20 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {createRequire} from 'node:module';
+const report=createRequire(import.meta.url)('./qa-wims-export.js');
 const src=fs.readFileSync(new URL('./app.js',import.meta.url),'utf8');
 const exportBody=src.slice(src.indexOf('async function exportZip(){'),src.indexOf('async function clearCloud(){'));
 function context(fail=false){
  const books=[], downloads=[], toasts=[], files=[];
- const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs'},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
+ const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs','WIMS MODEM SERIAL NO.':'ModemCase001','WIMS REEL 1 NO.':'ReelCase001','WIMS FOC USED (M)':128},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
  class Zip {file(name,data){files.push({name,data});return this;} folder(){return this;}async generateAsync(){return new Blob(['zip']);}}
  const ctx={Blob,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
-  ensureXLSX:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
+  ensureXLSX:async()=>{},ensureXLSXStyle:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
   compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',payment_amount:400}],compPhotos:{J1:[],J2:[]},
   SUPA_URL:'https://fixture.invalid',SUPA_KEY:'public-fixture-key',dashTok:()=> 'fixture-user-token',
-  QaWimsExport:{async load(){if(fail)throw new Error('WIMS retrieval failed');return fixture;},columnsFor:(id,m)=>m[id]},
+  QaWimsExport:{async load(){if(fail)throw new Error('WIMS retrieval failed');return fixture;},usageColumnsFor:(id,m)=>m[id],isAuditColumn:report.isAuditColumn,worksheetLayout:report.worksheetLayout,styleWorksheet:report.styleWorksheet},
   showToast:m=>toasts.push(m),manilaToday:()=> '2026-10-13',dayStr:x=>x,fmtWhen:x=>x,agentLabel:x=>x||'',upperRows:r=>r,safeName:x=>x,
   $:()=>({value:'2026-10-13'}),JSZip:Zip,
-  XLSX:{utils:{book_new:()=>({sheets:[]}),json_to_sheet:r=>({rows:r}),book_append_sheet:(wb,sheet,name)=>{wb.sheets.push({name,rows:sheet.rows});},},write:wb=>{books.push(wb);return new Uint8Array([1]);}},
+  XLSX:{utils:{book_new:()=>({sheets:[]}),json_to_sheet:(r,opts)=>({rows:r,headers:opts.header,'!ref':'A1:AZ3'}),book_append_sheet:(wb,sheet,name)=>{wb.sheets.push({name,rows:sheet.rows,headers:sheet.headers,columns:sheet['!cols'],filter:sheet['!autofilter']});},},write:wb=>{books.push(wb);return new Uint8Array([1]);}},
   document:{body:{appendChild(){}},createElement:()=>({click(){downloads.push(true);},remove(){}})}
  };
  ctx.window=ctx;vm.createContext(ctx);vm.runInContext(exportBody,ctx);return{ctx,books,downloads,toasts,files};
@@ -99,4 +101,12 @@ test('reopening QA gallery reloads current evidence and never offers stale photo
  vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.openGallery('J1');
  assert.equal(requests,1);assert.ok(!nodes.get('#photoGrid').innerHTML.includes('old.jpg'));assert.equal(nodes.get('#validateBtn').style.display,'none');assert.equal(painted.length,0);
  fail=false;await ctx.openGallery('J1');assert.equal(requests,2);assert.deepEqual(painted,[['new.jpg']]);assert.equal(ctx.compPhotos.J1[0].path,'new.jpg');assert.equal(nodes.get('#validateBtn').style.display,'');
+});
+
+test('usage workbook puts JO/CPE/reels together and preserves exact identifiers and numeric quantities',async()=>{
+ const {ctx,books}=context();await ctx.exportZip();const s=books[0].sheets[0];
+ assert.deepEqual(Array.from(s.headers.slice(0,4)),['WO ID','JOB ORDER NO.','IBASS ACCT NO.','TEAM ASSIGNED']);
+ assert.equal(s.rows[0]['WIMS MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['WIMS REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['WIMS FOC USED (M)'],128);
+ assert.equal(s.columns[s.headers.indexOf('WIMS RECEIPT ID')].hidden,true);assert.ok(s.filter.ref);
+ assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);
 });
