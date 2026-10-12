@@ -103,9 +103,13 @@ test('reopening QA gallery reloads current evidence and never offers stale photo
  fail=false;await ctx.openGallery('J1');assert.equal(requests,2);assert.deepEqual(painted,[['new.jpg']]);assert.equal(ctx.compPhotos.J1[0].path,'new.jpg');assert.equal(nodes.get('#validateBtn').style.display,'');
 });
 
-test('usage workbook puts JO/CPE/reels together and preserves exact identifiers and numeric quantities',async()=>{
+test('usage workbook keeps complete subscriber/JO information before WIMS with unchanged values',async()=>{
  const {ctx,books}=context();await ctx.exportZip();const s=books[0].sheets[0];
- assert.deepEqual(Array.from(s.headers.slice(0,4)),['WO ID','JOB ORDER NO.','IBASS ACCT NO.','TEAM ASSIGNED']);
+ assert.deepEqual(Array.from(s.headers.slice(0,4)),['DATE','DISPATCH STATUS','TEAM ASSIGNED','DRIVER']);
+ const firstWims=s.headers.findIndex(h=>h.startsWith('WIMS '));assert.ok(firstWims>0);
+ assert.ok(s.headers.slice(0,firstWims).every(h=>!h.startsWith('WIMS ')));
+ assert.ok(s.headers.slice(firstWims).every(h=>h.startsWith('WIMS ')));
+ for(const h of ['FIRST NAME','MIDDLE NAME','LAST NAME','IBASS ACCT NO.','JOB ORDER NO.','PRIMARY NO.','OTHER CONTACT NO.','HOUSE NO.','STREET NAME','VILLAGE / SUBDIVISION','BRGY','CITY','PLAN','ACCOUNT','MODE OF PAYMENT','AMOUNT','WO ID'])assert.ok(s.headers.indexOf(h)>=0 && s.headers.indexOf(h)<firstWims,h+' must precede WIMS');
  assert.equal(s.rows[0]['WIMS MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['WIMS REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['WIMS FOC USED (M)'],128);
  assert.equal(s.columns[s.headers.indexOf('WIMS RECEIPT ID')].hidden,true);assert.ok(s.filter.ref);
  assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);

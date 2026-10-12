@@ -41,3 +41,7 @@ QA photo downloads now use up to six simultaneous requests. Filename assignment 
 The download button shows photo counts and archive progress. Repeated clicks cannot start a second export, and photo clearing is blocked while the archive is reading its evidence. A failed photo cancels only the export's pending requests and prevents an incomplete download; the user can retry afterwards. The selected jobs/date/photos are snapshotted before asynchronous preparation.
 
 Verified: 79 complete Node tests, version/syntax deployment guard and actual Excel/ZIP exporter. A controlled 24-photo benchmark over three pairs measured median 758 ms before versus 176 ms after (4.31x), with identical filenames, all 24 original PNG payloads and the same Completed workbook rows. Those numbers use simulated 25 ms request/library delays and do not predict any team's connection speed. No backend, stock, phone or queue deployment is included.
+
+## Subscriber information first — version 2026-10-13.5
+
+The Completed worksheet restores all 42 original subscriber/JO/customer, crew, payment and validation columns in their existing order before any WIMS column. Actual WIMS usage follows, with hidden audit details at the far right. Values, exact CPE/reel case, styling and fast ZIP downloads are preserved. Verified with all 79 tests and the actual Excel exporter using eight real redacted WIMS records. Reopen/update the console and extract a fresh archive to get this column order.
