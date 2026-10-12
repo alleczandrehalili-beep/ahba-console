@@ -5,6 +5,7 @@
   root.QaWimsExport=api;
 })(typeof globalThis!=='undefined'?globalThis:this, function(){
   'use strict';
+  const officialTeamCode=value=>({'AHBA_SLI017':'AHBA_SLR004','AHBA_SLI018':'AHBA_SLR005'}[String(value||'').trim().toUpperCase()]||value||'');
   const fields=['STATUS','RECEIPT ID','DECLARED BY / TEAM','FILED AT','TASK','DECLARED ACCOUNT','DECLARED SUBSCRIBER',
     'DECLARED JO / TICKET','WORK ACCOUNT','DECLARED PHOTO COUNT','MODEM SERIALS','IPTV SERIALS',
     'KIT','MATERIALS','FOC','PULLED DEVICES','REMARKS','HISTORICAL RECEIPTS','CONFLICTS','UNCONFIRMED EVIDENCE','WARNINGS'];
@@ -186,8 +187,6 @@
     if(filed.length && row.unconfirmed.length)status+='; UNCONFIRMED EVIDENCE - REVIEW';
     const cols={
       'WIMS STATUS':status,
-      'TEAM':values(r=>r.team_code||''),
-      'DECLARED BY':values(r=>r.declared_by||''),
       'TASK':values(r=>r.task||''),
       'MODEM SERIAL NO.':values(r=>serials(r,'modem')),
       'IPTV SERIAL NO.':values(r=>serials(r,'iptv')),
@@ -263,5 +262,5 @@
     });
     return ws;
   }
-  return {load, columnsFor, usageColumnsFor, isAuditColumn, isUsageColumn, worksheetLayout, styleWorksheet};
+  return {officialTeamCode, load, columnsFor, usageColumnsFor, isAuditColumn, isUsageColumn, worksheetLayout, styleWorksheet};
 });
