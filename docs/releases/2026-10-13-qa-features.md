@@ -65,3 +65,11 @@ Verified: 83 tests, deployment guard, actual JSZip/XLSX extraction with mixed WO
 Removed the leading WIMS text from the ten extraction headings in columns AR through BA: team, declared by, task, modem/IPTV serial numbers and reel numbers/readings. Column AQ (WIMS STATUS), subsequent material headings and hidden audit metadata retain their existing labels. Column order, values, reading widths, green usage styling and photo archive behavior are preserved.
 
 Verified: all 83 tests, deployment/version guard, and the actual ZIP/XLSX exporter with eight real redacted declarations. The actual workbook asserts the exact AR–BA range and unchanged adjacent headings, quantities, serials and reel values. Extract a fresh ZIP after updating/reopening the console.
+
+## Official SLR identities and one team column — version 2026-10-13.9
+
+Owner confirmed AHBA_SLI017 is now AHBA_SLR004 and AHBA_SLI018 is now AHBA_SLR005. qa-07c corrects the two official SLR accounts' stale WIMS profile display names only after checking their existing authenticated login, username and WIMS team bindings. Old names are retained in a private audit table. Account UUIDs, login credentials, roles, memberships, historical declarations, stock and live session handling stay intact; legacy stock entities are not silently merged.
+
+Extraction removes TEAM and DECLARED BY from the usage columns. The original subscriber TEAM ASSIGNED remains the single visible team column and translates the two confirmed legacy labels to their official SLR names. Actual materials, CPE serials, reels, numeric values, hidden audit metadata, subscriber-first layout and ordered fast photo archive are retained. No filing authorization or warehouse stock migration is part of this name correction.
+
+Verified: 83 complete tests, deployment/version guard, actual ZIP/XLSX exporter with eight redacted declarations and exact canonical team/removed-heading checks; disposable PostgreSQL rehearsal proves private audit, repeat safety, unchanged role/team/login and atomic abort if bindings change.

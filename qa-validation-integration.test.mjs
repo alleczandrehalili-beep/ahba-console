@@ -12,9 +12,9 @@ function context(fail=false){
  class Zip {constructor(prefix=''){this.prefix=prefix;}file(name,data){files.push({name,path:this.prefix+name,data});return this;} folder(name){return new Zip(this.prefix+name+'/');}async generateAsync(){return new Blob(['zip']);}}
  const ctx={Blob,AbortController,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
   ensureXLSX:async()=>{},ensureXLSXStyle:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
-  compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',payment_amount:400}],compPhotos:{J1:[],J2:[]},
+  compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',team:'AHBA_SLI017',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',team:'AHBA_SLI018',payment_amount:400}],compPhotos:{J1:[],J2:[]},
   SUPA_URL:'https://fixture.invalid',SUPA_KEY:'public-fixture-key',dashTok:()=> 'fixture-user-token',
-  QaWimsExport:{async load(){if(fail)throw new Error('WIMS retrieval failed');return fixture;},usageColumnsFor:(id,m)=>m[id],isAuditColumn:report.isAuditColumn,worksheetLayout:report.worksheetLayout,styleWorksheet:report.styleWorksheet},
+  QaWimsExport:{async load(){if(fail)throw new Error('WIMS retrieval failed');return fixture;},usageColumnsFor:(id,m)=>m[id],officialTeamCode:report.officialTeamCode,isAuditColumn:report.isAuditColumn,worksheetLayout:report.worksheetLayout,styleWorksheet:report.styleWorksheet},
   showToast:m=>toasts.push(m),manilaToday:()=> '2026-10-13',dayStr:x=>x,fmtWhen:x=>x,agentLabel:x=>x||'',upperRows:r=>r,safeName:x=>x,
   $:()=>({value:'2026-10-13'}),JSZip:Zip,
   XLSX:{utils:{book_new:()=>({sheets:[]}),json_to_sheet:(r,opts)=>({rows:r,headers:opts.header,'!ref':'A1:AZ3'}),book_append_sheet:(wb,sheet,name)=>{wb.sheets.push({name,rows:sheet.rows,headers:sheet.headers,columns:sheet['!cols'],filter:sheet['!autofilter']});},},write:wb=>{books.push(wb);return new Uint8Array([1]);}},
@@ -112,7 +112,7 @@ test('usage workbook keeps complete subscriber/JO information before WIMS with u
  for(const h of ['FIRST NAME','MIDDLE NAME','LAST NAME','IBASS ACCT NO.','JOB ORDER NO.','PRIMARY NO.','OTHER CONTACT NO.','HOUSE NO.','STREET NAME','VILLAGE / SUBDIVISION','BRGY','CITY','PLAN','ACCOUNT','MODE OF PAYMENT','AMOUNT','WO ID'])assert.ok(s.headers.indexOf(h)>=0 && s.headers.indexOf(h)<firstWims,h+' must precede WIMS');
  assert.equal(s.rows[0]['MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['FOC USED (M)'],128);
  assert.equal(s.columns[s.headers.indexOf('WIMS RECEIPT ID')].hidden,true);assert.ok(s.filter.ref);
- assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);
+ assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);assert.equal(s.rows[0]['TEAM ASSIGNED'],'AHBA_SLR004');assert.equal(s.rows[1]['TEAM ASSIGNED'],'AHBA_SLR005');
 });
 
 

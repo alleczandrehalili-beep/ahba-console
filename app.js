@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.8';
+const APP_VERSION='2026-10-13.9';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2824,7 +2824,7 @@ async function exportZip(){
   const rows=exportJobs.map(j=>({
     'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
     'DISPATCH STATUS': j.dispatch_status||'',
-    'TEAM ASSIGNED': j.team||'',
+    'TEAM ASSIGNED': QaWimsExport.officialTeamCode(j.team),
     'DRIVER': j.driver||'',
     'TECH1': j.tech1||'',
     'MAPPING TEAM': j.mapping_team||'',
