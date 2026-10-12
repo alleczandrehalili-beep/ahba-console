@@ -5,12 +5,12 @@ import vm from 'node:vm';
 import {createRequire} from 'node:module';
 const report=createRequire(import.meta.url)('./qa-wims-export.js');
 const src=fs.readFileSync(new URL('./app.js',import.meta.url),'utf8');
-const exportBody=src.slice(src.indexOf('async function exportZip(){'),src.indexOf('async function clearCloud(){'));
+const exportBody=src.slice(src.indexOf('let qaArchiveBusy=false;'),src.indexOf('async function clearCloud(){'));
 function context(fail=false){
  const books=[], downloads=[], toasts=[], files=[];
  const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs','WIMS MODEM SERIAL NO.':'ModemCase001','WIMS REEL 1 NO.':'ReelCase001','WIMS FOC USED (M)':128},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
  class Zip {file(name,data){files.push({name,data});return this;} folder(){return this;}async generateAsync(){return new Blob(['zip']);}}
- const ctx={Blob,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
+ const ctx={Blob,AbortController,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
   ensureXLSX:async()=>{},ensureXLSXStyle:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
   compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',payment_amount:400}],compPhotos:{J1:[],J2:[]},
   SUPA_URL:'https://fixture.invalid',SUPA_KEY:'public-fixture-key',dashTok:()=> 'fixture-user-token',
@@ -78,7 +78,7 @@ test('ordinary legacy empty-photo QA validation still reaches the authorized ser
 
 test('QA photo cleanup preserves corrected evidence and deletes only selected ordinary photo identities',async()=>{
  const start=src.indexOf('async function clearCloud(){'),end=src.indexOf('\n}',start)+2,requests=[],toasts=[];
- const ctx={dashCanEdit:()=>true,$:()=>({value:'2026-10-13'}),manilaToday:()=> '2026-10-13',compJobs:[{id:'J1'}],compPhotos:{J1:[{id:'7',path:'qa-corrections/org/op/replacement.jpg'},{id:'8',path:'ordinary.jpg'}]},confirm:()=>true,showToast:m=>toasts.push(m),renderCompleted(){},SUPA_URL:'https://fixture.invalid',SUPA_KEY:'key',dashTok:()=> 'token',encodeURIComponent,reqOk:async r=>{assert.equal(r.ok,true);},fetch:async(url,options)=>{requests.push({url,body:options.body&&JSON.parse(options.body)});return{ok:true};}};
+ const ctx={qaArchiveBusy:false,dashCanEdit:()=>true,$:()=>({value:'2026-10-13'}),manilaToday:()=> '2026-10-13',compJobs:[{id:'J1'}],compPhotos:{J1:[{id:'7',path:'qa-corrections/org/op/replacement.jpg'},{id:'8',path:'ordinary.jpg'}]},confirm:()=>true,showToast:m=>toasts.push(m),renderCompleted(){},SUPA_URL:'https://fixture.invalid',SUPA_KEY:'key',dashTok:()=> 'token',encodeURIComponent,reqOk:async r=>{assert.equal(r.ok,true);},fetch:async(url,options)=>{requests.push({url,body:options.body&&JSON.parse(options.body)});return{ok:true};}};
  vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.clearCloud();
  assert.deepEqual(requests[0].body.prefixes,['ordinary.jpg']);
  const deletion=decodeURIComponent(requests[1].url);assert.ok(deletion.includes('id.eq.8'));assert.ok(deletion.includes('ordinary.jpg'));assert.ok(!deletion.includes('id.eq.7'));assert.ok(toasts.some(x=>/retained|kept/i.test(x)));
@@ -109,4 +109,41 @@ test('usage workbook puts JO/CPE/reels together and preserves exact identifiers 
  assert.equal(s.rows[0]['WIMS MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['WIMS REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['WIMS FOC USED (M)'],128);
  assert.equal(s.columns[s.headers.indexOf('WIMS RECEIPT ID')].hidden,true);assert.ok(s.filter.ref);
  assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);
+});
+
+
+test('archive downloads photos concurrently with a six-request cap and preserves all bytes',async()=>{
+ const {ctx,files,toasts}=context();ctx.compPhotos.J1=Array.from({length:24},(_,i)=>({id:String(i+1),path:'photo-'+i+'.jpg',label:'Router'}));
+ let active=0,peak=0;ctx.photoBase=p=>p;ctx.reqOk=async r=>{assert.equal(r.ok,true);};
+ ctx.fetch=async url=>{active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,10));active--;return {ok:true,blob:async()=>new Blob([url],{type:'image/jpeg'})};};
+ await ctx.exportZip();assert.equal(peak,6);assert.equal(active,0);
+ const photos=files.filter(f=>f.data instanceof Blob);assert.equal(photos.length,24);
+ for(let i=0;i<24;i++){const name='One - Router'+(i?' ('+(i+1)+')':'')+'.jpg';assert.equal(await photos.find(p=>p.name===name).data.text(),'photo-'+i+'.jpg');}
+ assert.ok(toasts.some(t=>/24.*24/.test(t)));
+});
+test('repeated export click does not create duplicate archives or parallel export runs',async()=>{
+ const {ctx,downloads}=context();ctx.compPhotos.J1=[{id:'1',path:'one.jpg',label:'One'}];ctx.photoBase=p=>p;ctx.reqOk=async()=>{};
+ ctx.fetch=async()=>{await new Promise(r=>setTimeout(r,20));return{ok:true,blob:async()=>new Blob(['proof'],{type:'image/jpeg'})};};
+ await Promise.all([ctx.exportZip(),ctx.exportZip()]);assert.equal(downloads.length,1);
+ // Completion clears the guard for the next intentional archive.
+ await ctx.exportZip();assert.equal(downloads.length,2);
+});
+test('archive failure cancels remaining photo work, downloads no partial ZIP and can retry',async()=>{
+ const {ctx,downloads}=context();ctx.compPhotos.J1=Array.from({length:20},(_,i)=>({id:String(i+1),path:'photo-'+i+'.jpg'}));ctx.photoBase=p=>p;
+ let requests=0;ctx.reqOk=async r=>{if(!r.ok)throw new Error('Photo unavailable');};
+ ctx.fetch=async url=>{requests++;await new Promise(r=>setTimeout(r,5));return {ok:!url.includes('photo-0.'),blob:async()=>new Blob(['proof'],{type:'image/jpeg'})};};
+ await ctx.exportZip();assert.equal(downloads.length,0);assert.ok(requests<=6);
+ ctx.fetch=async()=>({ok:true,blob:async()=>new Blob(['proof'],{type:'image/jpeg'})});await ctx.exportZip();assert.equal(downloads.length,1);
+});
+
+test('photo clearing is blocked while the archive is still downloading its evidence',async()=>{
+ const start=src.indexOf('async function clearCloud(){'),end=src.indexOf('\n}',start)+2,toasts=[];
+ const ctx={qaArchiveBusy:true,dashCanEdit:()=>true,$:()=>({value:'2026-10-13'}),compJobs:[{id:'J1'}],compPhotos:{J1:[{id:'8',path:'original.jpg'}]},confirm:()=>{throw new Error('must not prompt for deletion during export');},showToast:t=>toasts.push(t)};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.clearCloud();assert.ok(toasts.some(x=>/ZIP|archive|download/i.test(x)));
+});
+
+test('duplicate photo labels and an existing numbered label cannot overwrite an archive file',async()=>{
+ const {ctx,files}=context();ctx.compPhotos.J1=['Router','Router (2)','Router'].map((label,i)=>({id:String(i+1),path:'photo-'+i+'.jpg',label}));ctx.photoBase=p=>p;ctx.reqOk=async()=>{};
+ ctx.fetch=async path=>({ok:true,blob:async()=>new Blob([path],{type:'image/jpeg'})});await ctx.exportZip();
+ const photos=files.filter(f=>f.data instanceof Blob);assert.equal(new Set(photos.map(p=>p.name)).size,3);
 });
