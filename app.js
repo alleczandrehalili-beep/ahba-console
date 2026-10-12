@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.3';
+const APP_VERSION='2026-10-13.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2752,21 +2752,49 @@ async function validateJob(jobId){
     showToast(`${jobId} validated (by ${who})`); renderCompleted();
   }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
 }
+let qaArchiveBusy=false;
+async function downloadQaArchivePhotos(entries,onProgress){
+  const controller=new AbortController();let next=0,completed=0,firstError=null;
+  const worker=async()=>{
+    while(!firstError && next<entries.length){
+      const entry=entries[next++];
+      try{
+        const response=await fetch(photoBase(entry.photo.path),{signal:controller.signal});
+        await reqOk(response,'Load QA archive photo');const blob=await response.blob();
+        if(firstError)return;
+        const mime=String(blob.type||'').split(';')[0].toLowerCase();
+        const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','image/heic':'heic','image/heif':'heif','image/tiff':'tif','image/bmp':'bmp','image/svg+xml':'svg'};
+        const pathExt=String(entry.photo.path).match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
+        const ext=mimeExt[mime]||(!mime||mime==='application/octet-stream'?pathExt||'jpg':'');
+        if(!ext||!blob.size)throw new Error('Photo was empty or its image format could not be verified');
+        entry.folder.file(entry.filename+'.'+ext,blob);completed++;
+        onProgress(completed,entries.length);
+      }catch(error){
+        if(!firstError){firstError=new Error('photo '+(entry.photo.label||entry.photo.id||entry.jobId)+' could not be downloaded — '+error.message);controller.abort();}
+      }
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(6,entries.length)},worker));
+  if(firstError)throw firstError;
+}
 async function exportZip(){
-  try{ await ensureXLSXStyle(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
-  if(!compJobs.length){showToast('Nothing to export for this day');return}
+  if(qaArchiveBusy){showToast('A ZIP download is already being prepared.');return;}
+  if(!compJobs.length){showToast('Nothing to export for this day');return;}
   if(compJobs.some(j=>!Object.prototype.hasOwnProperty.call(compPhotos,j.id))){showToast('Reload the QA day or reopen this JO to load current photos before exporting.');return;}
   const date=$('#compDate').value||manilaToday();
-  showToast('Building archive (Excel + photos)…');
   const exportJobs=compJobs.map(j=>({...j}));
   const exportPhotos=Object.fromEntries(exportJobs.map(j=>[j.id,(compPhotos[j.id]||[]).map(p=>({...p}))]));
+  const exportButton=$('#exportBtn'),originalButtonHtml=exportButton?.innerHTML;
+  qaArchiveBusy=true;if(exportButton)exportButton.disabled=true;
+  try{
+  showToast('Preparing Excel and photo archive…');
+  try{await Promise.all([ensureXLSXStyle(),ensureJSZip()]);}catch(_){showToast('Export libraries failed to load');return;}
   let wims, wimsColumns={};
   try{
     if(!window.QaWimsExport)throw new Error('WIMS export module is unavailable');
-    wims=await QaWimsExport.load(exportJobs,{url:SUPA_URL,key:SUPA_KEY,token:dashTok()});
+    [wims]=await Promise.all([QaWimsExport.load(exportJobs,{url:SUPA_URL,key:SUPA_KEY,token:dashTok()}),loadAgentNames()]);
     exportJobs.forEach(j=>{wimsColumns[j.id]=QaWimsExport.usageColumnsFor(j.id,wims);});
   }catch(e){ showToast('❌ QA export stopped: '+e.message+' — no incomplete WIMS archive was downloaded.'); return; }
-  await loadAgentNames();
   const zip=new JSZip();
 
   // --- Excel with all subscriber info (matches the NEW LOADS layout) ---
@@ -2836,35 +2864,41 @@ async function exportZip(){
   XLSX.utils.book_append_sheet(wb, ws, 'Completed');
   zip.file(`AHBA_completed_${date}.xlsx`, XLSX.write(wb,{type:'array',bookType:'xlsx'}));
 
-  // --- Photos: one folder per subscriber, files named with the subscriber name ---
-  const photosRoot=zip.folder('photos'); const used={};
+  // Assign every filename before concurrent downloads, so duplicate labels stay deterministic.
+  const photosRoot=zip.folder('photos'),used=Object.create(null),entries=[];
   for(const j of exportJobs){
-    const paths=exportPhotos[j.id]||[]; if(!paths.length)continue;
-    let name=safeName(j.subscriber || [j.first_name,j.last_name].filter(Boolean).join(' '));
-    if(used[name]){ used[name]++; name=`${name} (${used[name]})`; } else used[name]=1;
-    const folder=photosRoot.folder(`${name} - ${j.id}`);
-    const lblUsed={};
-    for(let i=0;i<paths.length;i++){
-      const p=paths[i]; const lbl=safeName(p.label||('Photo '+(i+1)));
-      lblUsed[lbl]=(lblUsed[lbl]||0)+1; const suffix=lblUsed[lbl]>1?` (${lblUsed[lbl]})`:'';
-      try{
-        const response=await fetch(photoBase(p.path));await reqOk(response,'Load QA archive photo');const blob=await response.blob();
-        const mime=String(blob.type||'').split(';')[0].toLowerCase();
-        const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','image/heic':'heic','image/heif':'heif','image/tiff':'tif','image/bmp':'bmp','image/svg+xml':'svg'};
-        const pathExt=String(p.path).match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
-        const ext=mimeExt[mime]||(!mime||mime==='application/octet-stream'?pathExt||'jpg':'');
-        if(!ext||!blob.size)throw new Error('Photo was empty or its image format could not be verified');
-        folder.file(`${name} - ${lbl}${suffix}.${ext}`,blob);
-      }catch(e){showToast('❌ QA archive stopped: photo '+(p.label||p.id||j.id)+' could not be downloaded — '+e.message);return;}
-    }
+    const paths=exportPhotos[j.id]||[];if(!paths.length)continue;
+    let name=safeName(j.subscriber||[j.first_name,j.last_name].filter(Boolean).join(' '));
+    if(used[name]){used[name]++;name=`${name} (${used[name]})`;}else used[name]=1;
+    const folder=photosRoot.folder(`${name} - ${j.id}`),labels=Object.create(null),filenames=new Set();
+    paths.forEach((photo,i)=>{
+      const label=safeName(photo.label||('Photo '+(i+1)));let number=(labels[label]||0)+1,filename;
+      do{filename=`${name} - ${label}${number>1?' ('+number+')':''}`;number++;}while(filenames.has(filename));
+      labels[label]=number-1;filenames.add(filename);
+      entries.push({folder,photo,jobId:j.id,filename});
+    });
   }
-
-  const out=await zip.generateAsync({type:'blob'});
+  if(exportButton)exportButton.textContent=`Photos 0 / ${entries.length}`;
+  showToast(`Downloading photos 0 / ${entries.length}…`);
+  await downloadQaArchivePhotos(entries,(done,total)=>{
+    if(exportButton)exportButton.textContent=`Photos ${done} / ${total}`;
+    if(done===total || done%6===0)showToast(`Downloading photos ${done} / ${total}…`);
+  });
+  if(exportButton)exportButton.textContent='Creating ZIP…';
+  showToast('Creating ZIP…');
+  // Keep original image bytes; streaming avoids building each whole entry again in memory.
+  const out=await zip.generateAsync({type:'blob',streamFiles:true,compression:'STORE'},metadata=>{
+    if(exportButton)exportButton.textContent=`Creating ZIP ${Math.floor(metadata.percent)}%`;
+  });
   const a=document.createElement('a'); a.href=URL.createObjectURL(out); a.download=`AHBA_completed_${date}.zip`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),15000);
   showToast('Archive downloaded (Excel + photos)');
+  }catch(error){showToast('❌ QA archive stopped: '+error.message+' — retry the export; no partial ZIP was downloaded.');}
+  finally{qaArchiveBusy=false;if(exportButton){exportButton.disabled=false;exportButton.innerHTML=originalButtonHtml||'Download ZIP';}}
+
 }
 async function clearCloud(){
+  if(qaArchiveBusy){showToast('Wait for the ZIP download to finish before clearing photos.');return;}
   if(!dashCanEdit('completed')){ showToast('Clearing QA photos is GC-only'); return; }
   const date=$('#compDate').value||manilaToday();
   if(!compJobs.length){showToast('Nothing to clear for this day');return;}
