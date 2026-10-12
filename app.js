@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.6';
+const APP_VERSION='2026-10-13.7';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2753,6 +2753,27 @@ async function validateJob(jobId){
   }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
 }
 let qaArchiveBusy=false;
+function qaArchiveJobType(job){
+  const id=String(job.id||'').trim();
+  if(/^WO-/i.test(id))return {rank:0,label:'New Install'};
+  if(/^SLRT(?:-|$)/i.test(id))return {rank:1,label:'Service Repair'};
+  return {rank:2,label:'Unclassified'};
+}
+function qaArchiveSubscriber(job){
+  const last=String(job.last_name||'').trim();
+  const given=[job.first_name,job.middle_name].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+  const full=String(job.subscriber||'').replace(/\s+/g,' ').trim();
+  if(last)return {last,name:given?`${last}, ${given}`:full||last};
+  // Older records can have only a display name. Preserve it rather than guessing its spelling.
+  const fallback=full||given||'subscriber';
+  const sortLast=fallback.includes(',')?fallback.split(',')[0].trim():fallback.replace(/\s+(?:Jr\.?|Sr\.?|II|III|IV)$/i,'').split(' ').pop();
+  return {last:sortLast,name:fallback};
+}
+function compareQaArchiveJobs(a,b){
+  const left=qaArchiveSubscriber(a),right=qaArchiveSubscriber(b);
+  const compare=(x,y)=>String(x).localeCompare(String(y),'en',{sensitivity:'base',numeric:true});
+  return qaArchiveJobType(a).rank-qaArchiveJobType(b).rank || compare(left.last,right.last) || compare(left.name,right.name) || compare(a.id,b.id);
+}
 async function downloadQaArchivePhotos(entries,onProgress){
   const controller=new AbortController();let next=0,completed=0,firstError=null;
   const worker=async()=>{
@@ -2767,7 +2788,7 @@ async function downloadQaArchivePhotos(entries,onProgress){
         const pathExt=String(entry.photo.path).match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
         const ext=mimeExt[mime]||(!mime||mime==='application/octet-stream'?pathExt||'jpg':'');
         if(!ext||!blob.size)throw new Error('Photo was empty or its image format could not be verified');
-        entry.folder.file(entry.filename+'.'+ext,blob);completed++;
+        entry.blob=blob;entry.ext=ext;completed++;
         onProgress(completed,entries.length);
       }catch(error){
         if(!firstError){firstError=new Error('photo '+(entry.photo.label||entry.photo.id||entry.jobId)+' could not be downloaded — '+error.message);controller.abort();}
@@ -2776,13 +2797,15 @@ async function downloadQaArchivePhotos(entries,onProgress){
   };
   await Promise.all(Array.from({length:Math.min(6,entries.length)},worker));
   if(firstError)throw firstError;
+  // ZIP entry order follows the sorted plan, even when later photos finish downloading first.
+  for(const entry of entries){entry.folder.file(entry.filename+'.'+entry.ext,entry.blob);delete entry.blob;}
 }
 async function exportZip(){
   if(qaArchiveBusy){showToast('A ZIP download is already being prepared.');return;}
   if(!compJobs.length){showToast('Nothing to export for this day');return;}
   if(compJobs.some(j=>!Object.prototype.hasOwnProperty.call(compPhotos,j.id))){showToast('Reload the QA day or reopen this JO to load current photos before exporting.');return;}
   const date=$('#compDate').value||manilaToday();
-  const exportJobs=compJobs.map(j=>({...j}));
+  const exportJobs=compJobs.map(j=>({...j})).sort(compareQaArchiveJobs);
   const exportPhotos=Object.fromEntries(exportJobs.map(j=>[j.id,(compPhotos[j.id]||[]).map(p=>({...p}))]));
   const exportButton=$('#exportBtn'),originalButtonHtml=exportButton?.innerHTML;
   qaArchiveBusy=true;if(exportButton)exportButton.disabled=true;
@@ -2863,12 +2886,15 @@ async function exportZip(){
   zip.file(`AHBA_completed_${date}.xlsx`, XLSX.write(wb,{type:'array',bookType:'xlsx'}));
 
   // Assign every filename before concurrent downloads, so duplicate labels stay deterministic.
-  const photosRoot=zip.folder('photos'),used=Object.create(null),entries=[];
+  const photosRoot=zip.folder('photos'),usedFolders=new Set(),entries=[];
   for(const j of exportJobs){
     const paths=exportPhotos[j.id]||[];if(!paths.length)continue;
-    let name=safeName(j.subscriber||[j.first_name,j.last_name].filter(Boolean).join(' '));
-    if(used[name]){used[name]++;name=`${name} (${used[name]})`;}else used[name]=1;
-    const folder=photosRoot.folder(`${name} - ${j.id}`),labels=Object.create(null),filenames=new Set();
+    const name=safeName(qaArchiveSubscriber(j).name),type=qaArchiveJobType(j);
+    const base=`${type.label}/${name} (${type.label})`;
+    let folderName=base,number=2;
+    while(usedFolders.has(folderName.toLowerCase()))folderName=`${base} (${number++})`;
+    usedFolders.add(folderName.toLowerCase());
+    const folder=photosRoot.folder(folderName),labels=Object.create(null),filenames=new Set();
     paths.forEach((photo,i)=>{
       const label=safeName(photo.label||('Photo '+(i+1)));let number=(labels[label]||0)+1,filename;
       do{filename=`${name} - ${label}${number>1?' ('+number+')':''}`;number++;}while(filenames.has(filename));
