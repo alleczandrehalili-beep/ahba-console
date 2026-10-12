@@ -45,3 +45,9 @@ Verified: 79 complete Node tests, version/syntax deployment guard and actual Exc
 ## Subscriber information first — version 2026-10-13.5
 
 The Completed worksheet restores all 42 original subscriber/JO/customer, crew, payment and validation columns in their existing order before any WIMS column. Actual WIMS usage follows, with hidden audit details at the far right. Values, exact CPE/reel case, styling and fast ZIP downloads are preserved. Verified with all 79 tests and the actual Excel exporter using eight real redacted WIMS records. Reopen/update the console and extract a fresh archive to get this column order.
+
+## Extraction column cleanup — version 2026-10-13.6
+
+Removed the dedicated Pulled Serial No., Usage Remarks and Review Note columns from extraction. Kit, buffer, FOC and each drop-material heading now omit the WIMS prefix while retaining their quantities and units. Formatting continues to recognize the renamed material columns. Complete subscriber/JO information stays first and fast ZIP extraction stays intact. Declaration records, photo evidence and stock are unchanged.
+
+Verified: all 81 tests, version/syntax deployment check, actual XLSX export with eight real redacted WIMS rows, and rendered material-header inspection. Reopen/update and extract a fresh archive to get the cleaned headers.

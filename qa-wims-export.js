@@ -162,6 +162,7 @@
   const defaultUnits={foc:'m',clip5:'pc',clip7:'pc',tie:'pc',dtape:'yd',etape:'m',patchupc:'pc',jumper10:'pc',jumper20:'pc',jumper30:'pc',jumper40:'pc',clipa:'pc',clipb:'pc',f17:'pc',f19:'pc',f20:'pc',conn:'pc',patch:'pc',tbox:'pc',sar:'pc',saf:'pc'};
   const auditFields=['WIMS RECEIPT ID','WIMS HISTORICAL RECEIPTS','WIMS CONFLICTS','WIMS UNCONFIRMED EVIDENCE','WIMS WARNINGS'];
   const isAuditColumn=name=>auditFields.includes(name);
+  const isUsageColumn=name=>name.startsWith('WIMS ') || /^(KIT |BUFFER )/.test(name) || / USED \([^)]+\)$/.test(name);
   function quantity(value){
     if(!present(value))return '';
     if(typeof value==='number' && Number.isFinite(value))return value;
@@ -194,18 +195,18 @@
       'WIMS REEL 1 END (M)':values(r=>quantity(r.foc_end_m)),
       'WIMS REEL 2 NO.':values(r=>text(r.foc2_reel_no)),
       'WIMS REEL 2 END (M)':values(r=>quantity(r.foc2_end_m)),
-      'WIMS FOC USED (M)':values(r=>quantity(r.materials_used.foc))
+      'FOC USED (M)':values(r=>quantity(r.materials_used.foc))
     };
-    for(const [key,name] of Object.entries(kitNames))cols['WIMS KIT '+name+' (PC)']=values(r=>quantity(r.kit_used[key]));
+    for(const [key,name] of Object.entries(kitNames))cols['KIT '+name+' (PC)']=values(r=>quantity(r.kit_used[key]));
     // Include every material/kit key, including newly configured materials, across this export.
     const descriptors=new Map();
     const add=(key,metadata,kit=false)=>{
       if(key==='foc')return;
       const unit=(metadata?.consume_unit||metadata?.uom||defaultUnits[key]||'UNIT UNRECORDED').toUpperCase();
       const name=materialNames[key]||((metadata?.name||key)+' ['+key+']').toUpperCase();
-      const heading='WIMS '+(kit?'KIT ':kitNames[key]?'BUFFER ':'')+name+(kit?'':' USED')+' ('+unit+')';
+      const heading=(kit?'KIT ':kitNames[key]?'BUFFER ':'')+name+(kit?'':' USED')+' ('+unit+')';
       // Kit buffer columns are deliberately separate: kit totals may include their excess.
-      const label=kitNames[key]&&!kit?'WIMS BUFFER '+name+' ('+unit+')':heading;
+      const label=kitNames[key]&&!kit?'BUFFER '+name+' ('+unit+')':heading;
       descriptors.set(label,{key,unit,kit});
     };
     for(const key of Object.keys(materialNames))if(key!=='foc')add(key,null);
@@ -221,16 +222,6 @@
         return quantity((d.kit?r.kit_used:r.materials_used)[d.key]);
       });
     }
-    cols['WIMS PULLED SERIAL NO.']=values(r=>r.pulled.map(p=>p.serial).filter(present).join(', '));
-    cols['WIMS USAGE REMARKS']=values(r=>join([r.kit_remarks,r.remarks,r.note]));
-    const notes=[];
-    if(filed.some(r=>Object.keys(kitNames).some(k=>Number(r.materials_used[k])>0 && Object.hasOwn(r.kit_used,k))))notes.push('Kit quantities include their buffer excess; do not add kit and buffer columns.');
-    if(active.length>1)notes.push('D1/D2 values are separate declarations in saved order; quantities are not combined.');
-    if(row.unconfirmed.length)notes.push('Job/customer match requires review; unconfirmed usage is withheld.');
-    if(row.conflicts.length)notes.push('Conflicting attempts require review and are not counted as actual usage.');
-    if(filed.some(r=>r.account_verification==='mismatch'))notes.push('Declared customer account differs from this JO; review the receipt identity.');
-    notes.push(...row.warnings.filter(w=>typeof w==='string'&&!/^(Quantities and FOC readings|Extra kit pieces|Legacy receipts are displayed)/.test(w)));
-    cols['WIMS REVIEW NOTE']=notes.join(' ');
     // Retain full audit evidence at the far right, hidden in the default worksheet view.
     for(const name of auditFields)cols[name]=audit[name];
     for(const [name,value] of Object.entries(cols))if(typeof value==='string' && value.length>32767)throw new Error('WIMS export exceeds the Excel cell limit for '+name+' on '+jobId);
@@ -241,7 +232,7 @@
     const columns=headers.map(name=>{
       if(isAuditColumn(name))return {hidden:true,wch:28};
       const longest=Math.max(name.length,...rows.map(r=>text(r[name]).length));
-      const usageQuantity=name.startsWith('WIMS ') && /\((?:M|PC|YD|IN|UNIT UNRECORDED)\)$/.test(name);
+      const usageQuantity=isUsageColumn(name) && /\((?:M|PC|YD|IN|UNIT UNRECORDED)\)$/.test(name);
       return {wch:usageQuantity?18:Math.max(14,Math.min(65,longest+3))};
     });
     return {columns,autoFilter:true};
@@ -252,7 +243,7 @@
     ws['!rows']=[{hpt:Math.max(44,...headers.filter(name=>!isAuditColumn(name)).map(name=>Math.ceil(name.length/Math.max(12,(ws['!cols']?.[headers.indexOf(name)]?.wch||20)-3))*12+12))}];
     headers.forEach((name,col)=>{
       const cell=ws[columnName(col)+'1'];
-      if(cell)cell.s={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:name.startsWith('WIMS ')?'166534':col<4?'174469':'475569'}},alignment:{wrapText:true,vertical:'center'},border:{bottom:{style:'thin',color:{rgb:'CBD5E1'}}}};
+      if(cell)cell.s={font:{bold:true,color:{rgb:'FFFFFF'},sz:10},fill:{fgColor:{rgb:isUsageColumn(name)?'166534':col<4?'174469':'475569'}},alignment:{wrapText:true,vertical:'center'},border:{bottom:{style:'thin',color:{rgb:'CBD5E1'}}}};
     });
     rows.forEach((row,i)=>{
       let lines=1;
@@ -260,7 +251,7 @@
         const cell=ws[columnName(col)+(i+2)];
         if(!cell)return;
         cell.s={font:{sz:10},alignment:{wrapText:true,vertical:'top'},fill:{fgColor:{rgb:i%2?'F3F7FA':'FFFFFF'}}};
-        if(name.startsWith('WIMS ') && !isAuditColumn(name) && typeof row[name]==='number')cell.z=Number.isInteger(row[name])?'0':'0.########';
+        if(isUsageColumn(name) && !isAuditColumn(name) && typeof row[name]==='number')cell.z=Number.isInteger(row[name])?'0':'0.########';
         if(!isAuditColumn(name)){
           const width=ws['!cols']?.[col]?.wch||20;
           lines=Math.max(lines,...text(row[name]).split('\n').map(t=>Math.ceil(t.length/Math.max(1,width-2))));
@@ -270,5 +261,5 @@
     });
     return ws;
   }
-  return {load, columnsFor, usageColumnsFor, isAuditColumn, worksheetLayout, styleWorksheet};
+  return {load, columnsFor, usageColumnsFor, isAuditColumn, isUsageColumn, worksheetLayout, styleWorksheet};
 });
