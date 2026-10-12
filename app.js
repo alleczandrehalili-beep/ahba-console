@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.4';
+const APP_VERSION='2026-10-13.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2843,13 +2843,11 @@ async function exportZip(){
     'WO ID': j.id
   }));
   const wb=XLSX.utils.book_new();
-  // Put JO identity and actual WIMS usage together; keep all original QA/customer fields.
+  // Keep the complete original subscriber/JO columns first, followed by WIMS usage.
   // Preserve CPE/reel case exactly rather than uppercasing identifiers.
   const sheetRows=rows.map(row=>{
     const core=upperRows([row])[0];
-    return {'WO ID':core['WO ID'],'JOB ORDER NO.':core['JOB ORDER NO.'],
-      'IBASS ACCT NO.':core['IBASS ACCT NO.'],'TEAM ASSIGNED':core['TEAM ASSIGNED'],
-      ...wimsColumns[row['WO ID']],...core};
+    return {...core,...wimsColumns[row['WO ID']]};
   });
   const usageHeaders=Object.keys(wimsColumns[exportJobs[0].id]);
   const headers=[...new Set(sheetRows.flatMap(row=>Object.keys(row)))];
