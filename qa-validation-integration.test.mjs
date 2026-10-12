@@ -1,0 +1,102 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const src=fs.readFileSync(new URL('./app.js',import.meta.url),'utf8');
+const exportBody=src.slice(src.indexOf('async function exportZip(){'),src.indexOf('async function clearCloud(){'));
+function context(fail=false){
+ const books=[], downloads=[], toasts=[], files=[];
+ const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs'},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
+ class Zip {file(name,data){files.push({name,data});return this;} folder(){return this;}async generateAsync(){return new Blob(['zip']);}}
+ const ctx={Blob,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
+  ensureXLSX:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
+  compJobs:[{id:'J1',job_order_no:'REUSED',subscriber:'One',payment_amount:250},{id:'J2',job_order_no:'REUSED',subscriber:'Two',payment_amount:400}],compPhotos:{J1:[],J2:[]},
+  SUPA_URL:'https://fixture.invalid',SUPA_KEY:'public-fixture-key',dashTok:()=> 'fixture-user-token',
+  QaWimsExport:{async load(){if(fail)throw new Error('WIMS retrieval failed');return fixture;},columnsFor:(id,m)=>m[id]},
+  showToast:m=>toasts.push(m),manilaToday:()=> '2026-10-13',dayStr:x=>x,fmtWhen:x=>x,agentLabel:x=>x||'',upperRows:r=>r,safeName:x=>x,
+  $:()=>({value:'2026-10-13'}),JSZip:Zip,
+  XLSX:{utils:{book_new:()=>({sheets:[]}),json_to_sheet:r=>({rows:r}),book_append_sheet:(wb,sheet,name)=>{wb.sheets.push({name,rows:sheet.rows});},},write:wb=>{books.push(wb);return new Uint8Array([1]);}},
+  document:{body:{appendChild(){}},createElement:()=>({click(){downloads.push(true);},remove(){}})}
+ };
+ ctx.window=ctx;vm.createContext(ctx);vm.runInContext(exportBody,ctx);return{ctx,books,downloads,toasts,files};
+}
+test('QA archive has one Completed sheet with each canonical JO WIMS beside unchanged JO/payment columns',async()=>{
+ const {ctx,books}=context();await ctx.exportZip();
+ assert.equal(books.length,1);assert.equal(books[0].sheets.length,1);assert.equal(books[0].sheets[0].name,'Completed');
+ const rows=books[0].sheets[0].rows;
+ assert.equal(rows[0]['WO ID'],'J1');assert.equal(rows[0]['AMOUNT'],250);assert.equal(rows[0]['WIMS RECEIPT ID'],'receipt-1');assert.equal(rows[0]['WIMS MATERIALS'],'clip5: 2 pcs');
+ assert.equal(rows[1]['WO ID'],'J2');assert.equal(rows[1]['AMOUNT'],400);assert.equal(rows[1]['WIMS STATUS'],'UNDER REVIEW');assert.equal(rows[1]['WIMS RECEIPT ID'],'');
+});
+test('WIMS retrieval failure prevents a misleading successful archive and leaves selected jobs intact',async()=>{
+ const {ctx,books,downloads,toasts}=context(true);await ctx.exportZip();
+ assert.equal(books.length,0);assert.equal(downloads.length,0);assert.equal(ctx.compJobs.length,2);assert.ok(toasts.some(x=>/WIMS|retriev|export/i.test(x)));
+});
+
+test('QA photo archive preserves the accepted replacement PNG and WebP formats',async()=>{
+ const {ctx,files}=context();ctx.compPhotos={J1:[{id:'7',path:'replacement.png',label:'Router'}],J2:[{id:'8',path:'replacement.webp',label:'Router'}]};
+ ctx.photoBase=p=>p;ctx.fetch=async path=>({ok:true,blob:async()=>new Blob(['original bytes'],{type:path.endsWith('.png')?'image/png':'image/webp'})});ctx.reqOk=async r=>{if(!r.ok)throw new Error('Photo download failed');};
+ await ctx.exportZip();const photos=files.filter(f=>f.data instanceof Blob);
+ assert.deepEqual(photos.map(p=>p.name),['One - Router.png','Two - Router.webp']);assert.equal(await photos[0].data.text(),'original bytes');
+});
+
+test('an unavailable photo stops archive download instead of including an error body as proof',async()=>{
+ const {ctx,downloads,toasts}=context();ctx.compPhotos={J1:[{id:'7',path:'missing.png',label:'Router'}],J2:[]};ctx.photoBase=p=>p;
+ ctx.fetch=async()=>({ok:false,blob:async()=>new Blob(['not found'],{type:'text/html'})});ctx.reqOk=async r=>{if(!r.ok)throw new Error('Photo unavailable');};
+ await ctx.exportZip();assert.equal(downloads.length,0);assert.ok(toasts.some(t=>/photo|archive/i.test(t)));assert.equal(ctx.compJobs.length,2);
+});
+
+test('a gallery cache invalidated after a saved correction cannot produce a zero-photo archive',async()=>{
+ const {ctx,books,downloads,toasts}=context();delete ctx.compPhotos.J1;await ctx.exportZip();
+ assert.equal(downloads.length,0);assert.equal(books.length,0);assert.ok(toasts.some(t=>/reload|current photos/i.test(t)));
+});
+
+test('photo fetch preserves exact stable photo id and label for one-photo correction',async()=>{
+ const start=src.indexOf('async function fetchPhotosFor(ids){'),end=src.indexOf('async function renderCompleted(){',start);
+ const ctx={SUPA_URL:'https://fixture.invalid',SUPA_KEY:'k',dashTok:()=> 't',reqOk:async r=>{if(!r.ok)throw new Error('Load failed');},fetch:async()=>({ok:true,json:async()=>[{id:'9007199254740993',job_id:'J1',path:'original.jpg',label:'Modem',created_at:'2026-10-12T01:00:00Z',team:'TEAM'}]})};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);const result=await ctx.fetchPhotosFor(['J1']);
+ assert.equal(result.J1[0].id,'9007199254740993');assert.equal(result.J1[0].path,'original.jpg');assert.equal(result.J1[0].label,'Modem');
+});
+
+test('selected-photo gallery escapes evidence text and shows correction controls only for permitted dispatcher',()=>{
+ const start=src.indexOf('function qaPhotoText('),end=src.indexOf('async function renderCompleted(){',start);
+ const nodes=new Map();const container={innerHTML:'',querySelectorAll:()=>[]};
+ const ctx={window:{dashUser:{allowed_pages:['dispatch'],edit_pages:['dispatch']}},QaPhotoCorrections:{canReplace:u=>u.edit_pages.includes('dispatch')},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
+ ctx.dashUser=ctx.window.dashUser;ctx.window=ctx;vm.createContext(ctx);if(start>=0)vm.runInContext(src.slice(start,end),ctx);
+ ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'<script>bad</script> "photo"'}]);
+ assert.ok(container.innerHTML.includes('Replace this photo'));assert.ok(!container.innerHTML.includes('<script>'));assert.ok(container.innerHTML.includes('&lt;script&gt;'));
+ ctx.window.dashUser.edit_pages=[];ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);assert.ok(!container.innerHTML.includes('Replace this photo'));
+});
+
+test('ordinary legacy empty-photo QA validation still reaches the authorized server',async()=>{
+ const start=src.indexOf('async function validateJob(jobId){'),end=src.indexOf('async function exportZip(){',start),requests=[];
+ const job={id:'LEGACY',validated:false},ctx={window:{dashUser:{username:'QA',display_name:'QA'}},dashCanEdit:()=>true,compPhotos:{LEGACY:[]},compJobs:[job],Date,encodeURIComponent,SUPA_URL:'https://fixture.invalid',SUPA_KEY:'key',dashTok:()=> 'token',showToast(){},renderCompleted(){},reqOk:async r=>{assert.equal(r.ok,true);},fetch:async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return{ok:true};}};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.validateJob('LEGACY');
+ assert.equal(requests.length,1);assert.ok(requests[0].url.endsWith('/rpc/validate_photo_evidence'));assert.deepEqual(requests[0].body,{p_job_id:'LEGACY',p_expected_photos:[]});assert.equal(job.validated,true);
+});
+
+test('QA photo cleanup preserves corrected evidence and deletes only selected ordinary photo identities',async()=>{
+ const start=src.indexOf('async function clearCloud(){'),end=src.indexOf('\n}',start)+2,requests=[],toasts=[];
+ const ctx={dashCanEdit:()=>true,$:()=>({value:'2026-10-13'}),manilaToday:()=> '2026-10-13',compJobs:[{id:'J1'}],compPhotos:{J1:[{id:'7',path:'qa-corrections/org/op/replacement.jpg'},{id:'8',path:'ordinary.jpg'}]},confirm:()=>true,showToast:m=>toasts.push(m),renderCompleted(){},SUPA_URL:'https://fixture.invalid',SUPA_KEY:'key',dashTok:()=> 'token',encodeURIComponent,reqOk:async r=>{assert.equal(r.ok,true);},fetch:async(url,options)=>{requests.push({url,body:options.body&&JSON.parse(options.body)});return{ok:true};}};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.clearCloud();
+ assert.deepEqual(requests[0].body.prefixes,['ordinary.jpg']);
+ const deletion=decodeURIComponent(requests[1].url);assert.ok(deletion.includes('id.eq.8'));assert.ok(deletion.includes('ordinary.jpg'));assert.ok(!deletion.includes('id.eq.7'));assert.ok(toasts.some(x=>/retained|kept/i.test(x)));
+});
+
+test('QA reviewer can inspect photo history without dispatcher replacement rights',()=>{
+ const start=src.indexOf('function qaPhotoText('),end=src.indexOf('async function renderCompleted(){',start),container={innerHTML:'',querySelectorAll:()=>[]};
+ const ctx={dashUser:{allowed_pages:['completed'],edit_pages:['completed']},QaPhotoCorrections:{canReplace:()=>false,canViewHistory:()=>true},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
+ ctx.window=ctx;vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);
+ ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);
+ assert.ok(container.innerHTML.includes('History'));assert.ok(!container.innerHTML.includes('Replace this photo'));
+ ctx.QaPhotoCorrections.canViewHistory=()=>false;ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);assert.ok(!container.innerHTML.includes('History'));
+});
+
+test('reopening QA gallery reloads current evidence and never offers stale photos after a load failure',async()=>{
+ const start=src.indexOf('async function openGallery(jobId){'),end=src.indexOf('async function validateJob(jobId){',start),nodes=new Map(),painted=[],toasts=[];
+ for(const id of ['photoTitle','photoSub','photoGrid','validateBtn','photoModal'])nodes.set('#'+id,{textContent:'',innerHTML:'',style:{},open:false});
+ let fail=true,requests=0;
+ const ctx={compJobs:[{id:'J1',subscriber:'One',validated:false}],compPhotos:{J1:[{id:'7',path:'old.jpg'}]},$:id=>nodes.get(id),$$:()=>[],dashCanEdit:()=>true,renderQaPhotoTiles:(node,job,rows)=>{painted.push(rows.map(p=>p.path));node.innerHTML=rows.map(p=>p.path).join();},openModal:node=>node.open=true,closeModals(){},validateJob(){},showToast:m=>toasts.push(m),fetchPhotosFor:async()=>{requests++;if(fail)throw new Error('Offline');return{J1:[{id:'7',path:'new.jpg'}]};}};
+ vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);await ctx.openGallery('J1');
+ assert.equal(requests,1);assert.ok(!nodes.get('#photoGrid').innerHTML.includes('old.jpg'));assert.equal(nodes.get('#validateBtn').style.display,'none');assert.equal(painted.length,0);
+ fail=false;await ctx.openGallery('J1');assert.equal(requests,2);assert.deepEqual(painted,[['new.jpg']]);assert.equal(ctx.compPhotos.J1[0].path,'new.jpg');assert.equal(nodes.get('#validateBtn').style.display,'');
+});
