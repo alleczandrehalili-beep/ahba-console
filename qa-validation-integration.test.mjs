@@ -8,7 +8,7 @@ const src=fs.readFileSync(new URL('./app.js',import.meta.url),'utf8');
 const exportBody=src.slice(src.indexOf('let qaArchiveBusy=false;'),src.indexOf('async function clearCloud(){'));
 function context(fail=false){
  const books=[], downloads=[], toasts=[], files=[];
- const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs','WIMS MODEM SERIAL NO.':'ModemCase001','WIMS REEL 1 NO.':'ReelCase001','FOC USED (M)':128},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
+ const fixture={J1:{'WIMS STATUS':'FILED','WIMS RECEIPT ID':'receipt-1','WIMS MATERIALS':'clip5: 2 pcs','MODEM SERIAL NO.':'ModemCase001','REEL 1 NO.':'ReelCase001','FOC USED (M)':128},J2:{'WIMS STATUS':'UNDER REVIEW','WIMS RECEIPT ID':'','WIMS MATERIALS':''}};
  class Zip {constructor(prefix=''){this.prefix=prefix;}file(name,data){files.push({name,path:this.prefix+name,data});return this;} folder(name){return new Zip(this.prefix+name+'/');}async generateAsync(){return new Blob(['zip']);}}
  const ctx={Blob,AbortController,console,Promise,setTimeout:()=>0,URL:{createObjectURL:()=> 'blob:export',revokeObjectURL(){}},
   ensureXLSX:async()=>{},ensureXLSXStyle:async()=>{},ensureJSZip:async()=>{},loadAgentNames:async()=>{},
@@ -110,7 +110,7 @@ test('usage workbook keeps complete subscriber/JO information before WIMS with u
  assert.ok(s.headers.slice(0,firstWims).every(h=>!h.startsWith('WIMS ')));
  assert.ok(s.headers.slice(firstWims).every(h=>report.isUsageColumn(h)));
  for(const h of ['FIRST NAME','MIDDLE NAME','LAST NAME','IBASS ACCT NO.','JOB ORDER NO.','PRIMARY NO.','OTHER CONTACT NO.','HOUSE NO.','STREET NAME','VILLAGE / SUBDIVISION','BRGY','CITY','PLAN','ACCOUNT','MODE OF PAYMENT','AMOUNT','WO ID'])assert.ok(s.headers.indexOf(h)>=0 && s.headers.indexOf(h)<firstWims,h+' must precede WIMS');
- assert.equal(s.rows[0]['WIMS MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['WIMS REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['FOC USED (M)'],128);
+ assert.equal(s.rows[0]['MODEM SERIAL NO.'],'ModemCase001');assert.equal(s.rows[0]['REEL 1 NO.'],'ReelCase001');assert.equal(s.rows[0]['FOC USED (M)'],128);
  assert.equal(s.columns[s.headers.indexOf('WIMS RECEIPT ID')].hidden,true);assert.ok(s.filter.ref);
  assert.equal(s.rows.length,2);assert.equal(s.rows[0]['AMOUNT'],250);
 });

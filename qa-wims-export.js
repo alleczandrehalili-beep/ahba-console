@@ -162,7 +162,8 @@
   const defaultUnits={foc:'m',clip5:'pc',clip7:'pc',tie:'pc',dtape:'yd',etape:'m',patchupc:'pc',jumper10:'pc',jumper20:'pc',jumper30:'pc',jumper40:'pc',clipa:'pc',clipb:'pc',f17:'pc',f19:'pc',f20:'pc',conn:'pc',patch:'pc',tbox:'pc',sar:'pc',saf:'pc'};
   const auditFields=['WIMS RECEIPT ID','WIMS HISTORICAL RECEIPTS','WIMS CONFLICTS','WIMS UNCONFIRMED EVIDENCE','WIMS WARNINGS'];
   const isAuditColumn=name=>auditFields.includes(name);
-  const isUsageColumn=name=>name.startsWith('WIMS ') || /^(KIT |BUFFER )/.test(name) || / USED \([^)]+\)$/.test(name);
+  const usageIdentityFields=['TEAM', 'DECLARED BY', 'TASK', 'MODEM SERIAL NO.', 'IPTV SERIAL NO.', 'REEL 1 NO.', 'REEL 1 START (M)', 'REEL 1 END (M)', 'REEL 2 NO.', 'REEL 2 END (M)'];
+  const isUsageColumn=name=>usageIdentityFields.includes(name) || name.startsWith('WIMS ') || /^(KIT |BUFFER )/.test(name) || / USED \([^)]+\)$/.test(name);
   function quantity(value){
     if(!present(value))return '';
     if(typeof value==='number' && Number.isFinite(value))return value;
@@ -185,16 +186,16 @@
     if(filed.length && row.unconfirmed.length)status+='; UNCONFIRMED EVIDENCE - REVIEW';
     const cols={
       'WIMS STATUS':status,
-      'WIMS TEAM':values(r=>r.team_code||''),
-      'WIMS DECLARED BY':values(r=>r.declared_by||''),
-      'WIMS TASK':values(r=>r.task||''),
-      'WIMS MODEM SERIAL NO.':values(r=>serials(r,'modem')),
-      'WIMS IPTV SERIAL NO.':values(r=>serials(r,'iptv')),
-      'WIMS REEL 1 NO.':values(r=>text(r.foc_reel_no)),
-      'WIMS REEL 1 START (M)':values(r=>quantity(r.foc_start_m)),
-      'WIMS REEL 1 END (M)':values(r=>quantity(r.foc_end_m)),
-      'WIMS REEL 2 NO.':values(r=>text(r.foc2_reel_no)),
-      'WIMS REEL 2 END (M)':values(r=>quantity(r.foc2_end_m)),
+      'TEAM':values(r=>r.team_code||''),
+      'DECLARED BY':values(r=>r.declared_by||''),
+      'TASK':values(r=>r.task||''),
+      'MODEM SERIAL NO.':values(r=>serials(r,'modem')),
+      'IPTV SERIAL NO.':values(r=>serials(r,'iptv')),
+      'REEL 1 NO.':values(r=>text(r.foc_reel_no)),
+      'REEL 1 START (M)':values(r=>quantity(r.foc_start_m)),
+      'REEL 1 END (M)':values(r=>quantity(r.foc_end_m)),
+      'REEL 2 NO.':values(r=>text(r.foc2_reel_no)),
+      'REEL 2 END (M)':values(r=>quantity(r.foc2_end_m)),
       'FOC USED (M)':values(r=>quantity(r.materials_used.foc))
     };
     for(const [key,name] of Object.entries(kitNames))cols['KIT '+name+' (PC)']=values(r=>quantity(r.kit_used[key]));
@@ -231,7 +232,8 @@
     const headers=[...new Set(rows.flatMap(row=>Object.keys(row)))];
     const columns=headers.map(name=>{
       if(isAuditColumn(name))return {hidden:true,wch:28};
-      const longest=Math.max(name.length,...rows.map(r=>text(r[name]).length));
+      // Retain the existing reading space when shortening the AR–BA headings.
+      const longest=Math.max(name.length+(usageIdentityFields.includes(name)?5:0),...rows.map(r=>text(r[name]).length));
       const usageQuantity=isUsageColumn(name) && /\((?:M|PC|YD|IN|UNIT UNRECORDED)\)$/.test(name);
       return {wch:usageQuantity?18:Math.max(14,Math.min(65,longest+3))};
     });

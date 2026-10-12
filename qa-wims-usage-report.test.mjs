@@ -10,8 +10,8 @@ const receipt={id:'internal-receipt-uuid',job_id:'JO1',status:'completed',declar
 const map=(rs=[receipt],extra={})=>({JO1:{job_id:'JO1',receipts:rs,conflicts:[],unconfirmed:[],warnings:['Quantities and FOC readings are filed values. Material labels and units are current reference metadata. No inventory totals are inferred.'],...extra}});
 test('usage report shows actual serial/reel values and numeric usage directly, without receipt prefixes',()=>{
  const c=wims.usageColumnsFor('JO1',map());
- assert.equal(c['WIMS MODEM SERIAL NO.'],'ModemCase001');assert.equal(c['WIMS IPTV SERIAL NO.'],'IptvA, IptvB');
- assert.equal(c['WIMS REEL 1 NO.'],'Reel-MixedCase-01');assert.equal(c['WIMS REEL 1 START (M)'],985);assert.equal(c['WIMS REEL 1 END (M)'],857);
+ assert.equal(c['MODEM SERIAL NO.'],'ModemCase001');assert.equal(c['IPTV SERIAL NO.'],'IptvA, IptvB');
+ assert.equal(c['REEL 1 NO.'],'Reel-MixedCase-01');assert.equal(c['REEL 1 START (M)'],985);assert.equal(c['REEL 1 END (M)'],857);
  assert.equal(c['FOC USED (M)'],128);assert.equal(c['CLIP 5MM USED (PC)'],10);assert.equal(c['DOUBLE-SIDED TAPE USED (YD)'],0.25);
  const visible=Object.entries(c).filter(([k])=>!wims.isAuditColumn(k));assert.ok(visible.every(([,v])=>!String(v).includes('internal-receipt-uuid')));
  assert.equal(Object.hasOwn(c,'WIMS REVIEW NOTE'),false);
@@ -23,11 +23,11 @@ test('kit quantity includes mirrored buffer excess; report never adds it again',
 test('missing values are blank, explicit zero is numeric zero, and second-reel readings remain separate',()=>{
  const r={...receipt,materials_used:{foc:0,clip5:0},foc_start_m:0,foc_end_m:0,foc2_reel_no:'R2',foc2_end_m:135};
  const c=wims.usageColumnsFor('JO1',map([r]));assert.equal(c['FOC USED (M)'],0);assert.equal(c['CLIP 5MM USED (PC)'],0);
- assert.equal(c['CLIP 7MM USED (PC)'],'');assert.equal(c['WIMS REEL 2 NO.'],'R2');assert.equal(c['WIMS REEL 2 END (M)'],135);
+ assert.equal(c['CLIP 7MM USED (PC)'],'');assert.equal(c['REEL 2 NO.'],'R2');assert.equal(c['REEL 2 END (M)'],135);
 });
 test('unconfirmed and open receipts are not turned into actual usage',()=>{
  for(const m of [map([],{unconfirmed:[{reason:'Reused JO identity requires review'}]}),map([{...receipt,status:'draft'}])]){
-  const c=wims.usageColumnsFor('JO1',m);assert.match(c['WIMS STATUS'],/REVIEW/);assert.equal(c['FOC USED (M)'],'');assert.equal(c['WIMS MODEM SERIAL NO.'],'');
+  const c=wims.usageColumnsFor('JO1',m);assert.match(c['WIMS STATUS'],/REVIEW/);assert.equal(c['FOC USED (M)'],'');assert.equal(c['MODEM SERIAL NO.'],'');
  }
 });
 test('multiple declarations stay on one JO row with separate values, never summed',()=>{
@@ -41,8 +41,8 @@ test('other recorded material keys gain a column with the actual catalog unit',(
 test('worksheet hides technical audit columns and sizes usage columns to show headings and identifiers',()=>{
  const c=wims.usageColumnsFor('JO1',map());const layout=wims.worksheetLayout([{'WO ID':'JO1',...c}]);const keys=Object.keys({'WO ID':'JO1',...c});
  assert.equal(layout.columns[keys.indexOf('WIMS RECEIPT ID')].hidden,true);
- assert.equal(layout.columns[keys.indexOf('WIMS MODEM SERIAL NO.')].hidden,undefined);
- assert.ok(layout.columns[keys.indexOf('WIMS MODEM SERIAL NO.')].wch>=24);assert.ok(layout.autoFilter);
+ assert.equal(layout.columns[keys.indexOf('MODEM SERIAL NO.')].hidden,undefined);
+ assert.ok(layout.columns[keys.indexOf('MODEM SERIAL NO.')].wch>=24);assert.ok(layout.autoFilter);
 });
 
 test('requested pulled serial remarks and review-note columns are completely absent from extraction',()=>{
