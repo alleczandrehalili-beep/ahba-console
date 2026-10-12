@@ -1506,13 +1506,17 @@
     if(a.p_kit_remarks) parts.push('kit remarks: '+a.p_kit_remarks);
     if(a.p_work_account) parts.push('work acct '+a.p_work_account);
     return parts.join(' · ')||'—'; }
-  function wimsRenderConflictRows(rows, teamCodeFn, receipts){
+  // the original receipt's devices come from v_install_report (modem_serial, iptv_1..3 — the view's real columns); an unavailable
+  // comparison is SAID (receiptError), never shown as "no device"
+  function wimsReceiptIptv(ex){ var a=[ex.iptv_1,ex.iptv_2,ex.iptv_3].filter(Boolean); if(!a.length&&Array.isArray(ex.iptv_serials)) a=ex.iptv_serials.filter(Boolean); return a.join('/'); }
+  function wimsRenderConflictRows(rows, teamCodeFn, receipts, receiptError){
     receipts=receipts||{};
     return rows.map(function(r){
       var st=r.status==='open'?'<span class="pill" style="background:#fdecea;color:#a3261a;border:1px solid #e0857a">open</span>':'<span class="pill installed">✔ '+wimsEsc(r.status)+(r.reviewed_by?' · '+wimsEsc(r.reviewed_by):'')+'</span>';
       var ex=receipts[r.existing_id]||null;
-      var orig=ex?('<div style="font-size:10.5px;color:#0e6f52;margin-top:3px"><b>Original receipt</b> '+wimsEsc(String(r.existing_id).slice(0,8))+' · modem '+wimsEsc(ex.modem_serial||'—')+(ex.iptv_serials?' · iptv '+wimsEsc(ex.iptv_serials):'')+' · kit '+wimsEsc(JSON.stringify(ex.kit_used||{}))+' · materials '+wimsEsc(JSON.stringify(ex.materials_used||{}))+(ex.completed_at?' · filed '+wimsEsc(new Date(ex.completed_at).toLocaleString()):'')+'</div>')
-                  :(r.existing_id?'<div style="font-size:10.5px;color:#8a9894;margin-top:3px">Original receipt '+wimsEsc(String(r.existing_id).slice(0,8))+'</div>':'');
+      var orig=(r.existing_id&&receiptError)?('<div style="font-size:10.5px;color:#a3261a;margin-top:3px">⚠ Original receipt '+wimsEsc(String(r.existing_id).slice(0,8))+' — comparison could not be loaded: '+wimsEsc(receiptError)+'</div>')
+               :ex?('<div style="font-size:10.5px;color:#0e6f52;margin-top:3px"><b>Original receipt</b> '+wimsEsc(String(r.existing_id).slice(0,8))+' · modem '+wimsEsc(('modem_serial' in ex)?(ex.modem_serial||'none'):'?')+(wimsReceiptIptv(ex)?' · iptv '+wimsEsc(wimsReceiptIptv(ex)):'')+' · kit '+wimsEsc(JSON.stringify(ex.kit_used||{}))+' · materials '+wimsEsc(JSON.stringify(ex.materials_used||{}))+(ex.completed_at?' · filed '+wimsEsc(new Date(ex.completed_at).toLocaleString()):'')+'</div>')
+               :(r.existing_id?'<div style="font-size:10.5px;color:#8a9894;margin-top:3px">Original receipt '+wimsEsc(String(r.existing_id).slice(0,8))+' (not found)</div>':'<div style="font-size:10.5px;color:#8a9894;margin-top:3px">No standing receipt — '+(r.reason==='under_review'?'the JO number is under reused / duplicate review (nothing filed)':'nothing filed')+'</div>');
       return '<tr><td>'+wimsEsc(new Date(r.created_at).toLocaleString())+'</td>'+
         '<td class="tnum"><b>'+wimsEsc(r.jo_key||'—')+'</b>'+(r.job_id?'<div style="font-size:10px;color:#8a9894">'+wimsEsc(r.job_id)+'</div>':'')+'</td>'+
         '<td>'+wimsEsc(teamCodeFn(r.team_id))+'</td>'+
@@ -1544,15 +1548,18 @@
       if(!cfRows.length){ el.innerHTML='<span class="empty">Walang declaration conflict. ✔</span>'; return; }
       var ids=cfRows.map(function(r){ return r.existing_id; }).filter(Boolean);
       var inl='('+ids.map(encodeURIComponent).join(',')+')';
+      // the receipt's devices come from the report view's REAL columns (modem_serial, iptv_1..3); a failed comparison load is reported, not blanked
       var rec=ids.length?Promise.all([
-          apiAll('/installs?select=id,kit_used,materials_used,completed_at,jo_number&id=in.'+inl).catch(function(){ return []; }),
-          apiAll('/v_install_report?select=id,modem_serial,iptv_serials&id=in.'+inl).catch(function(){ return []; })
+          apiAll('/installs?select=id,kit_used,materials_used,completed_at,jo_number&id=in.'+inl).catch(function(e){ return {error:String(e&&e.message||e)}; }),
+          apiAll('/v_install_report?select=id,modem_serial,iptv_1,iptv_2,iptv_3&id=in.'+inl).catch(function(e){ return {error:String(e&&e.message||e)}; })
         ]):Promise.resolve([[],[]]);
       rec.then(function(both){
-        var receipts={}; (both[0]||[]).forEach(function(x){ receipts[x.id]=x; }); (both[1]||[]).forEach(function(x){ receipts[x.id]=Object.assign(receipts[x.id]||{}, x); });
+        var receipts={}, recErr=null;
+        both.forEach(function(part){ if(part&&part.error){ recErr=recErr||part.error; return; } (part||[]).forEach(function(x){ receipts[x.id]=Object.assign(receipts[x.id]||{}, x); }); });
+        if(recErr) toast('Original receipts could not be loaded for the conflict comparison: '+recErr, true);
         var open=cfRows.filter(function(r){ return r.status==='open'; });
         el.innerHTML='<table><thead><tr><th>When</th><th>JO</th><th>Team</th><th>Reason</th><th>Attempted entries · original receipt</th><th>Status</th><th></th></tr></thead><tbody>'+
-          wimsRenderConflictRows(cfRows, teamCode, receipts)+'</tbody></table>'+(open.length?'<div style="font-size:11px;color:#8a9894;margin-top:6px">'+open.length+' open</div>':'');
+          wimsRenderConflictRows(cfRows, teamCode, receipts, recErr)+'</tbody></table>'+(open.length?'<div style="font-size:11px;color:#8a9894;margin-top:6px">'+open.length+' open</div>':'');
       });
     }).catch(function(e){ el.innerHTML='<span class="empty">'+wimsEsc(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first for the conflict review.':e.message)+'</span>'; });
   }
@@ -1581,17 +1588,17 @@
       el.innerHTML='<table><thead><tr><th>JO number</th><th>Reason</th><th>Declarations (receipt ids)</th><th>Candidate job</th><th>Status</th><th></th></tr></thead><tbody>'+wimsRenderReusedRows(rjRows)+'</tbody></table>';
     }).catch(function(e){ el.innerHTML='<span class="empty">'+wimsEsc(/relation|not exist|schema cache/i.test(String(e.message))?'Run qa-06 (Phase 1) first.':e.message)+'</span>'; });
   }
-  // The generations of a JO number (every FieldOps job, live or deleted, carrying it) — the ONLY valid binding targets.
+  // The generations of a JO number (every FieldOps job, live or deleted, carrying it) — the ONLY valid binding targets — listed by
+  // the server (wims.jo_generations) through the SAME normalization the binding endpoint validates with, with the identity-rule
+  // verdict of each quarantined receipt against that generation.
   async function jobGenerations(joKey){
-    var q=encodeURIComponent(joKey);
-    var h=H(false); h['Accept-Profile']='public';
-    var r=await fetch(CFG.url+'/rest/v1/jobs?select=id,subscriber,ibass_acct_no,team,status,created_at,deleted_at&or=(job_order_no.eq.'+q+',ticket_no.eq.'+q+',id.eq.'+q+')&order=created_at.asc',{headers:h}).then(chk);
+    var r=await rpc('jo_generations',{p_jo_key:joKey});
     return r||[];
   }
   async function bindReusedJo(joKey){
     var gens=[]; try{ gens=await jobGenerations(joKey); }catch(e){ toast('Could not load the generations of '+joKey+': '+e.message,true); return; }
     if(!gens.length){ toast('No FieldOps job carries JO '+joKey,true); return; }
-    var menu=gens.map(function(g,i){ return (i+1)+') '+g.id+' — '+(g.subscriber||'—')+' · acct '+(g.ibass_acct_no||'—')+' · '+(g.team||'—')+' · '+(g.deleted_at?'DELETED '+new Date(g.deleted_at).toLocaleDateString():'live')+' · created '+new Date(g.created_at).toLocaleDateString(); }).join('\n');
+    var menu=gens.map(function(g,i){ return (i+1)+') '+g.id+' — '+(g.subscriber||'—')+' · acct '+(g.ibass_acct_no||'—')+' · '+(g.team||'—')+' · '+(g.deleted_at?'DELETED '+new Date(g.deleted_at).toLocaleDateString():'live')+' · created '+new Date(g.created_at).toLocaleDateString()+' · evidence '+(g.evidence||'—'); }).join('\n');
     var pick=prompt('JO '+joKey+' — which generation OWNS the old declaration? Type the number:\n\n'+menu,'');
     if(pick===null) return; var idx=parseInt(pick,10)-1; if(!(idx>=0&&idx<gens.length)){ toast('Pick a number from the list',true); return; }
     var note=prompt('Note (required): evidence (team confirmation, account number, subscriber)','');

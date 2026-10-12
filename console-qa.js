@@ -446,10 +446,13 @@
     //   resolved                → green "verified by X on …"
     // The token is st.qa_returned_at exactly as PostgREST returned it; a newer return has a newer token, so a stale screen can
     // never close the wrong cycle (the server answers RETURN_TOKEN_MISMATCH). o.onJobReturned lets the host push to the team.
+    // re-submitted for THIS return only (a marker older than the return belongs to an earlier cycle)
+    function returnSubmitted(st) { if (!st || !st.qa_returned_at || st.qa_return_resolved_at || !st.qa_return_submitted_at) return false; var s = Date.parse(st.qa_return_submitted_at), r = Date.parse(st.qa_returned_at); return (isNaN(s) || isNaN(r)) ? String(st.qa_return_submitted_at) >= String(st.qa_returned_at) : s >= r; }
     function returnBanner(st) {
       var open = st.qa_returned_at && !st.qa_return_resolved_at;
-      if (open && st.qa_return_submitted_at) return '<div class="cq-banner" style="background:#e8f1fb;color:#1d4f8a;border-color:#bcd3ee">📸 FOR QA CHECK — ' + esc(st.team || '—') + ' re-submitted on ' + fmtWhen(st.qa_return_submitted_at) + ' (returned ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + ')</div>';
+      if (open && returnSubmitted(st)) return '<div class="cq-banner" style="background:#e8f1fb;color:#1d4f8a;border-color:#bcd3ee">📸 FOR QA CHECK — ' + esc(st.team || '—') + ' re-submitted on ' + fmtWhen(st.qa_return_submitted_at) + ' (returned ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + ')</div>';
       if (open) return '<div class="cq-banner" style="background:#fff4dc;color:#7a5200;border-color:#f0dca8">↩ Returned to ' + esc(st.team || '—') + ' on ' + fmtWhen(st.qa_returned_at) + ' by ' + esc(st.qa_returned_by || '—') + ': ' + esc(st.qa_return_remarks || '') + ' — waiting for the team to replace the photo</div>';
+      if (st.qa_return_resolved_at && st.qa_return_checked_by === 'ROLLBACK') return '<div class="cq-banner" style="background:#fff4dc;color:#7a5200;border-color:#f0dca8">⟲ Return closed by ROLLBACK policy on ' + fmtWhen(st.qa_return_resolved_at) + ' — the replacement photo was NOT QA-verified (policy resolution, not a review)</div>';
       if (st.qa_return_resolved_at) return '<div class="cq-banner" style="background:#e2f4ea;color:#0f6b4f;border-color:#bfe3cf">✔ Photo replacement verified by ' + esc(st.qa_return_checked_by || 'QA') + ' on ' + fmtWhen(st.qa_return_resolved_at) + '</div>';
       return '';
     }
@@ -470,7 +473,7 @@
         st = st || {};
         var open = st.qa_returned_at && !st.qa_return_resolved_at;
         el.innerHTML = returnBanner(st) +
-          (open && st.qa_return_submitted_at ? '<button class="cq-btn" id="dt_verify">✔ Verify — photo replaced (close return)</button> <button class="cq-btn warn" id="dt_again">↩ Not fixed — return again</button>' : '') +
+          (open && returnSubmitted(st) ? '<button class="cq-btn" id="dt_verify">✔ Verify — photo replaced (close return)</button> <button class="cq-btn warn" id="dt_again">↩ Not fixed — return again</button>' : '') +
           (!open ? '<button class="cq-btn warn" id="dt_return"' + (st.status === 'completed' ? '' : ' disabled title="Only a completed JO can be returned (JO is ' + esc(st.status || 'not readable') + ')"') + '>↩ Return JO to team (replace photo)</button>' : '');
         if ($('#dt_verify')) $('#dt_verify').onclick = function () { closeReturnDialog(a.job_id, st, true, function () { openDetail(id); }); };
         if ($('#dt_again')) $('#dt_again').onclick = function () { closeReturnDialog(a.job_id, st, false, function () { openDetail(id); }); };
@@ -494,7 +497,7 @@
         if (!rows.length) { $('#cqReturns').innerHTML = ''; return; }
         $('#cqReturns').innerHTML = '<div class="cq-sec">↩ Returned JOs (' + rows.length + ')</div><table><thead><tr><th>JO</th><th>Subscriber</th><th>Team</th><th>Returned</th><th>Remarks</th><th>State</th>' + (canEdit ? '<th></th>' : '') + '</tr></thead><tbody>' +
           rows.map(function (r, i) {
-            var sub = !!r.qa_return_submitted_at;
+            var sub = returnSubmitted(r);
             return '<tr><td><b>' + esc(r.job_order_no || r.id) + '</b></td><td>' + esc(r.subscriber || '') + '</td><td>' + esc(r.team || '') + '</td><td class="cq-age">' + fmtWhen(r.qa_returned_at) + ' · ' + esc(r.qa_returned_by || '') + '</td><td>' + esc(r.qa_return_remarks || '') + '</td>' +
               '<td>' + (sub ? '<span class="cq-pill in_progress">FOR QA CHECK · ' + fmtWhen(r.qa_return_submitted_at) + '</span>' : '<span class="cq-pill queued">WAITING FOR TEAM</span>') + '</td>' +
               (canEdit ? '<td style="white-space:nowrap">' + (sub ? '<button class="cq-btn" data-rv="' + i + '">✔ Verify</button> <button class="cq-btn warn" data-ra="' + i + '">↩ Return again</button>' : '') + '</td>' : '') + '</tr>';

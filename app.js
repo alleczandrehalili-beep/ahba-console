@@ -652,8 +652,10 @@ function openJobDetail(jobId){
   if(j.qa_returned_at){
     const _rq=document.createElement('div'); _rq.style.gridColumn='1/-1';
     _rq.innerHTML=`<b>↩ QA return</b><span style="color:${j.qa_return_resolved_at?'#586965':'#c2503a'};font-weight:600">↩ Returned to team ${esc(fmtWhen(j.qa_returned_at))} by ${esc(j.qa_returned_by||'—')}: ${esc(j.qa_return_remarks||'')}</span>`
-      +(j.qa_return_resolved_at?` <span style="color:#0e7a59;font-weight:700">(✔ verified by ${esc(j.qa_return_checked_by||'QA')} ${esc(fmtWhen(j.qa_return_resolved_at))})</span>`
-        :j.qa_return_submitted_at?` <span style="color:#1d4f8a;font-weight:700">(📸 FOR QA CHECK — team re-submitted ${esc(fmtWhen(j.qa_return_submitted_at))}; the QA reviewer verifies in QA Audit → Returned JOs)</span>`
+      +(j.qa_return_resolved_at?(j.qa_return_checked_by==='ROLLBACK'
+            ?` <span style="color:#a4690f;font-weight:700">(⟲ closed by ROLLBACK policy ${esc(fmtWhen(j.qa_return_resolved_at))} — the replacement photo was NOT QA-verified)</span>`
+            :` <span style="color:#0e7a59;font-weight:700">(✔ verified by ${esc(j.qa_return_checked_by||'QA')} ${esc(fmtWhen(j.qa_return_resolved_at))})</span>`)
+        :qaReturnSubmitted(j)?` <span style="color:#1d4f8a;font-weight:700">(📸 FOR QA CHECK — team re-submitted ${esc(fmtWhen(j.qa_return_submitted_at))}; the QA reviewer verifies in QA Audit → Returned JOs)</span>`
         :` <span style="color:#a4690f;font-weight:700">(waiting for the team — status, payment, crew and WIMS are locked)</span>`);
     $('#jdInfo').appendChild(_rq);
   }
@@ -861,6 +863,8 @@ function blockRejectedToDispatch(j){
 // ↩ Phase 1 (2026-10-09): while a QA return is open the server freezes status/team/payment/crew/completed_at (trg_jobs_return_freeze);
 // say so up front instead of letting the sync fail. The QA reviewer closes the return (QA Audit → Queue → Returned JOs).
 function qaReturnOpen(j){ return !!(j && j.qa_returned_at && !j.qa_return_resolved_at); }
+// re-submitted for THIS return only: a submission marker older than the return belongs to an earlier cycle (never counts)
+function qaReturnSubmitted(j){ if(!qaReturnOpen(j)||!j.qa_return_submitted_at) return false; const s=Date.parse(j.qa_return_submitted_at), r=Date.parse(j.qa_returned_at); return (isNaN(s)||isNaN(r))?String(j.qa_return_submitted_at)>=String(j.qa_returned_at):s>=r; }
 function blockReturnedJo(j){
   if(!qaReturnOpen(j)) return false;
   showToast('This JO is returned by QA for photo replacement — only the team\'s photo + Re-complete and the QA reviewer\'s close are allowed until the return is closed.');

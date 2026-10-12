@@ -7,7 +7,7 @@ import vm from 'node:vm';
 const html = fs.readFileSync(new URL('./wims-admin-live.html', import.meta.url), 'utf8');
 const src = html.slice(html.indexOf('/*WIMS-RENDER-START*/'), html.indexOf('/*WIMS-RENDER-END*/'));
 const ctx = { Date, JSON, String }; vm.createContext(ctx);
-vm.runInContext(src + '\nglobalThis.R = { wimsEsc, wimsAttr, wimsArgsSummary, wimsRenderConflictRows, wimsRenderReusedRows };', ctx);
+vm.runInContext(src + '\nglobalThis.R = { wimsEsc, wimsAttr, wimsArgsSummary, wimsRenderConflictRows, wimsRenderReusedRows, wimsReceiptIptv };', ctx);
 const R = ctx.R;
 const bad = '<img src=x onerror="alert(1)">';
 const row = { id: 'c1', created_at: '2026-10-12T01:00:00Z', jo_key: 'R1"><b x="', job_id: 'J<1>', team_id: 't1', reason: 'changed_payload', rpc: 'complete_install', status: 'open', existing_id: 'e1',
@@ -34,4 +34,28 @@ test('reused-JO rows: JO key in the binding button attribute cannot break out; r
 test('summary covers every inventory-relevant input (reels, second reel, pulled note, kit remarks, work account)', () => {
   const s = R.wimsArgsSummary({ p_modem_serial: 'M1', p_foc_reel: 'RL-1', p_foc_start: 2000, p_foc_end: 1900, p_foc2_reel: 'RL-2', p_foc2_end: 1500, p_pulled_serials: ['P1'], p_pulled_note: 'note', p_kit_remarks: 'extra', p_work_account: 'ACC' });
   for (const k of ['RL-1', '2000→1900', 'reel2 RL-2', '→1500', 'pulled P1 (note)', 'kit remarks: extra', 'work acct ACC']) assert.ok(s.includes(k), 'summary has ' + k);
+});
+
+// ---- Codex RC4 P2: the original receipt uses the report view's REAL columns; an unavailable comparison is said, not blanked ----
+const html2 = fs.readFileSync(new URL('./wims-admin-live.html', import.meta.url), 'utf8');
+test('original receipt: devices come from modem_serial + iptv_1..3 (no nonexistent iptv_serials column is requested)', () => {
+  assert.ok(html2.includes("/v_install_report?select=id,modem_serial,iptv_1,iptv_2,iptv_3&id=in."), 'the loader requests the view\'s real columns');
+  assert.ok(!html2.includes('iptv_serials&id=in.'), 'no request for iptv_serials');
+  const out = R.wimsRenderConflictRows([{ ...row, id: 'c2' }], () => 'T', { e1: { id: 'e1', modem_serial: 'ORIG-MODEM', iptv_1: 'ORIG-IPTV-1', iptv_2: null, iptv_3: 'ORIG-IPTV-3', kit_used: {}, materials_used: { clip5: 1 }, completed_at: '2026-10-11T00:00:00Z' } });
+  assert.ok(out.includes('modem ORIG-MODEM'), 'original modem shown'); assert.ok(out.includes('iptv ORIG-IPTV-1/ORIG-IPTV-3'), 'IPTV set from iptv_1..3');
+  assert.equal(R.wimsReceiptIptv({ iptv_1: 'a', iptv_3: 'c' }), 'a/c'); assert.equal(R.wimsReceiptIptv({}), '');
+});
+test('original receipt: a failed comparison load is reported on the row (never rendered as "modem —"); a receipt without a modem says none', () => {
+  const out = R.wimsRenderConflictRows([row], () => 'T', {}, 'column v_install_report.x does not exist');
+  assert.ok(out.includes('comparison could not be loaded: column v_install_report.x does not exist'), 'explicit failure text');
+  assert.ok(!out.includes('modem —'), 'no blank device shown for an unloaded receipt');
+  const ok = R.wimsRenderConflictRows([row], () => 'T', { e1: { id: 'e1', modem_serial: null, kit_used: {}, materials_used: {} } });
+  assert.ok(ok.includes('modem none'), 'a loaded receipt with no modem says so');
+  const none = R.wimsRenderConflictRows([{ ...row, existing_id: null, reason: 'under_review' }], () => 'T', {});
+  assert.ok(none.includes('No standing receipt') && none.includes('under reused / duplicate review'), 'an under_review attempt explains that nothing is filed');
+});
+test('generation picker: candidates come from the server RPC (same normalization as the binding endpoint), with the evidence verdict in the menu', () => {
+  assert.ok(html2.includes("rpc('jo_generations',{p_jo_key:joKey})"), 'wims.jo_generations is used');
+  assert.ok(!/rest\/v1\/jobs\?select=id,subscriber,ibass_acct_no,team,status,created_at,deleted_at&or=\(job_order_no\.eq\./.test(html2), 'no exact-equality public query for generations');
+  assert.ok(html2.includes("' · evidence '+(g.evidence||'—')"), 'the menu shows the identity-rule verdict');
 });
