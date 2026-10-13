@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-10-13.11" />
+  <link rel="stylesheet" href="styles.css?v=2026-10-13.12" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -164,6 +164,7 @@
         <button class="nav-item" data-page="wims"><i data-icon="truck"></i><span>WIMS</span></button>
         <button class="nav-item" data-page="fms"><i data-icon="truck"></i><span>Fleet</span><b id="fmsBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
+        <button class="nav-item" data-page="payroll" style="display:none"><i data-icon="file-text"></i><span>Payroll</span></button>
         <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
         <button type="button" class="nav-group-head" data-grp="fldaccess" aria-expanded="false"><i data-icon="users"></i><span>Field Ops Access</span><b class="grp-badge" style="display:none">0</b><i class="grp-chev">▸</i></button>
         <div class="nav-group" data-grpbody="fldaccess">
@@ -345,6 +346,7 @@
         <article class="panel expense-log"><div class="panel-head"><div><h2>Expense log</h2><p>Receipts and team submissions</p></div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Team</th><th>Category</th><th>Description</th><th>Work order</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenseBody"></tbody></table></div></article>
       </section>
 
+      <section id="payrollPage" class="page"><div id="hrRoot"></div></section>
       <section id="attendancePage" class="page">
         <div class="page-toolbar"><div><h2>Attendance · Time records</h2><p>Technician time-in / time-out (Philippine time). Serves as the daily work-hours log.</p></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><span style="font-size:10px;color:#8a9894;margin-right:2px">From</span><input id="attDate" type="date"></div><div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#8a9894;margin-right:2px">To</span><input id="attDateTo" type="date"></div></div></div>
         <div class="dispatch-stats">
@@ -817,13 +819,18 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-10-13.11"></script>
-  <script src="qa-photo-corrections.js?v=2026-10-13.11"></script>
-  <script src="app.js?v=2026-10-13.11"></script>
+  <script src="qa-wims-export.js?v=2026-10-13.12"></script>
+  <script src="qa-photo-corrections.js?v=2026-10-13.12"></script>
+  <script src="hr-core.js?v=2026-10-13.12"></script>
+  <script src="hr-api.js?v=2026-10-13.12"></script>
+  <script src="hr-attendance-import.js?v=2026-10-13.12"></script>
+  <script src="console-hr.js?v=2026-10-13.12"></script>
+  <script src="hr-entry.js?v=2026-10-13.12"></script>
+  <script src="app.js?v=2026-10-13.12"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-10-13.11"></script>
+  <script src="ahba-cloud.js?v=2026-10-13.12"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-10-13.11"></script><script src="qa-api.js?v=2026-10-13.11"></script><script src="console-qa.js?v=2026-10-13.11"></script><script src="console-qa-findings.js?v=2026-10-13.11"></script>
-  <script src="fms-core.js?v=2026-10-13.11"></script><script src="fms-api.js?v=2026-10-13.11"></script><script src="console-fms.js?v=2026-10-13.11"></script>
+  <script src="qa-core.js?v=2026-10-13.12"></script><script src="qa-api.js?v=2026-10-13.12"></script><script src="console-qa.js?v=2026-10-13.12"></script><script src="console-qa-findings.js?v=2026-10-13.12"></script>
+  <script src="fms-core.js?v=2026-10-13.12"></script><script src="fms-api.js?v=2026-10-13.12"></script><script src="console-fms.js?v=2026-10-13.12"></script>
 </body>
 </html>

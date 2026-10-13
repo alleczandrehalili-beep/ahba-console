@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.11';
+const APP_VERSION='2026-10-13.12';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1923,11 +1923,20 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);if(page==='teams')renderTeams($('#teamSearch')?.value||'');applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',payroll:'Payroll · AHBA GC',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='payroll')initHR();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);if(page==='teams')renderTeams($('#teamSearch')?.value||'');applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
 function initWims(){ const f=document.getElementById('wimsFrame'); if(f && !f.getAttribute('src')){ f.setAttribute('src','wims-admin-live.html?v='+APP_VERSION); } }
+// HR keeps the same authenticated client and retains unsaved work when navigating away.
+let _hrController=null;
+function initHR(){
+  const el=document.getElementById('hrRoot');if(!el)return;
+  if(!window.FieldOpsHR){el.textContent='Payroll module could not load. Please reload.';return;}
+  if(!_hrController)_hrController=FieldOpsHR.create({api:window.HrApi,console:window.ConsoleHR});
+  return _hrController.open(el,{client:window.dashAuthClient,user:window.dashUser,toast:showToast,ensureXLSX});
+}
+function resetHR(){if(_hrController)_hrController.reset();}
 // ===== QA AUDIT (field inspections) — module in console-qa.js; mounted lazily when the page opens =====
 let _qaMount=null;
 function initQA(){
@@ -4011,7 +4020,7 @@ function startSlrTicker(){
 // ---------- Dashboard login + role-based access ----------
 // 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
 // its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['photofix','QA Photo Fix']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -4036,7 +4045,7 @@ function startDashAuth(){
   dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
   window.dashAuthClient=dashAuth;   // QA Audit module (console-qa.js) reuses the same authenticated client
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
-  dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); authReadyRefetch(window.__ahbaTok); });
+  dashAuth.auth.onAuthStateChange((_e,session)=>{ if(_e==='SIGNED_OUT')resetHR(); window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); authReadyRefetch(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
     window.__ahbaTok = data.session?.access_token || null;
     const _last=Number(localStorage.getItem('ahba_dash_active')||0);
@@ -4126,6 +4135,8 @@ function applyViewOnlyLock(page){
 function applyAccess(u){
   let allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages.slice():[]);
   // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
+  if(window.FieldOpsHR&&FieldOpsHR.canOpen(u)&&!allowed.includes('payroll'))allowed.push('payroll');
+  allowed=allowed.filter(p=>p!=='hrvalidate'&&(p!=='payroll'||(window.FieldOpsHR&&FieldOpsHR.canOpen(u))));
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
   $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
@@ -4169,7 +4180,7 @@ async function deleteAllLoads(){
     renderJobs(); renderOverview(); showToast('✓ All loads cleared (kept for Superadmin).');
   }catch(e){ showToast('Clear failed: '+e.message); }
 }
-function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
+function dashLogout(){ resetHR(); if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
 let accessUsers=[];
 // Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
