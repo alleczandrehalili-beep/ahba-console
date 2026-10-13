@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.9';
+const APP_VERSION='2026-10-13.10';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -627,6 +627,58 @@ function unassignJob(jobId){
   else if(window.AHBASync) window.AHBASync(j);
   if(dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
 }
+// WIMS materials sa anyo ng PAPEL na SAR form (owner 2026-10-13): Unit | Qty | Material
+// Description sa eksaktong form order; ONU/IPTV serials sa taas; FOC Start/End/Reel sa
+// ibaba; photos/report-id bilang maliit na meta. Ang mga field na WALA sa form (hal.
+// bagong WIMS keys balang araw) ay idinidikit sa dulo ng table para walang nawawala.
+function wimsMaterialsHTML(rows){
+  const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  const has=v=>!(v==null||v===''||v===0||v==='0');
+  const FORM=[
+    ['foc_m','Meters','Fiber Optic Cable ( FOC )'],
+    ['kit_connector','Pcs.','APC Connector'],
+    ['kit_patchcord','Pc.','APC/APC Patch Cord'],
+    ['kit_terminalbox','Pc.','Terminal Box NIU'],
+    ['f17_clamp_pc','Pcs.','F17 ( S-Clamp )'],
+    ['f19_bracket_pc','Pc.','F19 ( House Bracket )'],
+    ['f20_hook_pc','Pc.','F20 ( Mid S-Clamp )'],
+    ['clip_5mm','Pcs.','Cable Clip'],
+    ['cable_tie','Pcs.','Cable Tie'],
+    ['dsided_tape_in','Inch','Double Sided Tape'],
+    ['etape_in','Inch','Electrical Tape'],
+    ['kit_saf','Pc.','SAF ( Kit )'],
+    ['kit_sar','Pc.','SAR ( Kit )']
+  ];
+  const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
+  const META=['id','modem_serial','kit_remarks','photos_count','foc_start_m','foc_end_m','foc_reel_no','foc2_reel_no','foc2_end_m'];
+  const KNOWN=new Set(FORM.map(f=>f[0]).concat(SKIP,META,['iptv_1','iptv_2','iptv_3']));
+  return rows.map(row=>{
+    let h='';
+    const ser=[];
+    if(row.modem_serial) ser.push(`<div><b>📶 ONU / Modem Serial</b>${esc(row.modem_serial)}</div>`);
+    ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) ser.push(`<div><b>📺 IPTV ${i+1} Serial</b>${esc(row[k])}</div>`); });
+    if(ser.length) h+=`<div class="info-grid">${ser.join('')}</div>`;
+    const tr=[];
+    FORM.forEach(([k,unit,desc])=>{ if(has(row[k])) tr.push(`<tr><td style="color:#8a9894">${unit}</td><td style="font-weight:800">${esc(row[k])}</td><td>${desc}</td></tr>`); });
+    Object.keys(row).forEach(k=>{ if(KNOWN.has(k)||!has(row[k])) return; tr.push(`<tr><td style="color:#8a9894">Pcs.</td><td style="font-weight:800">${esc(row[k])}</td><td>${esc(nice(k))}</td></tr>`); });
+    h+=tr.length
+      ? `<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th style="width:64px">Unit</th><th style="width:48px">Qty</th><th>Material Description</th></tr></thead><tbody>${tr.join('')}</tbody></table></div>`
+      : '<div class="none" style="padding:10px;color:#8a9894">Report filed — no materials declared.</div>';
+    const foc=[];
+    if(has(row.foc_start_m)||row.foc_start_m===0) foc.push(`FOC Start: <b>${esc(row.foc_start_m)}m</b>`);
+    if(has(row.foc_end_m)||row.foc_end_m===0) foc.push(`FOC End: <b>${esc(row.foc_end_m)}m</b>`);
+    if(row.foc_reel_no) foc.push(`Reel No. <b>${esc(row.foc_reel_no)}</b>`);
+    if(row.foc2_reel_no) foc.push(`Reel 2: <b>${esc(row.foc2_reel_no)}</b>${has(row.foc2_end_m)?' (end '+esc(row.foc2_end_m)+'m)':''}`);
+    if(foc.length) h+=`<div style="padding:8px 2px 0;font-size:12px;color:#3a4a44">${foc.join(' &nbsp;·&nbsp; ')}</div>`;
+    if(row.kit_remarks) h+=`<div style="padding:6px 2px 0;font-size:12px;color:#a4690f;font-weight:600">⚠ Kit remarks: ${esc(row.kit_remarks)}</div>`;
+    const meta=[];
+    if(has(row.photos_count)) meta.push(esc(row.photos_count)+' photo(s)');
+    if(row.id) meta.push('report '+esc(String(row.id)));
+    if(meta.length) h+=`<div style="padding:6px 2px 0;font-size:10px;color:#9aa6a2">${meta.join(' · ')}</div>`;
+    return h;
+  }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:10px 0">');
+}
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
@@ -693,6 +745,10 @@ function openJobDetail(jobId){
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   // WIMS materials used sa JO na ito (wims.jo_materials RPC — read-only, any console user)
+  // Owner 2026-10-13: ang viewing ay sumusunod na sa mismong papel na SAR materials form —
+  // serials sa taas (ONU/IPTV), tapos Unit | Qty | Material Description table sa EKSAKTONG
+  // pagkakasunod-sunod ng form, tapos FOC Start/End/Reel sa ibaba (dating alpabetong
+  // key-value dump na mahirap i-cross-check sa papel).
   const wg=$('#jdWims');
   if(wg){
     const _wjo=(j.job_order_no||'').trim();
@@ -704,22 +760,7 @@ function openJobDetail(jobId){
         .then(rows=>{
           if(!$('#jdTitle').textContent.startsWith(j.id)) return;   // ibang JO na ang bukas
           if(!rows||!rows.length){ wg.innerHTML='<div class="none" style="padding:10px;color:#8a9894">No WIMS material report was filed for this JO.</div>'; return; }
-          const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
-          const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-          const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-          wg.innerHTML=rows.map(row=>{
-            const parts=[];
-            if(row.modem_serial) parts.push(`<div><b>📶 Modem serial</b>${esc(row.modem_serial)}</div>`);
-            ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) parts.push(`<div><b>📺 IPTV ${i+1}</b>${esc(row[k])}</div>`); });
-            Object.keys(row).forEach(k=>{
-              if(SKIP.includes(k)||k==='modem_serial'||/^iptv_[123]$/.test(k)||k==='kit_remarks') return;
-              const v=row[k];
-              if(v==null||v===''||v===0||v==='0') return;
-              parts.push(`<div><b>${esc(nice(k))}</b>${esc(v)}</div>`);
-            });
-            if(row.kit_remarks) parts.push(`<div><b>⚠ Kit remarks</b>${esc(row.kit_remarks)}</div>`);
-            return `<div class="info-grid">${parts.join('')||'<div class="none">Report filed, walang laman.</div>'}</div>`;
-          }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:8px 0">');
+          wg.innerHTML=wimsMaterialsHTML(rows);
         })
         .catch(()=>{ wg.innerHTML='<div class="none" style="padding:10px;color:#c2503a">Could not load WIMS materials — run wims-JO-materials.sql first.</div>'; });
     }
@@ -1521,12 +1562,34 @@ async function renderProductivityHistory(){
   if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; maybeCaptureSnapshot(); }   // FIX 2026-10-03: dumaan sa 3-min throttle — dati ay direktang POST sa BAWAT timeline render (503 storms)
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
   if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
-  const d=snap.data||{}, c=d.counts||{};
-  const defs=[['Total Turn-Ins',d.turnins||0,'#102925','#fff'],['For Dispatch',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
+  const d=snap.data||{};
+  // Owner 2026-10-13: ang Daily Productivity ay sumusunod na sa Dashboard ORG filter
+  // (hal. AHBA) para TUGMA sa timeline/board counts — dati, company-wide na raw totals
+  // ito kaya hindi nagta-tally sa filtered na board. Kapag may org na pili at may stored
+  // job list ang snapshot, muling binibilang mula sa mismong jobs ng snapshot.
+  let c=d.counts||{}, turnins=d.turnins||0, teamsArr=d.teams||[], scopeNote='';
+  const _og=($('#tlfOrg')&&$('#tlfOrg').value)||'';
+  if(_og && Array.isArray(d.jobs)){
+    const scoped=d.jobs.filter(tlPassOrg);
+    c={fordispatch:0,acknowledged:0,travel:0,onsite:0,incomplete:0,completed:0,cancelled:0};
+    scoped.forEach(j=>{ c[tlBucket(j.status)]++; });
+    const _enc=j=> j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):'';
+    turnins=[...new Set(scoped.filter(j=>_enc(j)===date).map(j=>j.id))].length;
+    const tm={};
+    scoped.forEach(j=>{ if(!j.team) return; const t=tm[j.team]=tm[j.team]||{code:j.team,total:0,completed:0,incomplete:0}; t.total++; const b=tlBucket(j.status); if(b==='completed')t.completed++; if(b==='incomplete')t.incomplete++; });
+    teamsArr=Object.values(tm).sort((a,b)=>b.completed-a.completed||a.code.localeCompare(b.code));
+    const _ogSel=$('#tlfOrg'); scopeNote=' · filtered: '+(((_ogSel&&_ogSel.selectedOptions&&_ogSel.selectedOptions[0])||{}).textContent||'selected org');
+  } else if(_og){
+    scopeNote=' · ⚠ this older snapshot has no per-org detail — showing company-wide totals';
+  }
+  // Mas malinaw na labels (owner 2026-10-13): ang Turn-Ins ay ENCODED sa araw na iyon
+  // (hindi board total), at ang For Dispatch ay ang BUONG backlog sa araw na iyon
+  // (kasama ang naipon mula sa mga naunang araw) — hindi lang ang araw na iyon.
+  const defs=[['Total Turn-Ins (encoded this day)',turnins||0,'#102925','#fff'],['For Dispatch (total backlog that day)',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
   const chips=defs.map(([l,n,bg,fg])=>`<span class="tl-count" style="background:${bg};color:${fg};border:1px solid rgba(0,0,0,.08)"><b>${n}</b>${l}</span>`).join('');
-  const teamRows=(d.teams||[]).map(t=>`<tr><td><strong>${(t.code||'').replace(/</g,'&lt;')}</strong></td><td>${t.total||0}</td><td style="color:#11825f;font-weight:700">${t.completed||0}</td><td style="color:#c2503a;font-weight:700">${t.incomplete||0}</td></tr>`).join('')||'<tr><td colspan="4" class="empty-cell">No team activity recorded.</td></tr>';
+  const teamRows=(teamsArr||[]).map(t=>`<tr><td><strong>${(t.code||'').replace(/</g,'&lt;')}</strong></td><td>${t.total||0}</td><td style="color:#11825f;font-weight:700">${t.completed||0}</td><td style="color:#c2503a;font-weight:700">${t.incomplete||0}</td></tr>`).join('')||'<tr><td colspan="4" class="empty-cell">No team activity recorded.</td></tr>';
   panel.innerHTML=`<div class="tl-counts" style="border:0;background:transparent;padding:0 0 10px">${chips}</div>`
-    +`<div style="font-size:9px;color:#9aa6a2;margin:0 0 8px">${live?'Live (today, auto-saving)':'Saved snapshot'} · captured ${snap.captured_at?fmtWhen(snap.captured_at):'—'}</div>`
+    +`<div style="font-size:9px;color:#9aa6a2;margin:0 0 8px">${live?'Live (today, auto-saving)':'Saved snapshot'} · captured ${snap.captured_at?fmtWhen(snap.captured_at):'—'}${scopeNote}</div>`
     +`<div class="table-wrap"><table><thead><tr><th>Team</th><th>Total loads</th><th>Completed</th><th>Incomplete</th></tr></thead><tbody>${teamRows}</tbody></table></div>`;
   injectIcons();
 }
@@ -4947,8 +5010,11 @@ function init(){
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
   // Dashboard filters (Load Type · District · Brgy) → re-render the timeline
-  $$('#tlFilters select').forEach(s=>s.onchange=()=>renderTimeline());
-  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
+  // Org/type filter change → re-render; pati ang Daily Productivity panel kapag PAST date
+  // ang pinapanood (sa "today" ay sakop na ito ng renderTimeline mismo — iwas dobleng tawag).
+  const _prodFollow=()=>{ try{ const d=$('#tlProdDate'); if(d&&d.value&&d.value!==manilaToday()) renderProductivityHistory(); }catch(e){} };
+  $$('#tlFilters select').forEach(s=>s.onchange=()=>{ renderTimeline(); _prodFollow(); });
+  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); _prodFollow(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
