@@ -17,10 +17,12 @@ insert into public.user_orgs(user_id,org_id,is_platform_admin) values
 ('72000000-0000-4000-8000-000000000003','71000000-0000-4000-8000-000000000002',false);
 insert into public.user_orgs(user_id,org_id,is_platform_admin) select '72000000-0000-4000-8000-000000000004',id,false from public.orgs where code='AHBA';
 insert into public.dashboard_users(username,email,org_id,allowed_pages,edit_pages,is_super) values
-('photo-dispatch','photo.dispatch@example.test','71000000-0000-4000-8000-000000000001','["dispatch","completed"]','["dispatch","completed"]',false),
-('photo-viewer','photo.viewer@example.test','71000000-0000-4000-8000-000000000001','["dispatch"]','[]',false),
-('photo-other','photo.other@example.test','71000000-0000-4000-8000-000000000002','["dispatch"]','["dispatch"]',false);
-insert into public.dashboard_users(username,email,org_id,allowed_pages,edit_pages,is_super) select 'photo-gc','photo.gc@example.test',id,'["dispatch","completed"]'::jsonb,'["dispatch","completed"]'::jsonb,false from public.orgs where code='AHBA';
+('photo-dispatch','photo.dispatch@example.test','71000000-0000-4000-8000-000000000001','["dispatch","completed","photofix"]','["dispatch","completed","photofix"]',false),
+('photo-viewer','photo.viewer@example.test','71000000-0000-4000-8000-000000000001','["dispatch","photofix"]','[]',false),
+('photo-other','photo.other@example.test','71000000-0000-4000-8000-000000000002','["dispatch","photofix"]','["dispatch","photofix"]',false);
+insert into public.dashboard_users(username,email,org_id,allowed_pages,edit_pages,is_super) select 'photo-gc','photo.gc@example.test',id,'["dispatch","completed","photofix"]'::jsonb,'["dispatch","completed","photofix"]'::jsonb,false from public.orgs where code='AHBA';
+-- qa-07d: GC-only gate — the fixture org PC1 is enabled for the suite; the default (setting absent) is exercised at the end
+insert into qa.settings(key,value) values ('photo_correction_orgs','PC1, AHBA') on conflict (key) do update set value = excluded.value;
 insert into public.jobs(id,subscriber,service_type,status,team,org_id,assigned_org_id,completed_at,validated,validated_at,validated_by,payment_amount,payment_mode,ar_no,remittance_received,history) values
 ('PC-VALIDATED','Photo validation','SLI','completed','Photo Team','71000000-0000-4000-8000-000000000001',null,'2026-09-01T02:00:00Z',true,'2026-09-02T02:00:00Z','Old QA',500,'Cash','AR-PC',true,'Original history'),
 ('PC-RETURNED','Photo return','SLI','completed','Photo Team','71000000-0000-4000-8000-000000000001',null,'2026-09-01T02:00:00Z',false,null,null,500,'Cash','AR-PC',true,'Original history'),
@@ -54,16 +56,24 @@ do $$ declare pid bigint := (select id from public.job_photos where job_id='PC-V
   perform pg_temp.photo_assert((select path from public.job_photos where id=pid)='pc/validated.jpg','planning does not replace active evidence');
   perform pg_temp.photo_assert((select validated from public.jobs where id='PC-VALIDATED'),'planning leaves validation unchanged');
 end $$;
+-- qa-07d: the old dispatch view+edit rule grants nothing without the "QA Photo Fix" entry; Completed edit alone opens no history
+update public.dashboard_users set allowed_pages='["dispatch","completed"]',edit_pages='["dispatch","completed"]' where username='photo-dispatch';
+do $$ declare msg text; begin
+  begin perform qa.prepare_photo_correction('PC-VALIDATED',(select id from public.job_photos where job_id='PC-VALIDATED'),'pc/validated.jpg',null,'no entry','73000000-0000-4000-8000-000000000013','image/png',12,repeat('a',64)); raise exception 'expected missing photofix entry refusal';
+  exception when insufficient_privilege then get stacked diagnostics msg = message_text; if msg not like 'DISPATCH_EDIT_REQUIRED%' then raise exception 'expected DISPATCH_EDIT_REQUIRED, got %', msg; end if; end;
+  begin perform qa.photo_correction_history('PC-VALIDATED',null); raise exception 'expected history refusal without the entry'; exception when insufficient_privilege then null; end;
+end $$;
+update public.dashboard_users set allowed_pages='["dispatch","completed","photofix"]',edit_pages='["dispatch","completed","photofix"]' where username='photo-dispatch';
 -- Authorization is re-read at commit, not inherited from a successful upload plan.
 update public.dashboard_users set edit_pages='[]' where username='photo-dispatch';
 do $$ begin
   begin perform qa.commit_photo_correction('73000000-0000-4000-8000-000000000001','72000000-0000-4000-8000-000000000001'); raise exception 'expected revoked dispatch permission failure'; exception when insufficient_privilege then null; end;
 end $$;
-update public.dashboard_users set edit_pages='["dispatch","completed"]' where username='photo-dispatch';
+update public.dashboard_users set edit_pages='["dispatch","completed","photofix"]' where username='photo-dispatch';
 select set_config('request.jwt.claims','{"sub":"72000000-0000-4000-8000-000000000002","email":"photo.viewer@example.test","role":"authenticated","org_id":"71000000-0000-4000-8000-000000000001"}',true);
 do $$ begin
   begin perform qa.prepare_photo_correction('PC-VALIDATED',(select id from public.job_photos where job_id='PC-VALIDATED'),'pc/validated.jpg',null,'Fix','73000000-0000-4000-8000-000000000002','image/png',12,repeat('a',64)); raise exception 'expected view only failure'; exception when insufficient_privilege then null; end;
-  begin perform qa.photo_correction_history('PC-VALIDATED',null); raise exception 'expected view only history failure'; exception when insufficient_privilege then null; end;
+  perform qa.photo_correction_history('PC-VALIDATED',null);   -- qa-07d: "QA Photo Fix" View opens history (Edit is not required)
 end $$;
 select set_config('request.jwt.claims','{"sub":"72000000-0000-4000-8000-000000000001","email":"photo.dispatch@example.test","role":"authenticated","org_id":"71000000-0000-4000-8000-000000000001"}',true);
 do $$ begin
@@ -142,6 +152,21 @@ select pg_temp.photo_assert((select count(*)=3 from storage.objects where bucket
 -- Respect the production FK rather than weakening it to exercise the deliberate cascade.
 delete from qa.audit_log where audit_id in(select id from qa.audits where job_id='PC-VALIDATED');
 delete from qa.audits where job_id='PC-VALIDATED';
+-- qa-07d default gate: with the setting removed, a PC1 (non-GC) user with "QA Photo Fix" Edit is refused — GC only
+delete from qa.settings where key='photo_correction_orgs';
+select set_config('request.jwt.claims','{"sub":"72000000-0000-4000-8000-000000000001","email":"photo.dispatch@example.test","role":"authenticated","org_id":"71000000-0000-4000-8000-000000000001"}',true);
+do $$ declare msg text; begin
+  begin perform qa.prepare_photo_correction('PC-OTHER',(select id from public.job_photos where job_id='PC-OTHER'),'pc/other.jpg',null,'non-GC dispatcher','73000000-0000-4000-8000-000000000011','image/png',12,repeat('a',64)); raise exception 'expected GC-only refusal';
+  exception when insufficient_privilege then get stacked diagnostics msg = message_text; if msg not like 'DISPATCH_GC_ONLY%' then raise exception 'expected DISPATCH_GC_ONLY, got %', msg; end if; end;
+  begin perform qa.photo_correction_history('PC-VALIDATED',null); raise exception 'expected GC-only history refusal';
+  exception when insufficient_privilege then get stacked diagnostics msg = message_text; if msg not like 'DISPATCH_GC_ONLY%' then raise exception 'expected DISPATCH_GC_ONLY on history, got %', msg; end if; end;
+end $$;
+select set_config('request.jwt.claims','{"sub":"72000000-0000-4000-8000-000000000004","email":"photo.gc@example.test","role":"authenticated"}',true);
+do $$ declare msg text; begin   -- the GC user passes the GC gate (and then fails on the cross-org job, as before)
+  begin perform qa.prepare_photo_correction('PC-OTHER',(select id from public.job_photos where job_id='PC-OTHER'),'pc/other.jpg',null,'GC dispatcher','73000000-0000-4000-8000-000000000012','image/png',12,repeat('a',64)); raise exception 'expected cross-org denial';
+  exception when insufficient_privilege then get stacked diagnostics msg = message_text; if msg like 'DISPATCH_GC_ONLY%' then raise exception 'GC must pass the GC gate, got %', msg; end if; end;
+end $$;
+insert into qa.settings(key,value) values ('photo_correction_orgs','PC1, AHBA');
 delete from public.jobs where id='PC-VALIDATED';
 delete from public.job_photos where job_id='PC-VALIDATED';
 select pg_temp.photo_assert((select count(*)=0 from public.job_photos where job_id='PC-VALIDATED'),'deliberate parent deletion permits corrected photo cascade');

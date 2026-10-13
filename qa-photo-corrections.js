@@ -95,16 +95,20 @@
     return Object.freeze(Object.assign(normalized, { operationId }));
   }
 
+  // Access Control entry "QA Photo Fix" (page key 'photofix'; owner decision 2026-10-13): Edit = may replace a photo (and open
+  // History); View = History only. Granted per user by the superadmin in Access Control — never inferred from another page
+  // ('dispatch' is not a page key, so the earlier dispatch view+edit rule could never be granted). Server-enforced in qa-07d.
   function canReplace(user) {
-    return !!(user && (user.is_super === true ||
-      (Array.isArray(user.allowed_pages) && user.allowed_pages.includes('dispatch') &&
-       Array.isArray(user.edit_pages) && user.edit_pages.includes('dispatch'))));
+    if (!user) return false;
+    if (user.is_super === true) return true;
+    const allowed = Array.isArray(user.allowed_pages) ? user.allowed_pages : [], edit = Array.isArray(user.edit_pages) ? user.edit_pages : [];
+    return allowed.includes('photofix') && edit.includes('photofix');
   }
 
   function canViewHistory(user) {
-    return !!(user && (user.is_super === true ||
-      (Array.isArray(user.allowed_pages) && Array.isArray(user.edit_pages) &&
-       ['dispatch', 'completed'].some(page => user.allowed_pages.includes(page) && user.edit_pages.includes(page)))));
+    if (!user) return false;
+    if (user.is_super === true) return true;
+    return Array.isArray(user.allowed_pages) && user.allowed_pages.includes('photofix');
   }
 
   function createClient(options) {

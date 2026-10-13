@@ -59,10 +59,10 @@ test('photo fetch preserves exact stable photo id and label for one-photo correc
  assert.equal(result.J1[0].id,'9007199254740993');assert.equal(result.J1[0].path,'original.jpg');assert.equal(result.J1[0].label,'Modem');
 });
 
-test('selected-photo gallery escapes evidence text and shows correction controls only for permitted dispatcher',()=>{
+test('selected-photo gallery escapes evidence text and shows correction controls only for a "QA Photo Fix" editor on the GC console',()=>{
  const start=src.indexOf('function qaPhotoText('),end=src.indexOf('async function renderCompleted(){',start);
  const nodes=new Map();const container={innerHTML:'',querySelectorAll:()=>[]};
- const ctx={window:{dashUser:{allowed_pages:['dispatch'],edit_pages:['dispatch']}},QaPhotoCorrections:{canReplace:u=>u.edit_pages.includes('dispatch')},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
+ const ctx={window:{dashUser:{allowed_pages:['photofix'],edit_pages:['photofix']}},isGcConsole:()=>true,QaPhotoCorrections:{canReplace:u=>u.edit_pages.includes('photofix')},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
  ctx.dashUser=ctx.window.dashUser;ctx.window=ctx;vm.createContext(ctx);if(start>=0)vm.runInContext(src.slice(start,end),ctx);
  ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'<script>bad</script> "photo"'}]);
  assert.ok(container.innerHTML.includes('Replace this photo'));assert.ok(!container.innerHTML.includes('<script>'));assert.ok(container.innerHTML.includes('&lt;script&gt;'));
@@ -84,9 +84,9 @@ test('QA photo cleanup preserves corrected evidence and deletes only selected or
  const deletion=decodeURIComponent(requests[1].url);assert.ok(deletion.includes('id.eq.8'));assert.ok(deletion.includes('ordinary.jpg'));assert.ok(!deletion.includes('id.eq.7'));assert.ok(toasts.some(x=>/retained|kept/i.test(x)));
 });
 
-test('QA reviewer can inspect photo history without dispatcher replacement rights',()=>{
+test('a "QA Photo Fix" View-only user can inspect photo history without replacement rights',()=>{
  const start=src.indexOf('function qaPhotoText('),end=src.indexOf('async function renderCompleted(){',start),container={innerHTML:'',querySelectorAll:()=>[]};
- const ctx={dashUser:{allowed_pages:['completed'],edit_pages:['completed']},QaPhotoCorrections:{canReplace:()=>false,canViewHistory:()=>true},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
+ const ctx={dashUser:{allowed_pages:['photofix'],edit_pages:[]},isGcConsole:()=>true,QaPhotoCorrections:{canReplace:()=>false,canViewHistory:()=>true},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
  ctx.window=ctx;vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);
  ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);
  assert.ok(container.innerHTML.includes('History'));assert.ok(!container.innerHTML.includes('Replace this photo'));
@@ -176,4 +176,14 @@ test('same subscriber and job type retain separate folders, including literal nu
  ctx.photoBase=p=>p;ctx.reqOk=async()=>{};ctx.fetch=async path=>({ok:true,blob:async()=>new Blob([path],{type:'image/jpeg'})});
  await ctx.exportZip();const photos=files.filter(f=>f.data instanceof Blob);assert.equal(photos.length,3);assert.equal(new Set(photos.map(f=>f.path)).size,3);
  assert.ok(photos.every(f=>/\(New Install\)/.test(f.path)&&!f.path.includes('WO-')));assert.ok(photos.every(f=>f.path.startsWith('photos/New Install/Reyes,')));
+});
+
+test('GC-only (owner 2026-10-13): a non-GC console offers neither Replace nor History even with "QA Photo Fix" Edit',()=>{
+ const start=src.indexOf('function qaPhotoText('),end=src.indexOf('async function renderCompleted(){',start),container={innerHTML:'',querySelectorAll:()=>[]};
+ const ctx={window:{dashUser:{allowed_pages:['photofix'],edit_pages:['photofix']}},isGcConsole:()=>false,QaPhotoCorrections:{canReplace:()=>true,canViewHistory:()=>true},photoBase:p=>'https://fixture.invalid/'+p,document:{},$(){},showToast(){},openModal(){},URL,console};
+ ctx.dashUser=ctx.window.dashUser;ctx.window=ctx;vm.createContext(ctx);vm.runInContext(src.slice(start,end),ctx);
+ ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);
+ assert.ok(!container.innerHTML.includes('Replace this photo')&&!container.innerHTML.includes('History'),'no correction controls outside the GC console');
+ ctx.isGcConsole=()=>true;ctx.renderQaPhotoTiles(container,{id:'J1'},[{id:'7',path:'proof.jpg',label:'Router'}]);
+ assert.ok(container.innerHTML.includes('Replace this photo')&&container.innerHTML.includes('History'),'GC console keeps both');
 });

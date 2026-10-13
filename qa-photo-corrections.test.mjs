@@ -226,31 +226,29 @@ test('history failures are visible to the caller instead of being shown as empty
   assert.equal(calls.length, 1);
 });
 
-test('replacement controls require dispatch view and edit permissions or superadmin', () => {
+test('replacement controls require the "QA Photo Fix" Access Control entry with Edit (or superadmin)', () => {
   assert.equal(typeof Qa.canReplace, 'function', 'permission display helper is implemented');
   assert.equal(Qa.canReplace(null), false);
   assert.equal(Qa.canReplace({ is_super: true }), true);
-  assert.equal(Qa.canReplace({ allowed_pages: ['dispatch'], edit_pages: ['dispatch'] }), true);
-  assert.equal(Qa.canReplace({ allowed_pages: ['dispatch'], edit_pages: [] }), false);
-  assert.equal(Qa.canReplace({ allowed_pages: [], edit_pages: ['dispatch'] }), false);
-  assert.equal(Qa.canReplace({ allowed_pages: ['completed'], edit_pages: ['completed'] }), false);
-  assert.equal(Qa.canReplace({ allowed_pages: 'dispatch', edit_pages: 'dispatch' }), false);
+  assert.equal(Qa.canReplace({ allowed_pages: ['photofix'], edit_pages: ['photofix'] }), true);
+  assert.equal(Qa.canReplace({ allowed_pages: ['photofix'], edit_pages: [] }), false, 'View = history only');
+  assert.equal(Qa.canReplace({ allowed_pages: [], edit_pages: ['photofix'] }), false);
+  assert.equal(Qa.canReplace({ allowed_pages: ['dispatch'], edit_pages: ['dispatch'] }), false, 'the old dispatch rule no longer grants it');
+  assert.equal(Qa.canReplace({ allowed_pages: ['dispatch', 'timeline', 'completed'], edit_pages: ['timeline', 'completed'] }), false, 'never inferred from dispatch / Dashboard / Completed');
+  assert.equal(Qa.canReplace({ allowed_pages: 'photofix', edit_pages: 'photofix' }), false);
 });
 
-test('history controls allow authorized QA reviewers as well as dispatch editors', () => {
+test('history controls require the "QA Photo Fix" entry with View or Edit (or superadmin)', () => {
   assert.equal(typeof Qa.canViewHistory, 'function', 'history permission display helper is implemented');
   assert.equal(Qa.canViewHistory(null), false);
   assert.equal(Qa.canViewHistory({ is_super: true }), true);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['dispatch'], edit_pages: ['dispatch'] }), true);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['completed'], edit_pages: ['completed'] }), true);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['completed'], edit_pages: [] }), false);
-  assert.equal(Qa.canViewHistory({ allowed_pages: [], edit_pages: ['completed'] }), false);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['dispatch'], edit_pages: ['completed'] }), false);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['completed'], edit_pages: ['dispatch'] }), false);
-  assert.equal(Qa.canViewHistory({ allowed_pages: ['history'], edit_pages: ['history'] }), false);
-  assert.equal(Qa.canViewHistory({ allowed_pages: 'completed', edit_pages: 'completed' }), false);
-  assert.equal(Qa.canReplace({ allowed_pages: ['completed'], edit_pages: ['completed'] }), false,
-    'reading correction history does not authorize replacement');
+  assert.equal(Qa.canViewHistory({ allowed_pages: ['photofix'], edit_pages: ['photofix'] }), true);
+  assert.equal(Qa.canViewHistory({ allowed_pages: ['photofix'], edit_pages: [] }), true, 'View opens history');
+  assert.equal(Qa.canViewHistory({ allowed_pages: ['completed'], edit_pages: ['completed'] }), false, 'Completed edit alone no longer implies history');
+  assert.equal(Qa.canViewHistory({ allowed_pages: ['dispatch'], edit_pages: ['dispatch'] }), false);
+  assert.equal(Qa.canViewHistory({ allowed_pages: [], edit_pages: ['photofix'] }), false);
+  assert.equal(Qa.canViewHistory({ allowed_pages: 'photofix', edit_pages: 'photofix' }), false);
+  assert.equal(Qa.canReplace({ allowed_pages: ['photofix'], edit_pages: [] }), false, 'reading correction history does not authorize replacement');
 });
 
 test('the browser export leaves surrounding form, storage and queue state untouched', async () => {

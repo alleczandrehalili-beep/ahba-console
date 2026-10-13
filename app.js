@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.10';
+const APP_VERSION='2026-10-13.11';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2698,8 +2698,9 @@ function qaPhotoText(value){ return String(value==null?'':value).replace(/[&<>"'
 function qaCorrectionClient(){ return QaPhotoCorrections.createClient({url:SUPA_URL,key:SUPA_KEY,token:dashTok}); }
 function renderQaPhotoTiles(container,job,photos){
   if(!container)return;
-  const mayCorrect=!!(window.QaPhotoCorrections&&QaPhotoCorrections.canReplace(window.dashUser));
-  const mayReadHistory=!!(window.QaPhotoCorrections&&QaPhotoCorrections.canViewHistory?.(window.dashUser));
+  const gcOnly=(typeof isGcConsole==='function')&&isGcConsole();   // owner 2026-10-13: GC organization only (other orgs pending)
+  const mayCorrect=gcOnly&&!!(window.QaPhotoCorrections&&QaPhotoCorrections.canReplace(window.dashUser));
+  const mayReadHistory=gcOnly&&!!(window.QaPhotoCorrections&&QaPhotoCorrections.canViewHistory?.(window.dashUser));
   container.innerHTML=photos.length?photos.map((p,i)=>{
     const label=qaPhotoText(p.label||('Photo '+(i+1))), url=qaPhotoText(photoBase(p.path));
     return `<div class="qa-proof-tile"><a class="ph" href="${url}" target="_blank" rel="noopener" title="${label}"><img src="${url}" alt="${label}" loading="lazy"><span class="qa-proof-label">${label}</span></a>${(mayCorrect||mayReadHistory)&&p.id?`<div class="qa-proof-actions">${mayCorrect?`<button type="button" class="assign-btn" data-qa-replace="${i}">Replace this photo</button>`:''}${mayReadHistory?`<button type="button" class="assign-btn" data-qa-history="${i}">History</button>`:''}</div>`:''}</div>`;
@@ -2708,7 +2709,7 @@ function renderQaPhotoTiles(container,job,photos){
   container.querySelectorAll('[data-qa-history]').forEach(b=>b.onclick=()=>openQaPhotoHistory(job,photos[Number(b.dataset.qaHistory)]));
 }
 async function openQaPhotoReplacement(job,photo){
-  if(!window.QaPhotoCorrections||!QaPhotoCorrections.canReplace(window.dashUser)){showToast('Dispatcher edit access is required');return;}
+  if(!isGcConsole()||!window.QaPhotoCorrections||!QaPhotoCorrections.canReplace(window.dashUser)){showToast('"QA Photo Fix" Edit access (GC console) is required');return;}
   if(!photo||!photo.id){showToast('Reload the selected photo first');return;}
   let current;
   try{ current=await fetchFullJob(job.id); if(!current)throw new Error('JO could not be loaded'); }catch(e){showToast(e.message);return;}
@@ -4008,7 +4009,9 @@ function startSlrTicker(){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet']];
+// 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
+// its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['photofix','QA Photo Fix']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -4141,7 +4144,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  let first=(allowed[0]||'overview'); if(first==='dispatch')first='timeline';
+  let first=(allowed.filter(p=>p!=='photofix')[0]||'overview'); if(first==='dispatch')first='timeline';   // photofix is an entry, not a page
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();
