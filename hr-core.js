@@ -16,6 +16,9 @@
     unworked_lh_requires_prev_day: true /* owner 2026-09-22: unworked legal holiday only when present the day before */, team_prefix: 'AHBA_',
     // owner 2026-09-22: rates / amounts are visible only to these console roles (dashboard_users.role_label, case-insensitive) or usernames — plus is_super always
     rate_viewer_roles: ['HR Manager', 'Admin Head', 'Superadmin', 'President', 'CEO'], rate_viewer_users: ['AHBA_ADMINHEAD', 'AHBA_ADMIN'],   // owner 2026-09-22/23: these console logins may see rates (AHBA_HR01 and AHBA_ADMIN01 deliberately not)
+    // owner 2026-10-13: seeing an amount and deciding it are different rights — the President and the Admin Head read
+    // payroll, the HR Manager maintains it. is_super passes on its own. SQL: hr.can_edit_rates() / assert_rates_edit()
+    rate_editor_roles: ['HR Manager'], rate_editor_users: [],
     lock_requires_verified: false,   // Amendment 1: when true, lock_period refuses while any log in range has no validator ✓ (verified_at null)
     min_daily_rate: 755,             // Owner 2026-10-05 (LOCAL DEMO): minimum daily rate — a rate below it is PAID at it (effective rate); the stored rate is untouched, a higher rate is never reduced; 0 = off
     driver_daily_allowance: 100,     // ₱ per qualifying actual two-person outgoing deployment; labelled legacy/manual daily compatibility remains separate

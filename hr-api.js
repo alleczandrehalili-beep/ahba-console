@@ -54,6 +54,13 @@
       listEmployeeRates: function (eid) { return rpc('employee_rates_list', { p_emp: eid }); },
       saveEmployeeRate: function (r) { return rpc('save_employee_rate', { p: r }); },
       deleteEmployeeRate: function (eid, d) { return rpc('delete_employee_rate', { p_emp: eid, p_effective: d }); },
+      // the Register's rate box: writes a dated step from the period start, then the console computes
+      setLineRate: function (lineId, rate, note) { return rpc('set_line_rate', { p_line: lineId, p_rate: rate, p_note: note || null }); },
+      // deleting a payroll week: HR asks, a superadmin decides (hr.decide_period_delete)
+      listPeriodDeleteRequests: function () { return rpc('period_delete_requests_list'); },
+      requestPeriodDelete: function (periodId, reason) { return rpc('request_period_delete', { p_period: periodId, p_reason: reason }); },
+      cancelPeriodDelete: function (id) { return rpc('cancel_period_delete', { p_request: id }); },
+      decidePeriodDelete: function (id, approve, note) { return rpc('decide_period_delete', { p_request: id, p_approve: !!approve, p_note: note || null }); },
       listLoans: function (f) { var q = h().from('loans').select('*, payments:loan_payments(*)').is('deleted_at', null); if (f && f.employee_id) q = q.eq('employee_id', f.employee_id); if (f && f.active != null) q = q.eq('active', f.active); return ok(q); },
       saveLoan: function (l) { return upsert('loans', l); },
       buildLogs: function (a, b) { return rpc('build_daily_logs', { p_from: a, p_to: b }); },

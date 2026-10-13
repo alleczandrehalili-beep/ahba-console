@@ -234,6 +234,14 @@
     return !!(c && c.supported === true && c.enabled === true && c.allowed === true && o.canEdit && o.me && o.me.can_see_rates && o.period && o.period.status !== 'locked');
   }
   function saveRegisterEdit(api, id, key, raw, canRestore) {
+    // The RATE box does not write onto the payroll line. It records a DATED RATE STEP from the start
+    // of the period (hr.set_line_rate), and Compute turns that into money — so the register can never
+    // show a figure the pay rules did not produce, and the rate has one home, with history.
+    if (key === 'daily_rate') {
+      var rate = Number(String(raw).replace(/,/g, ''));
+      if (!(rate > 0)) return Promise.reject(new Error('Daily rate must be more than zero'));
+      return api.setLineRate(id, rate);
+    }
     if (key === 'allowance' && registerAllowanceEdit(raw).restore) {
       if (!canRestore || typeof api.restoreAutomaticAllowance !== 'function') return Promise.reject(new Error('Automatic restoration is not available for this week. Enter an explicit amount or retain the current override.'));
       return api.restoreAutomaticAllowance(id);
@@ -248,14 +256,38 @@
     if (!document.getElementById('hrCss')) { var st = document.createElement('style'); st.id = 'hrCss'; st.textContent = CSS; document.head.appendChild(st); }
     rootEl.innerHTML = '<div class="hr"><div class="hr-tabs" id="hrTabs"></div><div id="hrBody"></div></div>';
     var $ = function (s) { return rootEl.querySelector(s); };
-    function fail(e) { toast((e && e.message) || String(e)); if (root.console) console.error(e); }
+    // A tab sets its body to "Loading…" and then .catch(fail)s. Toasting alone left that placeholder on
+    // screen for good, so a failed load looked like a hang instead of an error — which is exactly how the
+    // RLS statement timeout reached HR as "the Payroll page never loads". A toast disappears; the card does not.
+    function fail(e) {
+      var msg = (e && e.message) || String(e);
+      toast(msg); if (root.console) root.console.error(e);
+      var b = $('#hrBody');
+      if (b && /Loading…|Computing payroll…/.test(b.innerHTML)) {
+        b.innerHTML = '<div class="hr-card"><h3>Could not load</h3><p>' + esc(msg) + '</p>' +
+          (/statement timeout|canceling statement|cancelling statement/i.test(msg)
+            ? '<p class="mut">The database gave up on the query. Report this — it is not something a retry fixes on its own.</p>' : '') +
+          '<div class="hr-bar"><button class="hr-btn p" id="hrRetry">Try again</button></div></div>';
+        var r = $('#hrRetry'); if (r) r.onclick = function () { render(); };
+      }
+    }
     function ro() { return !canEdit; }
+    // A new hire starts at the minimum daily rate in force, not at a number frozen into the source.
+    // This was hardcoded 695, which stopped being the minimum on 2026-09-26.
+    function defaultRate() {
+      var v = S.settings && S.settings.min_daily_rate;
+      v = Number(v);
+      return isFinite(v) && v > 0 ? v : Number(C.DEFAULT_SETTINGS.min_daily_rate) || 0;
+    }
     // Amendment 1: an attendance validator who is not a payroll admin gets the Validate tab only — never a period chip, rate or money (admin RPCs would throw 'payroll admin only')
     function valOnly() { return !!(S.me && !S.me.is_admin && S.me.is_validator); }
     function validationEmployees() { return validationEmployeePool(S.employees, S.settings, valOnly()); }
     // owner 2026-09-22: rates / amounts only for the rate viewers (me().can_see_rates: is_super, or a role / username listed in Settings). A payroll admin without it keeps
     // Periods (no totals) · DTR · Validate · Unmatched · Employees (no rate, no loans) · Reports (attendance / holidays / audit) — the money tabs and fields are not rendered.
     function ratesOK() { return !!(S.me && S.me.can_see_rates); }
+    // Owner 2026-10-13: seeing an amount and deciding it are different rights. The server decides
+    // this (hr.can_edit_rates, HR Manager by default); the console only reflects it.
+    function rateEditOK() { return !!(S.me && S.me.can_edit_rates) && !ro(); }
     var TABS = {};
 
     function loadMe() { return api.me().then(function (m) { S.me = m; if (valOnly()) S.tab = 'validate';
@@ -267,8 +299,10 @@
     function lockedDay(d) { return (S.lockedRanges || []).some(function (r) { return d >= r.period_start && d <= r.period_end; }); }
     function loadBase() {
       if (valOnly()) return Promise.all([api.listEmployeesBasic(), api.listHolidays(), api.lockedRanges()]).then(function (r) { S.employees = r[0]; S.holidays = r[1]; S.lockedRanges = r[2]; });
-      return Promise.all([api.listPeriods(), api.listEmployees({}), api.listHolidays(), api.getSettings(), api.listUnmatched(), api.lockedRanges()])
-        .then(function (r) { S.periods = r[0]; S.employees = r[1]; S.holidays = r[2]; S.settings = r[3]; S.unmatched = r[4]; S.lockedRanges = r[5]; if (!S.period && S.periods[0]) S.period = S.periods[0]; else if (S.period) S.period = S.periods.find(function (p) { return p.id === S.period.id; }) || S.periods[0]; });
+      // the delete requests ride along with the base load; an older backend simply has none
+      return Promise.all([api.listPeriods(), api.listEmployees({}), api.listHolidays(), api.getSettings(), api.listUnmatched(), api.lockedRanges(),
+                          typeof api.listPeriodDeleteRequests === 'function' ? api.listPeriodDeleteRequests().catch(function () { return []; }) : []])
+        .then(function (r) { S.periods = r[0]; S.employees = r[1]; S.holidays = r[2]; S.settings = r[3]; S.unmatched = r[4]; S.lockedRanges = r[5]; S.delReq = r[6] || []; if (!S.period && S.periods[0]) S.period = S.periods[0]; else if (S.period) S.period = S.periods.find(function (p) { return p.id === S.period.id; }) || S.periods[0]; });
     }
     function loadPeriodData() {
       if (valOnly() || !S.period) { S.logs = []; S.lines = []; return Promise.resolve(); }
@@ -304,8 +338,48 @@
         (bioOK() && !ro() ? '<button class="hr-btn p hr-newpay" id="hrNewPay" title="Upload the ZKTeco Daily Attendance Details export → match → review → preview → approve">＋ Create New Payroll (upload biometric attendance)</button>' : '') +
         (ro() ? '' : '<button class="hr-btn" id="hrNewPer">+ Empty period (' + esc(fmtDate(next.period_start)) + ' – ' + esc(fmtDate(next.period_end)) + ')</button>') +
         '</div><div class="hr-scroll"><table class="hr-t"><thead><tr><th>Period</th><th>Pay date</th><th>Week of month</th><th>Principal</th><th>Attendance</th><th>Status</th><th class="r">Headcount</th><th class="r">Gross</th><th class="r">Net</th><th></th></tr></thead><tbody>' +
-        S.periods.map(function (p) { return '<tr><td><b>' + esc(periodLabel(p)) + '</b></td><td>' + esc(fmtDate(p.pay_date)) + '</td><td>' + (ro() || p.status === 'locked' ? p.week_of_month : '<select data-wom="' + p.id + '">' + [1, 2, 3, 4, 5].map(function (w) { return '<option' + (w === p.week_of_month ? ' selected' : '') + '>' + w + '</option>'; }).join('') + '</select>') + '</td><td>' + esc(p.principal || '') + '</td><td>' + (p.attendance_source === 'biometric' ? '<span class="hr-src" title="' + esc(p.bio ? p.bio.file_name + ' · imported ' + String(p.bio.imported_at || '').slice(0, 16).replace('T', ' ') + ' by ' + p.bio.imported_by : '') + '">🧬 biometric</span>' : '<span class="mut">FieldOps</span>') + '</td><td><span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span></td><td class="r">' + (p.headcount == null ? '—' : p.headcount) + '</td><td class="r">' + (p.gross == null ? '—' : money(p.gross)) + '</td><td class="r">' + (p.net == null ? '—' : money(p.net)) + '</td><td><button class="hr-btn" data-open="' + p.id + '">Open</button>' + (p.attendance_source === 'biometric' && bioOK() ? ' <button class="hr-btn p" data-wiz="' + p.id + '">Review &amp; approve</button>' : ro() ? '' : ' <button class="hr-btn" data-rebuild="' + p.id + '">Rebuild logs</button>') + '</td></tr>'; }).join('') +
+        S.periods.map(function (p) { return '<tr><td><b>' + esc(periodLabel(p)) + '</b></td><td>' + esc(fmtDate(p.pay_date)) + '</td><td>' + (ro() || p.status === 'locked' ? p.week_of_month : '<select data-wom="' + p.id + '">' + [1, 2, 3, 4, 5].map(function (w) { return '<option' + (w === p.week_of_month ? ' selected' : '') + '>' + w + '</option>'; }).join('') + '</select>') + '</td><td>' + esc(p.principal || '') + '</td><td>' + (p.attendance_source === 'biometric' ? '<span class="hr-src" title="' + esc(p.bio ? p.bio.file_name + ' · imported ' + String(p.bio.imported_at || '').slice(0, 16).replace('T', ' ') + ' by ' + p.bio.imported_by : '') + '">🧬 biometric</span>' : '<span class="mut">FieldOps</span>') + '</td><td><span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span></td><td class="r">' + (p.headcount == null ? '—' : p.headcount) + '</td><td class="r">' + (p.gross == null ? '—' : money(p.gross)) + '</td><td class="r">' + (p.net == null ? '—' : money(p.net)) + '</td><td><button class="hr-btn" data-open="' + p.id + '">Open</button>' + (p.attendance_source === 'biometric' && bioOK() ? ' <button class="hr-btn p" data-wiz="' + p.id + '">Review &amp; approve</button>' : ro() ? '' : ' <button class="hr-btn" data-rebuild="' + p.id + '">Rebuild logs</button>')
+            + (ro() || p.status === 'locked' ? '' : ' <button class="hr-btn d" data-delreq="' + p.id + '" title="Ask a superadmin to delete this week so it can be done again. A locked week must be reopened first — reopening is what puts the loan balances and the contribution ledger back.">Request delete</button>') + '</td></tr>'; }).join('') +
         '</tbody></table></div><p style="font-size:11px;color:#8a9894">Week of month = ceil(day of period end ÷ 7); drives the deduction calendar (1st &amp; 3rd gov loans · 2nd PHIC + Pag-IBIG · 4th SSS · weekly CA + company loan). Editable until locked.</p></div>';
+      var pend = (S.delReq || []).filter(function (r) { return r.status === 'pending'; });
+      if (pend.length) {
+        var box = document.createElement('div');
+        box.className = 'hr-warn';
+        box.innerHTML = '<b>' + pend.length + ' payroll week' + (pend.length > 1 ? 's' : '') + ' waiting to be deleted</b>' +
+          '<table class="hr-t" style="margin-top:6px"><thead><tr><th>Week</th><th>Asked by</th><th>Reason</th><th>State</th><th></th></tr></thead><tbody>' +
+          pend.map(function (r) {
+            return '<tr><td><b>' + esc(r.period || '') + '</b> <span class="hr-chip ' + esc(r.period_status || '') + '">' + esc(r.period_status || '') + '</span></td>' +
+              '<td>' + esc(r.requested_by || '') + '<br><small class="mut">' + esc(String(r.requested_at || '').slice(0, 16).replace('T', ' ')) + '</small></td>' +
+              '<td style="white-space:normal;max-width:280px">' + esc(r.reason || '') + '</td>' +
+              '<td>' + (r.stale ? '<span style="color:#8a2f2f">the week changed since this was asked — ask again</span>' : 'unchanged since asked') + '</td>' +
+              '<td style="white-space:nowrap">' +
+                (r.can_decide && !r.stale ? '<button class="hr-btn p" data-delok="' + r.id + '">Approve &amp; delete</button> <button class="hr-btn" data-delno="' + r.id + '">Reject</button>' : '') +
+                ' <button class="hr-btn" data-delcancel="' + r.id + '">Withdraw</button></td></tr>';
+          }).join('') + '</tbody></table>' +
+          '<p style="font-size:11px">Deleting keeps a full copy of the week — the period, every line, allowance and deduction — in the audit log. Only the dates are freed, so the week can be done again.</p>';
+        $('#hrBody').insertBefore(box, $('#hrBody').firstChild);
+      }
+      rootEl.querySelectorAll('[data-delreq]').forEach(function (b) { b.onclick = function () {
+        var p2 = S.periods.find(function (x) { return x.id === b.dataset.delreq; });
+        var why = root.prompt('Why should the week ' + periodLabel(p2) + ' be deleted? A superadmin will see this.');
+        if (!why || !why.trim()) return;
+        api.requestPeriodDelete(b.dataset.delreq, why.trim()).then(function () { toast('Asked. A superadmin has to approve it.'); return refresh(); }).catch(fail);
+      }; });
+      rootEl.querySelectorAll('[data-delok]').forEach(function (b) { b.onclick = function () {
+        var r = (S.delReq || []).find(function (x) { return x.id === b.dataset.delok; });
+        if (!root.confirm('Delete the payroll week ' + (r && r.period) + '?\n\nIts lines, allowances and deductions go. A full copy is kept in the audit log. This cannot be undone from the console.')) return;
+        b.disabled = true;
+        api.decidePeriodDelete(b.dataset.delok, true, root.prompt('Note for the record (optional):') || null)
+          .then(function (x) { toast('Deleted ' + (x && x.period) + ' · ' + (x && x.lines_removed) + ' line(s) · copy kept in the audit log'); S.period = null; return refresh(); })
+          .catch(function (e) { b.disabled = false; fail(e); });
+      }; });
+      rootEl.querySelectorAll('[data-delno]').forEach(function (b) { b.onclick = function () {
+        var why = root.prompt('Why is this being refused?'); if (why === null) return;
+        api.decidePeriodDelete(b.dataset.delno, false, why).then(function () { toast('Refused'); return refresh(); }).catch(fail);
+      }; });
+      rootEl.querySelectorAll('[data-delcancel]').forEach(function (b) { b.onclick = function () {
+        api.cancelPeriodDelete(b.dataset.delcancel).then(function () { toast('Withdrawn'); return refresh(); }).catch(fail);
+      }; });
       var np = $('#hrNewPay'); if (np) np.onclick = function () { wizStart(null, 1); };
       rootEl.querySelectorAll('[data-wiz]').forEach(function (b) { b.onclick = function () { wizStart(b.dataset.wiz, 2); }; });
       var nb = $('#hrNewPer'); if (nb) nb.onclick = function () { api.createPeriod({ period_start: next.period_start, period_end: next.period_end, principal: S.periods[0] ? S.periods[0].principal : 'SKY CABLE' }).then(function (p) { S.period = p; return refresh(); }).then(function () { toast('Period created'); }).catch(fail); };
@@ -560,8 +634,8 @@
       rootEl.querySelectorAll('[data-new]').forEach(function (b) { b.onclick = function () { S.tab = 'employees'; S.newEmpFrom = b.dataset.new; render(); }; });
     };
 
-    // ---------- Create New Payroll ( ZKTeco "Daily Attendance Details" upload → match → review → preview → approve) ----------
-    // Shown only when the server supports and enables biometric import for the authorized rate viewer. The uploaded file is the attendance source of truth for its Fri–Thu week.
+    // ---------- Create New Payroll (LOCAL DEMO: ZKTeco "Daily Attendance Details" upload → match → review → preview → approve) ----------
+    // Shown only when the backend offers importBiometric (HrSim — no SQL yet) to a rate viewer. The uploaded file is the attendance source of truth for its Fri–Thu week.
     // Step 1 Upload (parsed in the browser, nothing written until "Import") · 2 Match people · 3 Review attendance (late rules + flags) · 4 Preview money → Approve (= lock).
     var Att = root.HrAttendanceImport;
     function bioOK() { return !!(api.importBiometric && Att && integrationActionAllowed({ capabilities: S.capabilities, action: 'biometric', canEdit: true, me: S.me, period: { status: 'open' } })); }
@@ -749,8 +823,8 @@
     function wizPreview(el, w) {
       var rv = w.review, p = rv.period, locked = p.status === 'locked';
       if (!w.lines) {
-        el.innerHTML = '<div class="hr-card">Loading saved payroll…</div>';
-        api.listLines(p.id).then(function (ls) { w.lines = ls; return wizLoadReview(); }).then(TABS.newpay).catch(fail); return;
+        el.innerHTML = '<div class="hr-card">' + (locked ? 'Loading…' : 'Computing payroll…') + '</div>';
+        (locked ? Promise.resolve() : api.computePeriod(p.id)).then(function () { return api.listLines(p.id); }).then(function (ls) { w.lines = ls; return refresh(); }).then(wizLoadReview).then(TABS.newpay).catch(fail); return;
       }
       var all = w.lines, paid = all.filter(function (l) { return (+l.days || 0) > 0 || (+l.gross || 0) > 0; }), list = w.showZero ? all : paid;
       function other(l) { return C.round2((+l.sss_loan || 0) + (+l.hdmf_loan || 0) + (+l.cash_advance || 0) + (+l.company_loan || 0) + (+l.partial_payroll || 0) + (+l.others || 0)); }
@@ -763,9 +837,8 @@
       var neg = all.filter(function (l) { return (+l.net || 0) < 0; }), skipped = all.filter(function (l) { return l.contrib_skipped; });
       var checks = [[!rv.unmatched.length, 'Everyone on the device matched or excluded', rv.unmatched.length + ' not matched'], [!rv.counts.missing_pending, 'Missing biometric evidence reviewed by HR', rv.counts.missing_pending + ' missing record(s) pending HR validation'], [!rv.counts.incomplete_pending, 'Every incomplete punch validated by HR', rv.counts.incomplete_pending + ' incomplete punch day(s) pending HR validation — their hours in this preview are PROVISIONAL'], [!rv.counts.unreviewed, 'Every flagged day reviewed', rv.counts.unreviewed + ' flagged day(s) to review'],
         [!neg.length, 'No negative net pay', neg.length + ' employee(s) with negative net (₱' + money(C.round2(neg.reduce(function (s, l) { return s + (+l.net || 0); }, 0))) + ') — deductions exceed this week\'s pay; adjust in the Register / Deductions tab']];
-      var blocked = p.status !== 'computed' || !all.length || checks.some(function (x) { return !x[0]; });
+      var blocked = checks.some(function (x) { return !x[0]; });
       var html = '<div class="hr-card"><h3>4 · Payroll preview' + (locked ? ' — APPROVED' : ' — DRAFT, not approved') + '</h3>' +
-        (locked || ro() ? '' : '<div class="hr-bar"><button class="hr-btn p" id="wCompute">⟳ Compute payroll</button><span class="mut">Compute after attendance edits. Preview and export show the saved calculation.</span></div>') +
         '<div class="hr-kpis">' + kpi('Employees paid', paid.length + ' <small>of ' + all.length + '</small>') + kpi('Gross pay', '₱' + money(tot('gross'))) + kpi('Attendance deductions', '₱' + money(tot('attendance_deduction')) + ' <small>' + tot('attendance_hours') + ' h</small>', 'warn') +
           kpi('SSS', '₱' + money(tot('sss'))) + kpi('PhilHealth', '₱' + money(tot('phic'))) + kpi('Pag-IBIG / HDMF', '₱' + money(tot('hdmf'))) + kpi('Other deductions', '₱' + money(tot(other))) + kpi('Net pay', '₱' + money(tot('net')), 'good') + '</div>' +
         '<p class="mut">Week ' + wom + ' of the month · pay date ' + esc(fmtDate(p.pay_date)) + ' · contributions for <b>' + esc(cm) + '</b> — deducted this week: <b>' + (due.length ? due.join(', ') : 'none') + '</b>' + (skipped.length ? ' — except the <b>' + skipped.length + '</b> employee(s) with no pay this week: nothing is withheld from them and their month stays “not deducted” in the Mandatory summary' : '') + (all.filter(function (l) { return l.rate_floor_applied; }).length ? ' <b>' + all.filter(function (l) { return l.rate_floor_applied; }).length + '</b> employee(s) are paid at the ₱' + money((S.settings && S.settings.min_daily_rate) || C.DEFAULT_SETTINGS.min_daily_rate) + ' minimum daily rate (marked ▲ min; the rate on file is unchanged).' : '') + ' Driver allowance = ₱' + money(S.settings && S.settings.driver_daily_allowance != null ? S.settings.driver_daily_allowance : C.DEFAULT_SETTINGS.driver_daily_allowance) + ' per unique qualifying two-person deployment with attendance evidence; three-person crews get zero. Historical daily / solo compatibility remains separately recorded.' + ' (deduction calendar; amounts from the contribution tables, per-employee overrides and any manual ledger basis — unchanged rules). Other deductions = loans + cash advance + company loan + partial payroll + others.</p>' +
@@ -779,10 +852,6 @@
             '<div class="hr-bar"><button class="hr-btn" id="wBack">← Review attendance</button><button class="hr-btn" id="wXlsx">⬇ Excel (DRAFT)</button><button class="hr-btn" id="wReg">Open in Register</button>' +
             (ro() ? '' : '<button class="hr-btn p" id="wApprove"' + (blocked ? ' disabled title="Clear the ✖ items first"' : '') + '>✅ Approve payroll</button>') + '</div>') + '</div>';
       el.innerHTML = html;
-      var compute = $('#wCompute'); if (compute) compute.onclick = function () {
-        compute.disabled = true;
-        api.computePeriod(p.id).then(function () { return api.listLines(p.id); }).then(function (ls) { w.lines = ls; return loadBase().then(loadPeriodData); }).then(wizLoadReview).then(TABS.newpay).catch(function (e) { compute.disabled = false; fail(e); });
-      };
       $('#wZero').onchange = function () { w.showZero = this.checked; TABS.newpay(); };
       var b = $('#wBack'); if (b) b.onclick = function () { w.step = 3; TABS.newpay(); };
       $('#wXlsx').onclick = function () { api.listLogs(p.period_start, p.period_end).then(function (logs) { return exportXlsx(p, all, logs); }).catch(fail); };
@@ -797,7 +866,7 @@
     }
 
     // ---------- Register ----------
-    var REG_COLS = [['emp_no', 'EMPLOYEE NO.'], ['display_name', 'NAME'], ['position', 'POSITION'], ['daily_rate', 'RATE', 'r'], ['days', 'NO. OF DAYS', 'r'], ['basic', 'BASIC PAY', 'r'], ['rdot', 'R.DOT', 'r'], ['lh_pay', 'L.H (PAY)', 'r'], ['sh_pay', 'S.H (PAY)', 'r'],
+    var REG_COLS = [['emp_no', 'EMPLOYEE NO.'], ['display_name', 'NAME'], ['position', 'POSITION'], ['daily_rate', 'RATE', 'r', 'rate'], ['days', 'NO. OF DAYS', 'r'], ['basic', 'BASIC PAY', 'r'], ['rdot', 'R.DOT', 'r'], ['lh_pay', 'L.H (PAY)', 'r'], ['sh_pay', 'S.H (PAY)', 'r'],
       ['allowance', 'ALLOWANCE', 'r', 1], ['adjustment', 'ADJUSTMENT', 'r', 1], ['gross', 'TOTAL', 'r'], ['attendance_deduction', 'LATE / ABSENCE', 'r'], ['sss', 'SSS', 'r', 1], ['phic', 'PHILHEALTH', 'r', 1], ['hdmf', 'PAGIBIG', 'r', 1], ['cash_advance', 'CASH ADVANCE', 'r'], ['gov_loan', 'SSS/PAGIBIG LOAN', 'r'], ['company_loan', 'COMPANY LOAN', 'r'],
       ['partial_payroll', 'PARTIAL PAYROLL', 'r', 1], ['others', 'OTHERS', 'r', 1], ['total_deductions', 'TOTAL', 'r'], ['net', 'NET AMOUNT', 'r'], ['bank_account', 'PSBANK ACCOUNT'], ['remarks', 'REMARKS', '', 1]];
     // Owner 2026-10-05 (demo): the RATE shown / exported is the EFFECTIVE rate (minimum PHP 755 floor); the stored rate stays on l.daily_rate for audit
@@ -823,7 +892,7 @@
         '<div id="rSection" role="tabpanel"><h3>' + sectionName + '</h3><p class="mut">' + (view.section === 'no_logs' ? 'No attendance log was recorded in this period. Review these employees with HR; holiday pay and manual amounts remain in the register.' : 'Employees with at least one attendance log in this period, including recorded zero-hour absences. Logged days describe records, not paid days.') + '</p>' +
         '<h3 style="font-size:13px">Visible-section subtotal <span class="mut">· ' + view.visible.length + ' shown' + (S.regQ.trim() ? ' · search applied' : '') + '</span></h3>' + summary(view.visible_totals) +
         (view.visible.length ? '<div class="hr-scroll" id="rTable"><table class="hr-t"><thead><tr><th>#</th><th>ATTENDANCE RECORDS</th>' + REG_COLS.map(function (c) { return '<th class="' + (c[2] || '') + '">' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' +
-          view.visible.map(function (l, i) { var count = view.logged_days[l.employee_id] || 0; return '<tr><td>' + (i + 1) + '</td><td><span class="hr-chip ' + (count ? 'locked' : 'computed') + '">' + (count ? count + ' logged day(s)' : 'HR review') + '</span>' + (l.awaitingCompute ? '<br><small>Awaiting Compute</small>' : '') + '</td>' + REG_COLS.map(function (c) { var v = l.awaitingCompute ? (c[2] === 'r' ? '—' : l[c[0]]) : lineVal(l, c[0]), ed = !l.awaitingCompute && c[3] && !locked && !ro(), m = (l.manual_fields || []).indexOf(c[0]) >= 0; return '<td class="' + (c[2] || '') + (ed ? ' ed' : '') + (m ? ' m' : '') + '"' + (ed ? ' contenteditable data-ln="' + esc(l.id) + '" data-k="' + c[0] + '"' : '') + (!l.awaitingCompute && c[0] === 'allowance' ? ' title="' + (Number(l.driver_deployments) || 0) + ' recorded deployment(s) + ' + (Number(l.legacy_driver_days) || 0) + ' legacy / HR day(s) × rate + manual ' + money(l.manual_allowance) + (m ? ' — hand-typed override' : '') + '"' : !l.awaitingCompute && (c[0] === 'cash_advance' || c[0] === 'company_loan') ? ' title="scheduled (Employees → Loans) ' + money(C.round2((+v || 0) - (+l['manual_' + c[0]] || 0))) + ' + Deductions tab ' + money(l['manual_' + c[0]]) + '"' : '') + '>' + (l.awaitingCompute ? esc(v) : c[2] === 'r' ? (c[0] === 'days' ? String(+v) : money(v)) : esc(v)) + '</td>'; }).join('') + '</tr>'; }).join('') +
+          view.visible.map(function (l, i) { var count = view.logged_days[l.employee_id] || 0; return '<tr><td>' + (i + 1) + '</td><td><span class="hr-chip ' + (count ? 'locked' : 'computed') + '">' + (count ? count + ' logged day(s)' : 'HR review') + '</span>' + (l.awaitingCompute ? '<br><small>Awaiting Compute</small>' : '') + '</td>' + REG_COLS.map(function (c) { var v = l.awaitingCompute ? (c[2] === 'r' ? '—' : l[c[0]]) : lineVal(l, c[0]), ed = !l.awaitingCompute && c[3] && !locked && (c[3] === 'rate' ? rateEditOK() : !ro()), m = (l.manual_fields || []).indexOf(c[0]) >= 0; return '<td class="' + (c[2] || '') + (ed ? ' ed' : '') + (m ? ' m' : '') + '"' + (ed ? ' contenteditable data-ln="' + esc(l.id) + '" data-k="' + c[0] + '"' : '') + (!l.awaitingCompute && c[0] === 'allowance' ? ' title="' + (Number(l.driver_deployments) || 0) + ' recorded deployment(s) + ' + (Number(l.legacy_driver_days) || 0) + ' legacy / HR day(s) × rate + manual ' + money(l.manual_allowance) + (m ? ' — hand-typed override' : '') + '"' : !l.awaitingCompute && (c[0] === 'cash_advance' || c[0] === 'company_loan') ? ' title="scheduled (Employees → Loans) ' + money(C.round2((+v || 0) - (+l['manual_' + c[0]] || 0))) + ' + Deductions tab ' + money(l['manual_' + c[0]]) + '"' : '') + '>' + (l.awaitingCompute ? esc(v) : c[2] === 'r' ? (c[0] === 'days' ? String(+v) : money(v)) : esc(v)) + '</td>'; }).join('') + '</tr>'; }).join('') +
           totalRow('Visible-section subtotal', view.visible_totals) + totalRow('Full-register totals · all computed lines', view.full_totals) + '</tbody></table></div>' : '<p>' + (S.regQ.trim() ? 'No search matches in this section. Check the other section’s match count.' : 'No employees in this section. Check the other section for the rest of the roster.') + '</p>') +
         '</div><p class="mut">Excel and payslips use the full register across both sections. Payslips retain the usual eligibility rules.</p>' +
         (S.lines.length ? '<p style="font-size:11px;color:#8a9894">Yellow cells are editable (Enter / click away to save); an orange bar marks a manually edited cell that recompute will keep. Loan columns are computed from Employees → Loans (add / stop / change amortisation there), never typed here.</p>' : '<p>No computed lines yet — click <b>Compute</b>.</p>') + '</div>';
@@ -842,7 +911,22 @@
       rootEl.querySelectorAll('td[contenteditable]').forEach(function (td) {
         var orig = td.textContent;
         td.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); td.blur(); } if (e.key === 'Escape') { td.textContent = orig; td.blur(); } };
-        td.onblur = function () { var raw = td.textContent.trim(); if (raw === orig) return; var k = td.dataset.k, request = saveRegisterEdit(api, td.dataset.ln, k, raw, restoreOK()); request.then(function () { return loadPeriodData(); }).then(render).catch(function (e) { td.textContent = orig; fail(e); }); };
+        td.onblur = function () {
+          var raw = td.textContent.trim(); if (raw === orig) return;
+          var k = td.dataset.k, request = saveRegisterEdit(api, td.dataset.ln, k, raw, restoreOK());
+          if (k === 'daily_rate') {
+            // a rate step changes nothing until the week is recomputed, so do it here rather than
+            // leaving the register showing the old pay beside the new rate
+            $('#hrBody').innerHTML = '<div class="hr-card">Recomputing the week at the new rate…</div>';
+            request.then(function (r) {
+              if (r && r.lifted_to_minimum) toast('Saved ₱' + money(r.daily_rate) + ' — paid at the ₱' + money(r.effective_rate) + ' minimum in force');
+              else if (r) toast('Rate set to ₱' + money(r.daily_rate) + ' from ' + fmtDate(r.effective_from));
+              return api.computePeriod(S.period.id);
+            }).then(refresh).catch(function (e) { fail(e); });
+            return;
+          }
+          request.then(function () { return loadPeriodData(); }).then(render).catch(function (e) { td.textContent = orig; fail(e); });
+        };
       });
     };
     function exportXlsx(p, lines, logs) {
@@ -1020,15 +1104,16 @@
         '<select id="eGrp" title="Payroll group — only ' + esc(cg) + ' is attendance-built and computed; other groups appear on the Mandatory summary only"><option value="">All groups</option>' + allGroups.map(function (g) { return '<option value="' + esc(g) + '"' + (grp === g ? ' selected' : '') + '>' + esc(g) + (g === cg ? ' (computed)' : '') + '</option>'; }).join('') + '</select>' +
         '<label><input type="checkbox" id="eInact"' + (showInactive ? ' checked' : '') + '> show inactive</label><label title="Full masterlist — soft-deleted (disconnected) employees included"><input type="checkbox" id="eDel"' + (showDeleted ? ' checked' : '') + '> show deleted</label>' + (ro() ? '' : '<button class="hr-btn p" id="eNew">+ Employee</button>') + '<span style="font-size:11px;color:#8a9894">' + rows.length + ' shown</span></div>' +
         '<div class="hr-scroll"><table class="hr-t"><thead><tr><th>No.</th><th>Name</th><th>Tag</th><th>Position</th><th>Dept</th><th>Group</th><th>Team</th>' + (ratesOK() ? '<th class="r">Rate</th>' : '') + '<th>Aliases</th><th>Console</th><th>Source</th><th></th></tr></thead><tbody>' +
-        rows.map(function (e) { return '<tr' + (e.active ? '' : ' style="opacity:.55"') + '><td>' + esc(e.emp_no || '') + '</td><td><b>' + esc(e.display_name) + '</b>' + (e.name_ext ? ' <small style="color:#8a9894">' + esc(e.name_ext) + '</small>' : '') + (e.deleted_at ? ' <span class="hr-chip deleted" title="' + esc('deleted by ' + (e.deleted_by || '?') + ' on ' + fmtDate(String(e.deleted_at).slice(0, 10)) + (e.date_ended ? ' · effective ' + fmtDate(e.date_ended) : '') + (e.delete_reason ? ' · ' + e.delete_reason : '')) + '">deleted ' + esc(fmtDate(String(e.deleted_at).slice(0, 10))) + ' by ' + esc(e.deleted_by || '?') + (e.date_ended ? ' · eff. ' + esc(fmtDate(e.date_ended)) : '') + '</span>' + (e.delete_reason ? ' <small style="color:#8a2f2f">' + esc(e.delete_reason) + '</small>' : '') : e.active ? '' : ' <span class="hr-chip computed">inactive' + (e.date_ended ? ' · ended ' + esc(fmtDate(e.date_ended)) : '') + '</span>') + '</td><td>' + esc(e.status_tag || '') + '</td><td>' + esc(e.position || '') + '</td><td>' + esc(e.department || '') + '</td><td>' + (groupOf(e) === cg ? esc(groupOf(e)) : '<span class="hr-chip computed" title="not attendance-built / computed here — Mandatory summary only (basic pay encoded per month)">' + esc(groupOf(e)) + '</span>') + '</td><td>' + esc(e.team || '') + '</td>' + (ratesOK() ? '<td class="r">' + money(e.daily_rate) + '</td>' : '') + '<td style="white-space:normal;max-width:220px;font-size:11px">' + (e.aliases || []).map(esc).join(', ') + '</td><td>' + esc(e.console_username || '') + '</td><td>' + (e.source ? '<span class="hr-chip ' + (e.source === 'masterlist' ? 'locked' : 'computed') + '" title="seeded from the ' + esc(e.source) + '">' + esc(e.source) + '</span>' : '') + '</td><td style="white-space:nowrap">' + (ro() ? '' : e.deleted_at ? '<button class="hr-btn" data-restore="' + e.id + '">↺ Restore</button> ' : '<button class="hr-btn" data-edit="' + e.id + '">Edit</button> ') + (e.deleted_at ? '' : (ratesOK() ? '<button class="hr-btn" data-loans="' + e.id + '">Loans / contributions</button>' : '') + (ro() ? '' : ' <button class="hr-btn d" data-del="' + e.id + '" title="Disconnection — asks for the effectivity date and remarks; soft delete, kept in the masterlist (show deleted), restorable">Delete</button>')) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
+        rows.map(function (e) { return '<tr' + (e.active ? '' : ' style="opacity:.55"') + '><td>' + esc(e.emp_no || '') + '</td><td><b>' + esc(e.display_name) + '</b>' + (e.name_ext ? ' <small style="color:#8a9894">' + esc(e.name_ext) + '</small>' : '') + (e.deleted_at ? ' <span class="hr-chip deleted" title="' + esc('deleted by ' + (e.deleted_by || '?') + ' on ' + fmtDate(String(e.deleted_at).slice(0, 10)) + (e.date_ended ? ' · effective ' + fmtDate(e.date_ended) : '') + (e.delete_reason ? ' · ' + e.delete_reason : '')) + '">deleted ' + esc(fmtDate(String(e.deleted_at).slice(0, 10))) + ' by ' + esc(e.deleted_by || '?') + (e.date_ended ? ' · eff. ' + esc(fmtDate(e.date_ended)) : '') + '</span>' + (e.delete_reason ? ' <small style="color:#8a2f2f">' + esc(e.delete_reason) + '</small>' : '') : e.active ? '' : ' <span class="hr-chip computed">inactive' + (e.date_ended ? ' · ended ' + esc(fmtDate(e.date_ended)) : '') + '</span>') + '</td><td>' + esc(e.status_tag || '') + '</td><td>' + esc(e.position || '') + '</td><td>' + esc(e.department || '') + '</td><td>' + (groupOf(e) === cg ? esc(groupOf(e)) : '<span class="hr-chip computed" title="not attendance-built / computed here — Mandatory summary only (basic pay encoded per month)">' + esc(groupOf(e)) + '</span>') + '</td><td>' + esc(e.team || '') + '</td>' + (ratesOK() ? '<td class="r">' + money(e.daily_rate) + '</td>' : '') + '<td style="white-space:normal;max-width:220px;font-size:11px">' + (e.aliases || []).map(esc).join(', ') + '</td><td>' + esc(e.console_username || '') + '</td><td>' + (e.source ? '<span class="hr-chip ' + (e.source === 'masterlist' ? 'locked' : 'computed') + '" title="seeded from the ' + esc(e.source) + '">' + esc(e.source) + '</span>' : '') + '</td><td style="white-space:nowrap">' + (ro() ? '' : e.deleted_at ? '<button class="hr-btn" data-restore="' + e.id + '">↺ Restore</button> ' : '<button class="hr-btn" data-edit="' + e.id + '">Edit</button> ') + (e.deleted_at ? '' : (ratesOK() ? '<button class="hr-btn" data-rates="' + e.id + '" title="Daily rate over time — a step takes effect from its date onward and never restates an earlier week">Rates</button> <button class="hr-btn" data-loans="' + e.id + '">Loans / contributions</button>' : '') + (ro() ? '' : ' <button class="hr-btn d" data-del="' + e.id + '" title="Disconnection — asks for the effectivity date and remarks; soft delete, kept in the masterlist (show deleted), restorable">Delete</button>')) + '</td></tr>'; }).join('') + '</tbody></table></div>' +
         '<p class="mut"><b>Delete</b> = the disconnection: it asks for the effectivity date and remarks, records who deleted and when, makes the employee inactive from that date (paid through it, nothing after) and hides the row everywhere — it stays in the masterlist under <b>show deleted</b>, with its history, and can be restored.</p></div>';
       $('#eQ').oninput = function () { S.empQ = this.value; var v = this.value; TABS.employees(); var q2 = $('#eQ'); q2.focus(); q2.setSelectionRange(v.length, v.length); }; $('#eInact').onchange = function () { S.empInactive = this.checked; TABS.employees(); }; $('#eDel').onchange = function () { S.empDeleted = this.checked; TABS.employees(); };
       rootEl.querySelectorAll('[data-del]').forEach(function (b) { b.onclick = function () { openDisconnect(emp(b.dataset.del)); }; });
       rootEl.querySelectorAll('[data-restore]').forEach(function (b) { b.onclick = function () { api.restoreEmployee(b.dataset.restore).then(function () { S.empAll = null; toast('Restored (still inactive — tick Active in Edit to include in payroll)'); return refresh(); }).catch(fail); }; }); $('#eGrp').onchange = function () { S.empGroup = this.value; TABS.employees(); };
-      var nb = $('#eNew'); if (nb) nb.onclick = function () { openEmpForm({ active: true, department: 'field', payroll_group: cg, daily_rate: 695, weekly_allowance: 0, aliases: S.newEmpFrom ? [S.newEmpFrom] : [] }); };
-      if (S.newEmpFrom) { var raw = S.newEmpFrom; S.newEmpFrom = null; var parts = raw.split(' '); openEmpForm({ active: true, department: 'field', payroll_group: cg, daily_rate: 695, weekly_allowance: 0, aliases: [raw], first_name: parts.slice(0, -1).join(' '), last_name: parts.slice(-1)[0] }); }
+      var nb = $('#eNew'); if (nb) nb.onclick = function () { openEmpForm({ active: true, department: 'field', payroll_group: cg, daily_rate: defaultRate(), weekly_allowance: 0, aliases: S.newEmpFrom ? [S.newEmpFrom] : [] }); };
+      if (S.newEmpFrom) { var raw = S.newEmpFrom; S.newEmpFrom = null; var parts = raw.split(' '); openEmpForm({ active: true, department: 'field', payroll_group: cg, daily_rate: defaultRate(), weekly_allowance: 0, aliases: [raw], first_name: parts.slice(0, -1).join(' '), last_name: parts.slice(-1)[0] }); }
       rootEl.querySelectorAll('[data-edit]').forEach(function (b) { b.onclick = function () { openEmpForm(emp(b.dataset.edit)); }; });
       rootEl.querySelectorAll('[data-loans]').forEach(function (b) { b.onclick = function () { openLoans(b.dataset.loans); }; });
+      rootEl.querySelectorAll('[data-rates]').forEach(function (b) { b.onclick = function () { openRates(b.dataset.rates); }; });
     };
     // Amendment 5 (owner): Delete = disconnection form — effectivity date + remarks required; who / when recorded by deleteEmployee (deleted_by / deleted_at)
     function openDisconnect(e) {
@@ -1069,6 +1154,59 @@
             api.saveEmployee(out).then(function () { closeModal(); toast('Saved'); return refresh(); }).catch(fail);
           };
         });
+    }
+    // ---------- Daily rate over time (owner 2026-10-13: the HR Manager maintains the amount) ----------
+    // A rate STEP, not an overwrite. hr.effective_rate_on takes the newest step on or before a work date and
+    // falls back to the employee's stored daily_rate when no step covers it, so a step dated today leaves every
+    // earlier week exactly as it was paid. That is the whole point: changing employees.daily_rate instead would
+    // re-rate history the moment any old period were recomputed.
+    // The server refuses a step whose date falls inside a locked week (hr.assert_day_unlocked) — reopen first.
+    function openRates(eid) {
+      Promise.all([api.listEmployeeRates(eid), api.listMinWage()]).then(function (r) {
+        var steps = r[0] || [], floors = r[1] || [], e = emp(eid), today = new Date().toISOString().slice(0, 10);
+        function floorOn(d) { var f = floors.filter(function (x) { return x.effective_from <= d; }).sort(function (a, b) { return a.effective_from < b.effective_from ? 1 : -1; })[0]; return f ? Number(f.daily_rate) : null; }
+        function rateOn(d) {
+          var st = steps.filter(function (x) { return x.effective_from <= d; }).sort(function (a, b) { return a.effective_from < b.effective_from ? 1 : -1; })[0];
+          var raw = st ? Number(st.daily_rate) : Number(e.daily_rate) || 0, fl = floorOn(d);
+          return { raw: raw, eff: (raw > 0 && fl > 0 && raw < fl) ? fl : raw, lifted: !!(raw > 0 && fl > 0 && raw < fl) };
+        }
+        var now = rateOn(today);
+        openModal('<h3>' + esc(e.display_name) + ' — daily rate over time</h3>' +
+          '<p class="mut">Paid today: <b>₱' + money(now.eff) + '</b>' +
+          (now.lifted ? ' — the rate on file is ₱' + money(now.raw) + ', lifted to the ₱' + money(floorOn(today)) + ' minimum in force. Add a step to make the figure on file the real one.' : '') +
+          '<br>Rate on file (no step covers the date): <b>₱' + money(e.daily_rate) + '</b> — edit that one in the employee profile; it applies to every date no step covers, including past weeks.</p>' +
+          '<table class="hr-t"><thead><tr><th>Effective from</th><th class="r">Daily rate</th><th>Note</th><th>Last changed</th><th></th></tr></thead><tbody>' +
+          (steps.length ? steps.slice().sort(function (a, b) { return a.effective_from < b.effective_from ? 1 : -1; }).map(function (x) {
+            return '<tr><td><b>' + esc(fmtDate(x.effective_from)) + '</b></td><td class="r"><b>₱' + money(x.daily_rate) + '</b></td><td style="white-space:normal;max-width:260px;font-size:11px">' + esc(x.note || '') + '</td><td style="font-size:11px;color:#8a9894">' + esc(String(x.updated_at || '').slice(0, 10)) + (x.updated_by ? ' · ' + esc(x.updated_by) : '') + '</td><td>' + (ro() ? '' : '<button class="hr-btn" data-rstep="' + esc(x.effective_from) + '">Edit</button> <button class="hr-btn d" data-rdel="' + esc(x.effective_from) + '">Delete</button>') + '</td></tr>';
+          }).join('') : '<tr><td colspan=5>No steps yet — every date uses the rate on file.</td></tr>') + '</tbody></table>' +
+          (ro() ? '' : '<h4 style="margin:14px 0 4px">Add or replace a step</h4><div class="hr-form">' +
+            '<div><label>Effective from</label><input id="rFrom" type="date" value="' + esc(today) + '"></div>' +
+            '<div><label>Daily rate</label><input id="rAmt" type="number" step="0.01" min="0" value="' + esc(now.eff) + '"></div>' +
+            '<div class="w"><label>Note (why it changed)</label><input id="rNote" placeholder="e.g. minimum wage step, promotion, correction"></div>' +
+            '<div class="w"><button class="hr-btn p" id="rAdd">Save step</button> <span class="mut" style="font-size:11px">A step on a date that already has one replaces it. A date inside a locked week is refused — reopen the week first.</span></div></div>') +
+          '<div class="hr-bar" style="margin-top:12px"><button class="hr-btn" id="rNo">Close</button></div>',
+          function (box) {
+            box.querySelector('#rNo').onclick = closeModal;
+            box.querySelectorAll('[data-rstep]').forEach(function (b) { b.onclick = function () {
+              var x = steps.find(function (y) { return y.effective_from === b.dataset.rstep; });
+              box.querySelector('#rFrom').value = x.effective_from; box.querySelector('#rAmt').value = x.daily_rate; box.querySelector('#rNote').value = x.note || '';
+              box.querySelector('#rAmt').focus();
+            }; });
+            box.querySelectorAll('[data-rdel]').forEach(function (b) { b.onclick = function () {
+              if (!root.confirm('Delete the step effective ' + fmtDate(b.dataset.rdel) + '? Dates it covered fall back to the previous step, or to the rate on file.')) return;
+              api.deleteEmployeeRate(eid, b.dataset.rdel).then(refresh).then(function () { toast('Step deleted'); openRates(eid); }).catch(fail);
+            }; });
+            var add = box.querySelector('#rAdd'); if (add) add.onclick = function () {
+              var from = box.querySelector('#rFrom').value, amt = Number(box.querySelector('#rAmt').value);
+              if (!from) return toast('Effective date required');
+              if (!(amt > 0)) return toast('Daily rate must be more than zero');
+              var fl = floorOn(from);
+              if (fl > 0 && amt < fl && !root.confirm('₱' + money(amt) + ' is below the ₱' + money(fl) + ' minimum in force on ' + fmtDate(from) + '. Payroll will lift it to the minimum anyway. Save it as typed?')) return;
+              api.saveEmployeeRate({ employee_id: eid, effective_from: from, daily_rate: amt, note: box.querySelector('#rNote').value || null })
+                .then(refresh).then(function () { toast('Rate step saved'); openRates(eid); }).catch(fail);
+            };
+          });
+      }).catch(fail);
     }
     function openLoans(eid) {
       Promise.all([api.listLoans({ employee_id: eid }), api.listOverrides(eid)]).then(function (r) {
