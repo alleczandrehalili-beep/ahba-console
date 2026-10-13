@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-09.1';
+const APP_VERSION='2026-10-13.12';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -627,6 +627,58 @@ function unassignJob(jobId){
   else if(window.AHBASync) window.AHBASync(j);
   if(dashHist){ exitHistToToday(); } else { renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
 }
+// WIMS materials sa anyo ng PAPEL na SAR form (owner 2026-10-13): Unit | Qty | Material
+// Description sa eksaktong form order; ONU/IPTV serials sa taas; FOC Start/End/Reel sa
+// ibaba; photos/report-id bilang maliit na meta. Ang mga field na WALA sa form (hal.
+// bagong WIMS keys balang araw) ay idinidikit sa dulo ng table para walang nawawala.
+function wimsMaterialsHTML(rows){
+  const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  const has=v=>!(v==null||v===''||v===0||v==='0');
+  const FORM=[
+    ['foc_m','Meters','Fiber Optic Cable ( FOC )'],
+    ['kit_connector','Pcs.','APC Connector'],
+    ['kit_patchcord','Pc.','APC/APC Patch Cord'],
+    ['kit_terminalbox','Pc.','Terminal Box NIU'],
+    ['f17_clamp_pc','Pcs.','F17 ( S-Clamp )'],
+    ['f19_bracket_pc','Pc.','F19 ( House Bracket )'],
+    ['f20_hook_pc','Pc.','F20 ( Mid S-Clamp )'],
+    ['clip_5mm','Pcs.','Cable Clip'],
+    ['cable_tie','Pcs.','Cable Tie'],
+    ['dsided_tape_in','Inch','Double Sided Tape'],
+    ['etape_in','Inch','Electrical Tape'],
+    ['kit_saf','Pc.','SAF ( Kit )'],
+    ['kit_sar','Pc.','SAR ( Kit )']
+  ];
+  const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
+  const META=['id','modem_serial','kit_remarks','photos_count','foc_start_m','foc_end_m','foc_reel_no','foc2_reel_no','foc2_end_m'];
+  const KNOWN=new Set(FORM.map(f=>f[0]).concat(SKIP,META,['iptv_1','iptv_2','iptv_3']));
+  return rows.map(row=>{
+    let h='';
+    const ser=[];
+    if(row.modem_serial) ser.push(`<div><b>📶 ONU / Modem Serial</b>${esc(row.modem_serial)}</div>`);
+    ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) ser.push(`<div><b>📺 IPTV ${i+1} Serial</b>${esc(row[k])}</div>`); });
+    if(ser.length) h+=`<div class="info-grid">${ser.join('')}</div>`;
+    const tr=[];
+    FORM.forEach(([k,unit,desc])=>{ if(has(row[k])) tr.push(`<tr><td style="color:#8a9894">${unit}</td><td style="font-weight:800">${esc(row[k])}</td><td>${desc}</td></tr>`); });
+    Object.keys(row).forEach(k=>{ if(KNOWN.has(k)||!has(row[k])) return; tr.push(`<tr><td style="color:#8a9894">Pcs.</td><td style="font-weight:800">${esc(row[k])}</td><td>${esc(nice(k))}</td></tr>`); });
+    h+=tr.length
+      ? `<div class="table-wrap" style="margin-top:8px"><table><thead><tr><th style="width:64px">Unit</th><th style="width:48px">Qty</th><th>Material Description</th></tr></thead><tbody>${tr.join('')}</tbody></table></div>`
+      : '<div class="none" style="padding:10px;color:#8a9894">Report filed — no materials declared.</div>';
+    const foc=[];
+    if(has(row.foc_start_m)||row.foc_start_m===0) foc.push(`FOC Start: <b>${esc(row.foc_start_m)}m</b>`);
+    if(has(row.foc_end_m)||row.foc_end_m===0) foc.push(`FOC End: <b>${esc(row.foc_end_m)}m</b>`);
+    if(row.foc_reel_no) foc.push(`Reel No. <b>${esc(row.foc_reel_no)}</b>`);
+    if(row.foc2_reel_no) foc.push(`Reel 2: <b>${esc(row.foc2_reel_no)}</b>${has(row.foc2_end_m)?' (end '+esc(row.foc2_end_m)+'m)':''}`);
+    if(foc.length) h+=`<div style="padding:8px 2px 0;font-size:12px;color:#3a4a44">${foc.join(' &nbsp;·&nbsp; ')}</div>`;
+    if(row.kit_remarks) h+=`<div style="padding:6px 2px 0;font-size:12px;color:#a4690f;font-weight:600">⚠ Kit remarks: ${esc(row.kit_remarks)}</div>`;
+    const meta=[];
+    if(has(row.photos_count)) meta.push(esc(row.photos_count)+' photo(s)');
+    if(row.id) meta.push('report '+esc(String(row.id)));
+    if(meta.length) h+=`<div style="padding:6px 2px 0;font-size:10px;color:#9aa6a2">${meta.join(' · ')}</div>`;
+    return h;
+  }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:10px 0">');
+}
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
@@ -694,10 +746,14 @@ function openJobDetail(jobId){
     pg.innerHTML='<div class="none" style="padding:18px">Loading photos…</div>';
     fetchPhotosFor([jobId]).then(m=>{
       const list=m[jobId]||[];
-      pg.innerHTML=list.length?list.map((p,i)=>`<a href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${p.label||('Photo '+(i+1))} — open full size" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('photo '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none" style="padding:18px;color:#c2503a">⚠ The technician has not uploaded any photos yet.</div>';
+      renderQaPhotoTiles(pg,j,list);
     }).catch(()=>{ pg.innerHTML='<div class="none" style="padding:18px;color:#c2503a">Could not load photos.</div>'; });
   }
   // WIMS materials used sa JO na ito (wims.jo_materials RPC — read-only, any console user)
+  // Owner 2026-10-13: ang viewing ay sumusunod na sa mismong papel na SAR materials form —
+  // serials sa taas (ONU/IPTV), tapos Unit | Qty | Material Description table sa EKSAKTONG
+  // pagkakasunod-sunod ng form, tapos FOC Start/End/Reel sa ibaba (dating alpabetong
+  // key-value dump na mahirap i-cross-check sa papel).
   const wg=$('#jdWims');
   if(wg){
     const _wjo=(j.job_order_no||'').trim();
@@ -709,22 +765,7 @@ function openJobDetail(jobId){
         .then(rows=>{
           if(!$('#jdTitle').textContent.startsWith(j.id)) return;   // ibang JO na ang bukas
           if(!rows||!rows.length){ wg.innerHTML='<div class="none" style="padding:10px;color:#8a9894">No WIMS material report was filed for this JO.</div>'; return; }
-          const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
-          const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-          const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-          wg.innerHTML=rows.map(row=>{
-            const parts=[];
-            if(row.modem_serial) parts.push(`<div><b>📶 Modem serial</b>${esc(row.modem_serial)}</div>`);
-            ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) parts.push(`<div><b>📺 IPTV ${i+1}</b>${esc(row[k])}</div>`); });
-            Object.keys(row).forEach(k=>{
-              if(SKIP.includes(k)||k==='modem_serial'||/^iptv_[123]$/.test(k)||k==='kit_remarks') return;
-              const v=row[k];
-              if(v==null||v===''||v===0||v==='0') return;
-              parts.push(`<div><b>${esc(nice(k))}</b>${esc(v)}</div>`);
-            });
-            if(row.kit_remarks) parts.push(`<div><b>⚠ Kit remarks</b>${esc(row.kit_remarks)}</div>`);
-            return `<div class="info-grid">${parts.join('')||'<div class="none">Report filed, walang laman.</div>'}</div>`;
-          }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:8px 0">');
+          wg.innerHTML=wimsMaterialsHTML(rows);
         })
         .catch(()=>{ wg.innerHTML='<div class="none" style="padding:10px;color:#c2503a">Could not load WIMS materials — run wims-JO-materials.sql first.</div>'; });
     }
@@ -1537,12 +1578,34 @@ async function renderProductivityHistory(){
   if(live){ snap={captured_at:new Date().toISOString(),data:buildDailyMetrics()}; maybeCaptureSnapshot(); }   // FIX 2026-10-03: dumaan sa 3-min throttle — dati ay direktang POST sa BAWAT timeline render (503 storms)
   else { try{ const r=await fetch(`${SUPA_URL}/rest/v1/daily_snapshots?work_date=eq.${date}&select=*`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}}); const rows=r.ok?await r.json():[]; snap=rows[0]||null; }catch(e){} }
   if(!snap){ panel.innerHTML=`<div class="empty-row">No saved productivity for ${date}. (Saving starts from this day onward.)</div>`; return; }
-  const d=snap.data||{}, c=d.counts||{};
-  const defs=[['Total Turn-Ins',d.turnins||0,'#102925','#fff'],['For Dispatch',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
+  const d=snap.data||{};
+  // Owner 2026-10-13: ang Daily Productivity ay sumusunod na sa Dashboard ORG filter
+  // (hal. AHBA) para TUGMA sa timeline/board counts — dati, company-wide na raw totals
+  // ito kaya hindi nagta-tally sa filtered na board. Kapag may org na pili at may stored
+  // job list ang snapshot, muling binibilang mula sa mismong jobs ng snapshot.
+  let c=d.counts||{}, turnins=d.turnins||0, teamsArr=d.teams||[], scopeNote='';
+  const _og=($('#tlfOrg')&&$('#tlfOrg').value)||'';
+  if(_og && Array.isArray(d.jobs)){
+    const scoped=d.jobs.filter(tlPassOrg);
+    c={fordispatch:0,acknowledged:0,travel:0,onsite:0,incomplete:0,completed:0,cancelled:0};
+    scoped.forEach(j=>{ c[tlBucket(j.status)]++; });
+    const _enc=j=> j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):'';
+    turnins=[...new Set(scoped.filter(j=>_enc(j)===date).map(j=>j.id))].length;
+    const tm={};
+    scoped.forEach(j=>{ if(!j.team) return; const t=tm[j.team]=tm[j.team]||{code:j.team,total:0,completed:0,incomplete:0}; t.total++; const b=tlBucket(j.status); if(b==='completed')t.completed++; if(b==='incomplete')t.incomplete++; });
+    teamsArr=Object.values(tm).sort((a,b)=>b.completed-a.completed||a.code.localeCompare(b.code));
+    const _ogSel=$('#tlfOrg'); scopeNote=' · filtered: '+(((_ogSel&&_ogSel.selectedOptions&&_ogSel.selectedOptions[0])||{}).textContent||'selected org');
+  } else if(_og){
+    scopeNote=' · ⚠ this older snapshot has no per-org detail — showing company-wide totals';
+  }
+  // Mas malinaw na labels (owner 2026-10-13): ang Turn-Ins ay ENCODED sa araw na iyon
+  // (hindi board total), at ang For Dispatch ay ang BUONG backlog sa araw na iyon
+  // (kasama ang naipon mula sa mga naunang araw) — hindi lang ang araw na iyon.
+  const defs=[['Total Turn-Ins (encoded this day)',turnins||0,'#102925','#fff'],['For Dispatch (total backlog that day)',c.fordispatch||0,'#fff','#56655f'],['Acknowledged',c.acknowledged||0,'#eaf1ff','#3473d8'],['Travel',c.travel||0,'#f0ebff','#7959c7'],['On-site',c.onsite||0,'#fff4cf','#9a7b12'],['Incomplete',c.incomplete||0,'#fdecea','#c2503a'],['Completed',c.completed||0,'#e7f7ef','#11825f'],['Cancelled',c.cancelled||0,'#f2f2f2','#87928f']];
   const chips=defs.map(([l,n,bg,fg])=>`<span class="tl-count" style="background:${bg};color:${fg};border:1px solid rgba(0,0,0,.08)"><b>${n}</b>${l}</span>`).join('');
-  const teamRows=(d.teams||[]).map(t=>`<tr><td><strong>${(t.code||'').replace(/</g,'&lt;')}</strong></td><td>${t.total||0}</td><td style="color:#11825f;font-weight:700">${t.completed||0}</td><td style="color:#c2503a;font-weight:700">${t.incomplete||0}</td></tr>`).join('')||'<tr><td colspan="4" class="empty-cell">No team activity recorded.</td></tr>';
+  const teamRows=(teamsArr||[]).map(t=>`<tr><td><strong>${(t.code||'').replace(/</g,'&lt;')}</strong></td><td>${t.total||0}</td><td style="color:#11825f;font-weight:700">${t.completed||0}</td><td style="color:#c2503a;font-weight:700">${t.incomplete||0}</td></tr>`).join('')||'<tr><td colspan="4" class="empty-cell">No team activity recorded.</td></tr>';
   panel.innerHTML=`<div class="tl-counts" style="border:0;background:transparent;padding:0 0 10px">${chips}</div>`
-    +`<div style="font-size:9px;color:#9aa6a2;margin:0 0 8px">${live?'Live (today, auto-saving)':'Saved snapshot'} · captured ${snap.captured_at?fmtWhen(snap.captured_at):'—'}</div>`
+    +`<div style="font-size:9px;color:#9aa6a2;margin:0 0 8px">${live?'Live (today, auto-saving)':'Saved snapshot'} · captured ${snap.captured_at?fmtWhen(snap.captured_at):'—'}${scopeNote}</div>`
     +`<div class="table-wrap"><table><thead><tr><th>Team</th><th>Total loads</th><th>Completed</th><th>Incomplete</th></tr></thead><tbody>${teamRows}</tbody></table></div>`;
   injectIcons();
 }
@@ -2633,12 +2696,85 @@ async function fetchCompleted(date){
   }catch(e2){ fetchCompleted._err=String(e2&&e2.message||e2); return[]; }
 }
 async function fetchPhotosFor(ids){
-  if(!ids.length)return{};
-  try{
-    const q=ids.map(encodeURIComponent).join(',');
-    const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?select=job_id,path,label&job_id=in.(${q})`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    const rows=r.ok?await r.json():[]; const m={}; rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push({path:x.path,label:x.label||''})}); return m;
-  }catch(e){return{}}
+  const m={}; if(!ids.length)return m;
+  const unique=[...new Set(ids.map(String))];
+  unique.forEach(id=>{m[id]=[];});
+  for(let start=0;start<unique.length;start+=100){
+    const q=unique.slice(start,start+100).map(encodeURIComponent).join(',');
+    for(let offset=0;;offset+=1000){
+      const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?select=id::text,job_id,path,label,created_at,team,org_id&job_id=in.(${q})&order=id.asc&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      await reqOk(r,'Load JO photos'); const rows=await r.json();
+      if(!Array.isArray(rows))throw new Error('Photo list was unreadable');
+      rows.forEach(x=>{(m[x.job_id]=m[x.job_id]||[]).push({id:String(x.id),path:x.path,label:x.label||'',created_at:x.created_at,team:x.team,org_id:x.org_id});});
+      if(rows.length<1000)break;
+    }
+  }
+  return m;
+}
+function qaPhotoText(value){ return String(value==null?'':value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function qaCorrectionClient(){ return QaPhotoCorrections.createClient({url:SUPA_URL,key:SUPA_KEY,token:dashTok}); }
+function renderQaPhotoTiles(container,job,photos){
+  if(!container)return;
+  const gcOnly=(typeof isGcConsole==='function')&&isGcConsole();   // owner 2026-10-13: GC organization only (other orgs pending)
+  const mayCorrect=gcOnly&&!!(window.QaPhotoCorrections&&QaPhotoCorrections.canReplace(window.dashUser));
+  const mayReadHistory=gcOnly&&!!(window.QaPhotoCorrections&&QaPhotoCorrections.canViewHistory?.(window.dashUser));
+  container.innerHTML=photos.length?photos.map((p,i)=>{
+    const label=qaPhotoText(p.label||('Photo '+(i+1))), url=qaPhotoText(photoBase(p.path));
+    return `<div class="qa-proof-tile"><a class="ph" href="${url}" target="_blank" rel="noopener" title="${label}"><img src="${url}" alt="${label}" loading="lazy"><span class="qa-proof-label">${label}</span></a>${(mayCorrect||mayReadHistory)&&p.id?`<div class="qa-proof-actions">${mayCorrect?`<button type="button" class="assign-btn" data-qa-replace="${i}">Replace this photo</button>`:''}${mayReadHistory?`<button type="button" class="assign-btn" data-qa-history="${i}">History</button>`:''}</div>`:''}</div>`;
+  }).join(''):'<div class="none">No photos uploaded for this job.</div>';
+  container.querySelectorAll('[data-qa-replace]').forEach(b=>b.onclick=()=>openQaPhotoReplacement(job,photos[Number(b.dataset.qaReplace)]));
+  container.querySelectorAll('[data-qa-history]').forEach(b=>b.onclick=()=>openQaPhotoHistory(job,photos[Number(b.dataset.qaHistory)]));
+}
+async function openQaPhotoReplacement(job,photo){
+  if(!isGcConsole()||!window.QaPhotoCorrections||!QaPhotoCorrections.canReplace(window.dashUser)){showToast('"QA Photo Fix" Edit access (GC console) is required');return;}
+  if(!photo||!photo.id){showToast('Reload the selected photo first');return;}
+  let current;
+  try{ current=await fetchFullJob(job.id); if(!current)throw new Error('JO could not be loaded'); }catch(e){showToast(e.message);return;}
+  let dlg=document.getElementById('qaCorrectionModal');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='qaCorrectionModal';dlg.className='modal';document.body.appendChild(dlg);}
+  dlg.innerHTML='<div class="modal-head"><div><span class="eyebrow">QA · PHOTO CORRECTION</span><h2>Replace this photo</h2><p id="qaCorrectionTarget"></p></div></div><div class="qa-correction-body"><div class="qa-correction-preview"><div><strong>Current photo</strong><img id="qaCorrectionOld" alt="Current selected proof"></div><div><strong>Replacement preview</strong><img id="qaCorrectionNew" alt="Replacement preview" hidden></div></div><label class="field"><span>Replacement image (JPG, PNG or WebP; up to 10 MB)</span><input id="qaCorrectionFile" type="file" accept="image/jpeg,image/png,image/webp"></label><label class="field"><span>Reason for correction</span><textarea id="qaCorrectionReason" rows="3" maxlength="2000" required></textarea></label><p>Original and replacement history are kept. This JO will require QA review.</p><p id="qaCorrectionError" role="alert" class="qa-correction-error"></p></div><div class="modal-actions"><button type="button" class="secondary-btn" id="qaCorrectionCancel">Cancel</button><button type="button" class="primary-btn" id="qaCorrectionSave">Save replacement</button></div>';
+  dlg.querySelector('#qaCorrectionTarget').textContent=current.id+' · '+(photo.label||'Selected photo');
+  dlg.querySelector('#qaCorrectionOld').src=photoBase(photo.path);
+  const fileInput=dlg.querySelector('#qaCorrectionFile'), reason=dlg.querySelector('#qaCorrectionReason'), error=dlg.querySelector('#qaCorrectionError'), save=dlg.querySelector('#qaCorrectionSave'), cancel=dlg.querySelector('#qaCorrectionCancel');
+  let previewUrl='', operation=null, busy=false;
+  const releasePreview=()=>{if(previewUrl){URL.revokeObjectURL(previewUrl);previewUrl='';}};
+  fileInput.onchange=()=>{releasePreview();const file=fileInput.files[0], image=dlg.querySelector('#qaCorrectionNew');image.hidden=!file;if(file){previewUrl=URL.createObjectURL(file);image.src=previewUrl;}error.textContent='';};
+  cancel.onclick=()=>{if(!busy)dlg.close();};
+  dlg.oncancel=e=>{if(busy)e.preventDefault();};dlg.onclose=releasePreview;
+  save.onclick=async()=>{
+    if(busy)return;error.textContent='';
+    try{
+      operation=QaPhotoCorrections.prepareOperation({jobId:current.id,photoId:photo.id,expectedPath:photo.path,expectedReturnedAt:current.qa_returned_at||'',reason:reason.value,file:fileInput.files[0]},operation);
+      busy=true;save.disabled=true;cancel.disabled=true;fileInput.disabled=true;reason.disabled=true;save.textContent='Saving…';
+      const result=await qaCorrectionClient().submit(operation);
+      const updated=result.job||{validated:false,validated_at:null,validated_by:null,qa_returned_at:result.returned_at};
+      Object.assign(job,updated);const local=findJob(current.id);if(local)Object.assign(local,updated);const completed=compJobs.find(x=>x.id===current.id);if(completed)Object.assign(completed,updated);
+      dlg.close();showToast('Photo replaced — Pending QA review');
+      try{
+        const list=(await fetchPhotosFor([current.id]))[current.id]||[];compPhotos[current.id]=list;
+        const full=await fetchFullJob(current.id);if(full){Object.assign(job,full);if(completed)Object.assign(completed,full);}
+        if($('#photoModal')&&$('#photoModal').open&&$('#photoTitle').textContent.startsWith(current.id+' ·'))openGallery(current.id);
+        if($('#jdPhotos')&&$('#jdTitle')&&$('#jdTitle').textContent.startsWith(current.id))renderQaPhotoTiles($('#jdPhotos'),job,list);
+        if($('#completedPage')&&$('#completedPage').classList.contains('active'))renderCompleted();
+      }catch(e){
+        delete compPhotos[current.id];
+        if($('#photoModal')&&$('#photoModal').open&&$('#photoTitle').textContent.startsWith(current.id+' ·'))openGallery(current.id);
+        if($('#jdPhotos')&&$('#jdTitle')&&$('#jdTitle').textContent.startsWith(current.id))$('#jdPhotos').innerHTML='<div class="none">Replacement saved. Reopen this JO to load its current photos.</div>';
+        showToast('Replacement saved. Reopen this JO to load its updated photos.');
+      }
+    }catch(e){error.textContent=e.message||'Photo replacement could not be saved. Your chosen image and reason are kept for retry.';}
+    finally{busy=false;save.disabled=false;cancel.disabled=false;fileInput.disabled=false;reason.disabled=false;save.textContent='Save replacement';}
+  };
+  dlg.showModal();
+}
+async function openQaPhotoHistory(job,photo){
+  let result;try{result=await qaCorrectionClient().history({jobId:job.id,photoId:photo.id});}catch(e){showToast('Photo history: '+e.message);return;}
+  let dlg=document.getElementById('qaPhotoHistoryModal');if(!dlg){dlg=document.createElement('dialog');dlg.id='qaPhotoHistoryModal';dlg.className='modal';document.body.appendChild(dlg);}
+  dlg.innerHTML='<div class="modal-head"><div><span class="eyebrow">QA · PHOTO HISTORY</span><h2>Photo corrections</h2><p id="qaHistoryTarget"></p></div></div><div class="qa-correction-body" id="qaHistoryRows"></div><div class="modal-actions"><button type="button" class="secondary-btn" id="qaHistoryClose">Close</button></div>';
+  dlg.querySelector('#qaHistoryTarget').textContent=job.id+' · '+(photo.label||'Selected photo');
+  const rows=Array.isArray(result.revisions)?result.revisions:[];
+  dlg.querySelector('#qaHistoryRows').innerHTML=rows.length?rows.map(r=>`<section class="qa-history-item"><strong>${qaPhotoText(r.actor_label||r.actor_id||'Dispatcher')}</strong><span> · ${qaPhotoText(fmtWhen(r.corrected_at))}</span><p>${qaPhotoText(r.reason)}</p><div class="qa-correction-preview">${[['Original',r.old_url],['Replacement',r.new_url]].map(([label,url])=>url?`<a href="${qaPhotoText(url)}" target="_blank" rel="noopener"><strong>${label}</strong><img src="${qaPhotoText(url)}" alt="${label} photo"></a>`:'').join('')}</div></section>`).join(''):'<p>No dispatcher corrections recorded for this photo.</p>';
+  dlg.querySelector('#qaHistoryClose').onclick=()=>dlg.close();dlg.showModal();
 }
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
@@ -2647,7 +2783,8 @@ async function renderCompleted(){
   const body=$('#completedBody'); if(!body)return;
   body.innerHTML=`<tr><td colspan="7" class="empty-cell">Loading…</td></tr>`;
   compJobs=await fetchCompleted(date);
-  compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id));
+  compPhotos={};
+  try{ compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id)); }catch(e){ body.innerHTML='<tr><td colspan="7" class="empty-cell">Photos could not be loaded — retry this day.</td></tr>'; showToast('❌ '+e.message); return; }
   const totalPhotos=Object.values(compPhotos).reduce((a,b)=>a+b.length,0);
   const val=compJobs.filter(j=>j.validated).length;
   $('#compTotal').textContent=compJobs.length;
@@ -2665,39 +2802,110 @@ async function renderCompleted(){
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
 }
-function openGallery(jobId){
-  const j=compJobs.find(x=>x.id===jobId)||{}; const paths=compPhotos[jobId]||[];
+async function openGallery(jobId){
+  const seq=(openGallery._seq||0)+1;openGallery._seq=seq;
+  const j=compJobs.find(x=>x.id===jobId)||{};
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
-  $('#photoGrid').innerHTML=paths.length?paths.map((p,i)=>`<a class="ph" href="${photoBase(p.path)}" target="_blank" rel="noopener" title="${(p.label||('Photo '+(i+1)))} — open in new window" style="position:relative"><img src="${photoBase(p.path)}" alt="${p.label||('proof '+(i+1))}" loading="lazy"><span style="position:absolute;left:0;right:0;bottom:0;background:rgba(8,44,40,.78);color:#fff;font-size:7.5px;font-weight:700;padding:3px 4px;line-height:1.2">${p.label||('#'+(i+1))}</span></a>`).join(''):'<div class="none">No photos uploaded for this job.</div>';
-  $$('#photoGrid .ph').forEach(a=>a.onclick=e=>{e.preventDefault();window.open(a.href,'_blank','noopener,noreferrer');});
-  const vb=$('#validateBtn'); vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':''; vb.onclick=()=>{validateJob(jobId);closeModals();};
+  $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
+  const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
   openModal($('#photoModal'));
+  try{
+    const paths=(await fetchPhotosFor([jobId]))[jobId]||[];if(seq!==openGallery._seq)return;
+    compPhotos[jobId]=paths;
+    $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
+    renderQaPhotoTiles($('#photoGrid'),j,paths);
+    vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':'';vb.onclick=()=>{validateJob(jobId);closeModals();};
+  }catch(e){
+    if(seq!==openGallery._seq)return;delete compPhotos[jobId];
+    $('#photoSub').textContent='Current photos could not be loaded';$('#photoGrid').innerHTML='<div class="none">Reopen this JO to retry loading its current photos before QA validation.</div>';
+    showToast('Photos could not be loaded: '+e.message);
+  }
 }
 async function validateJob(jobId){
   if(!dashCanEdit('completed')){ showToast('QA validation is GC-only'); return; }
   const who=(window.dashUser&&(window.dashUser.display_name||window.dashUser.username))||'Console';
   const now=new Date().toISOString();
   try{
-    const _r=await fetch(`${SUPA_URL}/rest/v1/jobs?id=eq.${encodeURIComponent(jobId)}`,{method:'PATCH',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify({validated:true,validated_at:now,validated_by:who})});
-    await reqOk(_r,'QA validate');
+    const snapshot=(compPhotos[jobId]||[]).map(p=>({id:p.id,path:p.path}));
+    const _r=await fetch(`${SUPA_URL}/rest/v1/rpc/validate_photo_evidence`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json','Content-Profile':'qa',Prefer:'return=representation'},body:JSON.stringify({p_job_id:jobId,p_expected_photos:snapshot})});
+    await reqOk(_r,'QA validate current photos');
     const cj=compJobs.find(x=>x.id===jobId); if(cj){ cj.validated=true; cj.validated_at=now; cj.validated_by=who; }
     showToast(`${jobId} validated (by ${who})`); renderCompleted();
   }catch(e){showToast('❌ QA validation did not save — '+e.message+' — try again.')}
 }
+let qaArchiveBusy=false;
+function qaArchiveJobType(job){
+  const id=String(job.id||'').trim();
+  if(/^WO-/i.test(id))return {rank:0,label:'New Install'};
+  if(/^SLRT(?:-|$)/i.test(id))return {rank:1,label:'Service Repair'};
+  return {rank:2,label:'Unclassified'};
+}
+function qaArchiveSubscriber(job){
+  const last=String(job.last_name||'').trim();
+  const given=[job.first_name,job.middle_name].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+  const full=String(job.subscriber||'').replace(/\s+/g,' ').trim();
+  if(last)return {last,name:given?`${last}, ${given}`:full||last};
+  // Older records can have only a display name. Preserve it rather than guessing its spelling.
+  const fallback=full||given||'subscriber';
+  const sortLast=fallback.includes(',')?fallback.split(',')[0].trim():fallback.replace(/\s+(?:Jr\.?|Sr\.?|II|III|IV)$/i,'').split(' ').pop();
+  return {last:sortLast,name:fallback};
+}
+function compareQaArchiveJobs(a,b){
+  const left=qaArchiveSubscriber(a),right=qaArchiveSubscriber(b);
+  const compare=(x,y)=>String(x).localeCompare(String(y),'en',{sensitivity:'base',numeric:true});
+  return qaArchiveJobType(a).rank-qaArchiveJobType(b).rank || compare(left.last,right.last) || compare(left.name,right.name) || compare(a.id,b.id);
+}
+async function downloadQaArchivePhotos(entries,onProgress){
+  const controller=new AbortController();let next=0,completed=0,firstError=null;
+  const worker=async()=>{
+    while(!firstError && next<entries.length){
+      const entry=entries[next++];
+      try{
+        const response=await fetch(photoBase(entry.photo.path),{signal:controller.signal});
+        await reqOk(response,'Load QA archive photo');const blob=await response.blob();
+        if(firstError)return;
+        const mime=String(blob.type||'').split(';')[0].toLowerCase();
+        const mimeExt={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif','image/avif':'avif','image/heic':'heic','image/heif':'heif','image/tiff':'tif','image/bmp':'bmp','image/svg+xml':'svg'};
+        const pathExt=String(entry.photo.path).match(/\.([a-z0-9]{2,5})$/i)?.[1].toLowerCase();
+        const ext=mimeExt[mime]||(!mime||mime==='application/octet-stream'?pathExt||'jpg':'');
+        if(!ext||!blob.size)throw new Error('Photo was empty or its image format could not be verified');
+        entry.blob=blob;entry.ext=ext;completed++;
+        onProgress(completed,entries.length);
+      }catch(error){
+        if(!firstError){firstError=new Error('photo '+(entry.photo.label||entry.photo.id||entry.jobId)+' could not be downloaded — '+error.message);controller.abort();}
+      }
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(6,entries.length)},worker));
+  if(firstError)throw firstError;
+  // ZIP entry order follows the sorted plan, even when later photos finish downloading first.
+  for(const entry of entries){entry.folder.file(entry.filename+'.'+entry.ext,entry.blob);delete entry.blob;}
+}
 async function exportZip(){
-  try{ await ensureXLSX(); await ensureJSZip(); }catch(_){ showToast('Export libraries failed to load'); return; }
-  if(!compJobs.length){showToast('Nothing to export for this day');return}
+  if(qaArchiveBusy){showToast('A ZIP download is already being prepared.');return;}
+  if(!compJobs.length){showToast('Nothing to export for this day');return;}
+  if(compJobs.some(j=>!Object.prototype.hasOwnProperty.call(compPhotos,j.id))){showToast('Reload the QA day or reopen this JO to load current photos before exporting.');return;}
   const date=$('#compDate').value||manilaToday();
-  showToast('Building archive (Excel + photos)…');
-  await loadAgentNames();
+  const exportJobs=compJobs.map(j=>({...j})).sort(compareQaArchiveJobs);
+  const exportPhotos=Object.fromEntries(exportJobs.map(j=>[j.id,(compPhotos[j.id]||[]).map(p=>({...p}))]));
+  const exportButton=$('#exportBtn'),originalButtonHtml=exportButton?.innerHTML;
+  qaArchiveBusy=true;if(exportButton)exportButton.disabled=true;
+  try{
+  showToast('Preparing Excel and photo archive…');
+  try{await Promise.all([ensureXLSXStyle(),ensureJSZip()]);}catch(_){showToast('Export libraries failed to load');return;}
+  let wims, wimsColumns={};
+  try{
+    if(!window.QaWimsExport)throw new Error('WIMS export module is unavailable');
+    [wims]=await Promise.all([QaWimsExport.load(exportJobs,{url:SUPA_URL,key:SUPA_KEY,token:dashTok()}),loadAgentNames()]);
+    exportJobs.forEach(j=>{wimsColumns[j.id]=QaWimsExport.usageColumnsFor(j.id,wims);});
+  }catch(e){ showToast('❌ QA export stopped: '+e.message+' — no incomplete WIMS archive was downloaded.'); return; }
   const zip=new JSZip();
 
   // --- Excel with all subscriber info (matches the NEW LOADS layout) ---
-  const rows=compJobs.map(j=>({
+  const rows=exportJobs.map(j=>({
     'DATE': j.load_date||(j.updated_at?dayStr(j.updated_at):''),
     'DISPATCH STATUS': j.dispatch_status||'',
-    'TEAM ASSIGNED': j.team||'',
+    'TEAM ASSIGNED': QaWimsExport.officialTeamCode(j.team),
     'DRIVER': j.driver||'',
     'TECH1': j.tech1||'',
     'MAPPING TEAM': j.mapping_team||'',
@@ -2735,52 +2943,91 @@ async function exportZip(){
     'AR NO.': j.ar_no||'',
     'COMPLETED AT': j.updated_at?fmtWhen(j.updated_at):'',
     'VALIDATED': j.validated?'YES':'NO',
-    'PHOTOS': (compPhotos[j.id]||[]).length,
+    'PHOTOS': (exportPhotos[j.id]||[]).length,
     'WO ID': j.id
   }));
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(upperRows(rows)), 'Completed');
+  // Keep the complete original subscriber/JO columns first, followed by WIMS usage.
+  // Preserve CPE/reel case exactly rather than uppercasing identifiers.
+  const sheetRows=rows.map(row=>{
+    const core=upperRows([row])[0];
+    return {...core,...wimsColumns[row['WO ID']]};
+  });
+  const usageHeaders=Object.keys(wimsColumns[exportJobs[0].id]);
+  const headers=[...new Set(sheetRows.flatMap(row=>Object.keys(row)))];
+  // Move audit metadata after all visible columns, regardless of the first JO's data.
+  const orderedHeaders=headers.filter(k=>!QaWimsExport.isAuditColumn(k)).concat(usageHeaders.filter(QaWimsExport.isAuditColumn));
+  const ws=XLSX.utils.json_to_sheet(sheetRows,{header:orderedHeaders});
+  const layout=QaWimsExport.worksheetLayout(sheetRows);
+  const byHeader=Object.fromEntries(headers.map((name,i)=>[name,layout.columns[i]]));
+  ws['!cols']=orderedHeaders.map(name=>byHeader[name]);
+  ws['!autofilter']={ref:ws['!ref']};
+  QaWimsExport.styleWorksheet(ws,sheetRows,orderedHeaders);
+  XLSX.utils.book_append_sheet(wb, ws, 'Completed');
   zip.file(`AHBA_completed_${date}.xlsx`, XLSX.write(wb,{type:'array',bookType:'xlsx'}));
 
-  // --- Photos: one folder per subscriber, files named with the subscriber name ---
-  const photosRoot=zip.folder('photos'); const used={};
-  for(const j of compJobs){
-    const paths=compPhotos[j.id]||[]; if(!paths.length)continue;
-    let name=safeName(j.subscriber || [j.first_name,j.last_name].filter(Boolean).join(' '));
-    if(used[name]){ used[name]++; name=`${name} (${used[name]})`; } else used[name]=1;
-    const folder=photosRoot.folder(`${name} - ${j.id}`);
-    const lblUsed={};
-    for(let i=0;i<paths.length;i++){
-      const p=paths[i]; const lbl=safeName(p.label||('Photo '+(i+1)));
-      lblUsed[lbl]=(lblUsed[lbl]||0)+1; const suffix=lblUsed[lbl]>1?` (${lblUsed[lbl]})`:'';
-      try{ const blob=await (await fetch(photoBase(p.path))).blob(); folder.file(`${name} - ${lbl}${suffix}.jpg`, blob); }
-      catch(e){ console.warn('zip fetch',e.message); }
-    }
+  // Assign every filename before concurrent downloads, so duplicate labels stay deterministic.
+  const photosRoot=zip.folder('photos'),usedFolders=new Set(),entries=[];
+  for(const j of exportJobs){
+    const paths=exportPhotos[j.id]||[];if(!paths.length)continue;
+    const name=safeName(qaArchiveSubscriber(j).name),type=qaArchiveJobType(j);
+    const base=`${type.label}/${name} (${type.label})`;
+    let folderName=base,number=2;
+    while(usedFolders.has(folderName.toLowerCase()))folderName=`${base} (${number++})`;
+    usedFolders.add(folderName.toLowerCase());
+    const folder=photosRoot.folder(folderName),labels=Object.create(null),filenames=new Set();
+    paths.forEach((photo,i)=>{
+      const label=safeName(photo.label||('Photo '+(i+1)));let number=(labels[label]||0)+1,filename;
+      do{filename=`${name} - ${label}${number>1?' ('+number+')':''}`;number++;}while(filenames.has(filename));
+      labels[label]=number-1;filenames.add(filename);
+      entries.push({folder,photo,jobId:j.id,filename});
+    });
   }
-
-  const out=await zip.generateAsync({type:'blob'});
+  if(exportButton)exportButton.textContent=`Photos 0 / ${entries.length}`;
+  showToast(`Downloading photos 0 / ${entries.length}…`);
+  await downloadQaArchivePhotos(entries,(done,total)=>{
+    if(exportButton)exportButton.textContent=`Photos ${done} / ${total}`;
+    if(done===total || done%6===0)showToast(`Downloading photos ${done} / ${total}…`);
+  });
+  if(exportButton)exportButton.textContent='Creating ZIP…';
+  showToast('Creating ZIP…');
+  // Keep original image bytes; streaming avoids building each whole entry again in memory.
+  const out=await zip.generateAsync({type:'blob',streamFiles:true,compression:'STORE'},metadata=>{
+    if(exportButton)exportButton.textContent=`Creating ZIP ${Math.floor(metadata.percent)}%`;
+  });
   const a=document.createElement('a'); a.href=URL.createObjectURL(out); a.download=`AHBA_completed_${date}.zip`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),15000);
   showToast('Archive downloaded (Excel + photos)');
+  }catch(error){showToast('❌ QA archive stopped: '+error.message+' — retry the export; no partial ZIP was downloaded.');}
+  finally{qaArchiveBusy=false;if(exportButton){exportButton.disabled=false;exportButton.innerHTML=originalButtonHtml||'Download ZIP';}}
+
 }
 async function clearCloud(){
+  if(qaArchiveBusy){showToast('Wait for the ZIP download to finish before clearing photos.');return;}
   if(!dashCanEdit('completed')){ showToast('Clearing QA photos is GC-only'); return; }
   const date=$('#compDate').value||manilaToday();
-  if(!compJobs.length){showToast('Nothing to clear for this day');return}
-  const allPaths=compJobs.flatMap(j=>(compPhotos[j.id]||[]).map(p=>p.path));
-  if(!allPaths.length){showToast('No photos to clear');return}
-  if(!confirm(`Delete ${allPaths.length} photo(s) from the cloud for ${date}?\n\nDownload the ZIP archive FIRST. Job records are kept — only the images are removed. This cannot be undone.`))return;
-  showToast('Clearing photos from cloud…');
+  if(!compJobs.length){showToast('Nothing to clear for this day');return;}
+  const snapshot=compJobs.flatMap(j=>(compPhotos[j.id]||[]).map(p=>({...p,job_id:j.id})));
+  const retained=snapshot.filter(p=>String(p.path).startsWith('qa-corrections/')).length;
+  const selected=snapshot.filter(p=>!String(p.path).startsWith('qa-corrections/'));
+  if(!selected.length){showToast(retained?'Corrected photos and their history are retained.':'No photos to clear');return;}
+  if(selected.some(p=>!/^\d+$/.test(String(p.id)))){showToast('Reload the current photos before clearing them.');return;}
+  const allPaths=[...new Set(selected.map(p=>p.path))];
+  if(!confirm(`Delete ${allPaths.length} ordinary photo(s) from the cloud for ${date}?\n\nDownload the ZIP archive FIRST. ${retained} corrected photo(s) and their history will be retained. Job records are kept. Ordinary image removal cannot be undone.`))return;
+  showToast('Clearing ordinary photos from cloud…');
   try{
     for(let i=0;i<allPaths.length;i+=100){
-      const _r=await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
-      await reqOk(_r,'Photo clear (batch '+(Math.floor(i/100)+1)+')');
+      const r=await fetch(`${SUPA_URL}/storage/v1/object/job-photos`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({prefixes:allPaths.slice(i,i+100)})});
+      await reqOk(r,'Photo clear (batch '+(Math.floor(i/100)+1)+')');
     }
-    const q=compJobs.map(j=>encodeURIComponent(j.id)).join(',');
-    const _r2=await fetch(`${SUPA_URL}/rest/v1/job_photos?job_id=in.(${q})`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
-    await reqOk(_r2,'Photo-record clear');
-    showToast('Cloud photos cleared'); renderCompleted();
-  }catch(e){showToast('Clear failed: '+e.message)}
+    const quote=value=>'"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+    for(let i=0;i<selected.length;i+=25){
+      const filters=selected.slice(i,i+25).map(p=>`and(job_id.eq.${quote(p.job_id)},id.eq.${p.id},path.eq.${quote(p.path)})`);
+      const r=await fetch(`${SUPA_URL}/rest/v1/job_photos?or=${encodeURIComponent('('+filters.join(',')+')')}`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),Prefer:'return=minimal'}});
+      await reqOk(r,'Selected photo-record clear');
+    }
+    showToast('Ordinary cloud photos cleared; corrected photos and history retained.');renderCompleted();
+  }catch(e){showToast('Clear failed: '+e.message);}
 }
 
 // ---------- Load History (weekly archive of all loads) ----------
@@ -3779,7 +4026,9 @@ function startSlrTicker(){
 }
 
 // ---------- Dashboard login + role-based access ----------
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet']];
+// 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
+// its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['photofix','QA Photo Fix']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -3912,7 +4161,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  let first=(allowed[0]||'overview'); if(first==='dispatch')first='timeline';
+  let first=(allowed.filter(p=>p!=='photofix')[0]||'overview'); if(first==='dispatch')first='timeline';   // photofix is an entry, not a page
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();
@@ -4781,8 +5030,11 @@ function init(){
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
   $$('#dashViewTabs [data-dashview]').forEach(b=>b.onclick=()=>setDashView(b.dataset.dashview));
   // Dashboard filters (Load Type · District · Brgy) → re-render the timeline
-  $$('#tlFilters select').forEach(s=>s.onchange=()=>renderTimeline());
-  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); });
+  // Org/type filter change → re-render; pati ang Daily Productivity panel kapag PAST date
+  // ang pinapanood (sa "today" ay sakop na ito ng renderTimeline mismo — iwas dobleng tawag).
+  const _prodFollow=()=>{ try{ const d=$('#tlProdDate'); if(d&&d.value&&d.value!==manilaToday()) renderProductivityHistory(); }catch(e){} };
+  $$('#tlFilters select').forEach(s=>s.onchange=()=>{ renderTimeline(); _prodFollow(); });
+  $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); _prodFollow(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
