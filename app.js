@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-14.4';
+const APP_VERSION='2026-10-14.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -676,9 +676,94 @@ function wimsMaterialsHTML(rows){
     if(has(row.photos_count)) meta.push(esc(row.photos_count)+' photo(s)');
     if(row.id) meta.push('report '+esc(String(row.id)));
     if(meta.length) h+=`<div style="padding:6px 2px 0;font-size:10px;color:#9aa6a2">${meta.join(' · ')}</div>`;
+    // ✏️ EDIT DECLARED MATERIALS (owner 2026-10-14): bukas sa lahat ng WIMS
+    // console user — server (edit_install_report) ang gate + balance compensation
+    if(row.id) h+=`<div style="padding:8px 2px 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="assign-btn" data-wimsdecl-edit="${esc(String(row.id))}">✏️ Edit declared materials</button><button type="button" class="assign-btn" data-wimsdecl-history="${esc(String(row.id))}">History</button></div>`;
     return h;
   }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:10px 0">');
 }
+// ---- WIMS · edit declared materials + history (kagaya ng QA photo replace) ----
+const WIMS_KIT_LABELS={conn:'Fast Connector (kit)',patch:'Patch Cord (kit)',tbox:'Terminal Box (kit)',sar:'SAR form (kit)',saf:'SAF form (kit)'};
+const wimsHdr=extra=>Object.assign({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},extra||{});
+async function wimsDeclOpen(installId,btn){
+  let row,cat;
+  try{
+    row=(await (await fetch(`${SUPA_URL}/rest/v1/installs?select=id,jo_number,team_id,materials_used,kit_used,foc_reel_no,foc_start_m,foc_end_m,foc2_reel_no,foc2_end_m&id=eq.${installId}`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json())[0];
+    cat=await (await fetch(`${SUPA_URL}/rest/v1/materials?select=key,name,consume_unit&order=sort`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json();
+    if(!row||!Array.isArray(cat)) throw new Error('WIMS console access is required to edit declarations');
+  }catch(e){ showToast(e.message||'WIMS access required'); return; }
+  let dlg=document.getElementById('wimsDeclModal');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='wimsDeclModal';dlg.className='modal';document.body.appendChild(dlg);}
+  const esc=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const mu=row.materials_used||{},ku=row.kit_used||{};
+  const matRows=cat.filter(m=>m.key!=='foc').map(m=>`<label class="field" style="margin:0"><span style="font-size:10px">${esc(m.name)} (${esc(m.consume_unit||'')})</span><input type="number" min="0" step="any" data-declmat="${esc(m.key)}" value="${esc(mu[m.key]!=null?mu[m.key]:'')}" placeholder="0"></label>`).join('');
+  const kitRows=Object.keys(WIMS_KIT_LABELS).map(k=>`<label class="field" style="margin:0"><span style="font-size:10px">${WIMS_KIT_LABELS[k]}</span><input type="number" min="0" step="1" data-declkit="${k}" value="${esc(ku[k]!=null?ku[k]:'')}" placeholder="0"></label>`).join('');
+  dlg.innerHTML=`<div class="modal-head"><div><span class="eyebrow">WIMS · DECLARED MATERIALS</span><h2>Edit declared materials</h2><p>JO ${esc(row.jo_number)} · report ${esc(row.id)}</p></div></div>
+  <div style="max-height:52vh;overflow:auto;padding:4px 2px">
+    <div style="font-weight:700;font-size:11px;margin:4px 0">📏 FOC readings <span style="color:#8a9894;font-weight:600">· usage = |END − START| (+ reel 2) · blangko pareho = walang FOC</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel #</span><input id="declFocReel" value="${esc(row.foc_reel_no)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">START m</span><input id="declFocStart" type="number" step="any" value="${esc(row.foc_start_m)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">END m</span><input id="declFocEnd" type="number" step="any" value="${esc(row.foc_end_m)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel 2 #</span><input id="declFoc2Reel" value="${esc(row.foc2_reel_no)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel 2 END m</span><input id="declFoc2End" type="number" step="any" value="${esc(row.foc2_end_m)}"></label>
+    </div>
+    <div style="font-weight:700;font-size:11px;margin:10px 0 4px">🧰 Kit <span style="color:#8a9894;font-weight:600">· record lang, walang balance effect</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${kitRows}</div>
+    <div style="font-weight:700;font-size:11px;margin:10px 0 4px">🧱 Drop materials <span style="color:#8a9894;font-weight:600">· awtomatikong ibabalik/babawasan ang team balance sa pagkakaiba</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${matRows}</div>
+    <label class="field" style="margin-top:10px"><span>Reason for edit (REQUIRED — makikita sa history at ledger)</span><textarea id="declReason" rows="2" maxlength="2000"></textarea></label>
+    <p id="declErr" role="alert" style="color:#8a2013;font-weight:600;font-size:12px"></p>
+  </div>
+  <div class="modal-actions"><button type="button" class="secondary-btn" id="declCancel">Cancel</button><button type="button" class="primary-btn" id="declSave">Save changes</button></div>`;
+  const err=dlg.querySelector('#declErr');
+  dlg.querySelector('#declCancel').onclick=()=>dlg.close();
+  dlg.querySelector('#declSave').onclick=async()=>{
+    const mats={};
+    dlg.querySelectorAll('[data-declmat]').forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v)&&v>0)mats[i.getAttribute('data-declmat')]=v;});
+    const kit={};
+    dlg.querySelectorAll('[data-declkit]').forEach(i=>{const v=parseFloat(i.value);kit[i.getAttribute('data-declkit')]=(!isNaN(v)&&v>0)?v:0;});
+    const num=id=>{const t=dlg.querySelector(id).value.trim();return t===''?null:parseFloat(t);};
+    const body={p_install_id:installId,p_materials:mats,p_kit:kit,
+      p_foc_reel:dlg.querySelector('#declFocReel').value.trim()||null,
+      p_foc_start:num('#declFocStart'),p_foc_end:num('#declFocEnd'),
+      p_foc2_reel:dlg.querySelector('#declFoc2Reel').value.trim()||null,p_foc2_end:num('#declFoc2End'),
+      p_note:dlg.querySelector('#declReason').value.trim()||null};
+    if(!body.p_note){err.textContent='Reason is required.';return;}
+    const sv=dlg.querySelector('#declSave');sv.disabled=true;sv.textContent='Saving…';
+    try{
+      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/edit_install_report`,{method:'POST',headers:wimsHdr({'Content-Profile':'wims'}),body:JSON.stringify(body)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.message||('HTTP '+r.status));
+      dlg.close(); showToast('✔ Declared materials updated — team balances adjusted');
+      if(btn){const tag=document.createElement('div');tag.style.cssText='font-size:11px;color:#0e6f52;font-weight:700;padding:4px 2px';tag.textContent='✔ Na-edit — buksan ulit ang JO/attachment para makita ang updated na deklarasyon';btn.parentElement.after(tag);}
+    }catch(e2){err.textContent=e2.message||'Failed';}
+    sv.disabled=false;sv.textContent='Save changes';
+  };
+  dlg.showModal();
+}
+async function wimsDeclHistory(installId){
+  let rows=[];
+  try{rows=await (await fetch(`${SUPA_URL}/rest/v1/install_edits?select=edited_at,editor_name,note,old_data,new_data&install_id=eq.${installId}&order=edited_at.desc`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json();}catch(e){}
+  let dlg=document.getElementById('wimsDeclHist');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='wimsDeclHist';dlg.className='modal';document.body.appendChild(dlg);}
+  const esc=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const diff=(o,n)=>{const a=(o&&o.materials_used)||{},b=(n&&n.materials_used)||{};const ks=[...new Set([...Object.keys(a),...Object.keys(b)])];
+    const ch=ks.filter(k=>String(a[k]??'')!==String(b[k]??'')).map(k=>`${k}: ${a[k]??0} → ${b[k]??0}`);
+    ['foc_reel_no','foc_start_m','foc_end_m','foc2_reel_no','foc2_end_m'].forEach(k=>{if(String((o||{})[k]??'')!==String((n||{})[k]??''))ch.push(`${k}: ${(o||{})[k]??'—'} → ${(n||{})[k]??'—'}`);});
+    return ch.join(' · ')||'(walang field diff)';};
+  dlg.innerHTML=`<div class="modal-head"><div><span class="eyebrow">WIMS · DECLARED MATERIALS</span><h2>Edit history</h2></div></div>
+  <div style="max-height:50vh;overflow:auto">${(Array.isArray(rows)&&rows.length)?rows.map(r=>`<div style="border-bottom:1px solid #eef1ed;padding:8px 2px"><div style="font-weight:700;font-size:12px">${new Date(r.edited_at).toLocaleString()} · ${esc(r.editor_name||'—')}</div><div style="font-size:11px;color:#3a4a44">${esc(diff(r.old_data,r.new_data))}</div><div style="font-size:11px;color:#a4690f">Reason: ${esc(r.note||'—')}</div></div>`).join(''):'<div class="none" style="padding:14px">Walang edit history — orihinal na deklarasyon ng team.</div>'}</div>
+  <div class="modal-actions"><button type="button" class="secondary-btn" id="declHistClose">Close</button></div>`;
+  dlg.querySelector('#declHistClose').onclick=()=>dlg.close();
+  dlg.showModal();
+}
+document.addEventListener('click',e=>{
+  const ed=e.target.closest&&e.target.closest('[data-wimsdecl-edit]');
+  if(ed){wimsDeclOpen(ed.getAttribute('data-wimsdecl-edit'),ed);return;}
+  const hi=e.target.closest&&e.target.closest('[data-wimsdecl-history]');
+  if(hi){wimsDeclHistory(hi.getAttribute('data-wimsdecl-history'));}
+});
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
