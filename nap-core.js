@@ -66,6 +66,23 @@
     }) || null;
   }
 
+  // Full NAP flow (phase 7, nap-16): does the saved audit back the FULL NAP close-out? The NAP Details form (declared Full) and the
+  // "this job's NAP is deactivated" record do (the server gate accepts both); a "not found" visit does not (open owner decision, DEPLOY-8.md).
+  function fullNapOutcome(res, notFound) {
+    if (res && res.jo_nap_inactive === true) return true;
+    return !!res && !notFound;
+  }
+  // The deactivated-NAP record needs a JO, the picked (deactivated) NAP, at least one photo and a GPS fix. The server checks the same.
+  function validateDeactRecord(o) {
+    o = o || {};
+    var errors = [];
+    if (!o.jobId) errors.push({ code: 'NAP_JOB_REQUIRED', msg: 'A JO is required.' });
+    if (!o.boxId) errors.push({ code: 'NAP_BAD_BOX', msg: 'Pick the deactivated NAP.' });
+    if (!(o.photos >= 1)) errors.push({ code: 'NAP_PHOTO_REQUIRED', msg: 'Add at least one photo of the spot.' });
+    if (!o.gps) errors.push({ code: 'NAP_GPS_REQUIRED', msg: 'GPS is required: turn on location and wait for the fix.' });
+    return { ok: errors.length === 0, errors: errors };
+  }
+
   function haversineM(lat1, lng1, lat2, lng2) {
     var R = 6371000, r = Math.PI / 180, dp = (lat2 - lat1) * r, dl = (lng2 - lng1) * r;
     var h = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dl / 2) * Math.sin(dl / 2);
@@ -538,5 +555,5 @@
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
     normStencil: normStencil, parseDueDate: parseDueDate, manilaToday: manilaToday, isPastDue: isPastDue, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
-    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess };
+    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, fullNapOutcome: fullNapOutcome, validateDeactRecord: validateDeactRecord, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess };
 });

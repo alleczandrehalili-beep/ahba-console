@@ -56,6 +56,10 @@
       searchBoxes: function (q, limit) {
         return unwrap(nap().rpc('search_boxes', { p_q: String(q == null ? '' : q), p_limit: limit == null ? 20 : limit })).then(function (r) { return r || []; });
       },
+      // Phase 7 (Full NAP flow only): DEACTIVATED boxes by typed stencil -> [{box_id, stencil, barangay, street}]. Field or board; 2+ characters; limit <= 20.
+      searchInactiveBoxes: function (q, limit) {
+        return unwrap(nap().rpc('search_inactive_boxes', { p_q: String(q == null ? '' : q), p_limit: limit == null ? 10 : limit })).then(function (r) { return r || []; });
+      },
       // One page of one barangay's boxes, ordered by stencil (kind 'aging' = stale oldest first, then unverified).
       boxesInBarangay: function (o) {
         o = o || {};
@@ -103,6 +107,7 @@
         o = o || {};
         var q = nap().from('audits').select('*, boxes:box_id(stencil,street), audit_ports(port,status,tag_acct), audit_photos(path)').order('created_at', { ascending: false }).limit(o.limit || 200);
         if (o.reviewStatus) q = q.eq('review_status', o.reviewStatus);
+        if (o.joNapInactive) q = q.eq('jo_nap_inactive', true);   // phase 7: the deactivated-NAP records only
         if (o.boxId) q = q.eq('box_id', o.boxId);
         return unwrap(q);
       },

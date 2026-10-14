@@ -255,7 +255,7 @@ tr.inb td{background:var(--bg)}
     </div>
     </section>
     <section id="v-audits" hidden>
-      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">All</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Not found</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button></div></div>
+      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">All</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Not found</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button><button data-f="deact" aria-pressed="false">NAP deactivated</button></div></div>
       <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>NAP</th><th>NP</th><th>Team</th><th>Free</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
       <div id="auditDetail" class="detail" hidden></div></div>
     </section>
@@ -374,11 +374,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.5"></script>
-<script src="nap-api.js?v=2026-10-15.5"></script>
+<script src="nap-core.js?v=2026-10-15.6"></script>
+<script src="nap-api.js?v=2026-10-15.6"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.5';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.6';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -714,10 +714,18 @@ async function drawHistory(b, tok, refresh) {
     if (open) showAudit(rows[+btn.dataset.hi], tr.querySelector('.detail'), function () { histCache = null; drawDetail(true); });
   };
 }
-function freeCell(a) { return a.review_status === 'not_found' ? '-' : String((a.audit_ports || []).filter(function (p) { return C.isUsable(p.status); }).length); }
+function freeCell(a) { return a.review_status === 'not_found' || a.jo_nap_inactive ? '-' : String((a.audit_ports || []).filter(function (p) { return C.isUsable(p.status); }).length); }
+// Phase 7 (nap-16): the "This job's NAP is deactivated" record a gated team saves in the Full NAP flow (no ports; the server proved the
+// named NAP is deactivated). Always flagged for review; shows the named NAP, the JO and the team's GPS distance to the NAP.
+var DEACT_LABEL = 'NAP deactivated (Full NAP job)';
+function deactPills(a) {
+  if (!a.jo_nap_inactive) return '';
+  return '<span class="pill p-issue">' + DEACT_LABEL + '</span> <span class="pill p-stale">JO ' + esc(a.job_id || '?') + '</span>' +
+    (a.distance_m != null ? ' <span class="pill ' + (a.gps_flag ? 'p-issue' : 'p-ok') + '">' + Math.round(a.distance_m) + ' m from the NAP</span>' : '') + ' ';
+}
 function statusPills(a) {
   var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
-  return '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
+  return deactPills(a) + '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
     (a.gps_lat == null && a.review_status === 'flagged' ? ' <span class="pill p-issue">No GPS</span>' : '');
 }
 // Renders one audit (ports, photos, review button) into el. Photos that cannot be signed show "Cannot load" instead of vanishing.
@@ -727,7 +735,11 @@ async function showAudit(a, el, onReviewed) {
   var urls = [], photoErr = false;
   try { urls = (a.audit_photos || []).length ? await api.signedPhotoUrls(a.audit_photos.map(function (p) { return p.path; })) : []; } catch (e) { photoErr = true; }
   if (tok !== el._tok) return;
-  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Not found: ' + esc(a.not_found_reason) : '') + (a.gps_lat == null ? ' · No GPS' : '') + '</div>' +
+  el.innerHTML = (a.jo_nap_inactive ? '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</div><div class="meta"><b>' + DEACT_LABEL + '</b> · JO ' + esc(a.job_id || '?') +
+      (a.distance_m != null ? ' · team GPS ' + Math.round(a.distance_m) + ' m from the NAP' : a.gps_lat != null ? ' · the NAP has no coordinates' : '') +
+      (a.not_found_reason ? ' · Note: ' + esc(a.not_found_reason) : '') + '</div><div class="meta">The team says this JO\'s NAP is deactivated (the NAP is deactivated in the master; the server checked). ' +
+      'They closed the JO as FULL NAP with this record instead of a port reading. Check the JO, the NAP and the photo.</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + '</div>'
+    : '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Not found: ' + esc(a.not_found_reason) : '') + (a.gps_lat == null ? ' · No GPS' : '') + '</div>') +
     '<div class="ports" style="margin:8px 0">' + (a.audit_ports || []).slice().sort(function (x, y) { return x.port - y.port; }).map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
     (photoErr ? '<div class="meta err">Cannot load the photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) {
       return u.url ? '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="NAP reading"></a>'
@@ -889,8 +901,9 @@ function tab(name) {
 async function loadAudits() {
   var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
   var rows;
-  // 'awo' (Active w/o tagging) is filtered here over the loaded audits; the others are review_status filters on the server
-  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo') ? f : undefined, limit: 200 }); } catch (e) { return toast('Cannot load the audits: ' + msgOf(e)); }
+  // 'awo' (Active w/o tagging) is filtered here over the loaded audits; 'deact' (NAP deactivated) is jo_nap_inactive on the server;
+  // the others are review_status filters on the server
+  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo' && f !== 'deact') ? f : undefined, joNapInactive: f === 'deact', limit: 200 }); } catch (e) { return toast('Cannot load the audits: ' + msgOf(e)); }
   if (f === 'awo') rows = rows.filter(function (a) { return (a.audit_ports || []).some(function (p) { return p.status === S.AWO; }); });
   state.audits = rows;
   $('auditRows').innerHTML = rows.map(function (a, i) {
