@@ -38,7 +38,11 @@ h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
 .kpi[aria-pressed=true]{border-color:var(--ink)}
 .k-ok{background:var(--okbg)}.k-full{background:var(--fullbg)}.k-issue{background:var(--issuebg)}.k-stale{background:var(--stalebg)}.k-unv{background:var(--stalebg)}
 .mapbox{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
-svg#map{display:block;width:100%;height:auto;cursor:crosshair;touch-action:manipulation}
+#map{display:block;width:100%;height:60vh;min-height:320px;cursor:crosshair;background:var(--bg)}
+@media(max-width:560px){#map{height:55vh}}
+.mapnote{position:absolute;left:8px;right:8px;top:8px;z-index:1000;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px;pointer-events:none}
+#map>.mapnote{position:static;margin:8px}
+.leaflet-container{font:inherit}
 .hint{color:var(--muted);font-size:12px;margin:8px 0 0}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
@@ -138,7 +142,7 @@ select,.filters select{font:inherit;padding:6px;border:1px solid var(--line);bor
           <label>Dwelling<select id="fDwell"></select></label>
         </div>
         <div class="kpis" id="kpis"></div>
-        <div class="mapbox"><svg id="map" role="img" aria-label="Mapa ng NAP boxes sa Bahay Toro"></svg></div>
+        <div class="mapbox"><div id="map" aria-label="Mapa ng NAP boxes sa Bahay Toro"></div></div>
         <div class="legend">
           <span><i class="dot" style="background:var(--ok)"></i>Installable</span>
           <span><i class="dot" style="background:var(--full)"></i>Full</span>
@@ -179,12 +183,14 @@ select,.filters select{font:inherit;padding:6px;border:1px solid var(--line);bor
 </div>
 <div class="toast" id="toast" hidden></div>
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-14.2"></script>
-<script src="nap-api.js?v=2026-10-14.2"></script>
+<script src="nap-core.js?v=2026-10-14.3"></script>
+<script src="nap-api.js?v=2026-10-14.3"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-14.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-14.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -236,6 +242,7 @@ async function loadAll() {
   var id = state.sel && state.sel.box_id;
   state.sel = id ? (state.boxes.find(function (b) { return b.box_id === id; }) || null) : null;
   fillFilters();
+  markersDirty = true;
   drawBoard(true);
 }
 // Board filters (barangay, district, dwelling): options come from the loaded boxes; they narrow the map dots, KPIs and nearest list.
@@ -252,7 +259,7 @@ function inFilter(b) { return BF.every(function (f) { return !state.bf[f[0]] || 
 function visibleBoxes() { return state.boxes.filter(inFilter); }
 $('boardFilters').addEventListener('change', function (ev) {
   var f = BF.find(function (x) { return x[1] === ev.target.id; }); if (!f) return;
-  state.bf[f[0]] = ev.target.value; drawBoard();
+  state.bf[f[0]] = ev.target.value; fitPending = true; drawBoard();
 });
 // Same rule everywhere: when a session expires, send the user back to sign-in.
 window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Mag-sign in ulit.'); setTimeout(out, 1200); } });
@@ -262,34 +269,77 @@ var LBL = { installable: 'Installable', full: 'Full', issue: 'Issue', stale: 'St
 var PCLS = {}; PCLS[S.AWT] = 'ActT'; PCLS[S.AWO] = 'ActN'; PCLS[S.VACANT] = 'Vacant'; PCLS[S.RELEASED] = 'Release'; PCLS[S.HILOSS] = 'Hi'; PCLS[S.DEFECTIVE] = 'Defective'; PCLS[S.UNVERIFIED] = 'Unverified';
 var PSHORT = {}; PSHORT[S.AWT] = 'Act+T'; PSHORT[S.AWO] = 'Act'; PSHORT[S.VACANT] = 'Vac'; PSHORT[S.RELEASED] = 'Rel'; PSHORT[S.HILOSS] = 'Hi'; PSHORT[S.DEFECTIVE] = 'Def'; PSHORT[S.UNVERIFIED] = '?';
 
-function geo() {
-  var bs = state.boxes.filter(function (b) { return b.lat != null; });
-  var la = bs.map(function (b) { return b.lat; }), lo = bs.map(function (b) { return b.lng; });
-  var g = la.length ? { lat0: Math.min.apply(null, la), lat1: Math.max.apply(null, la), lng0: Math.min.apply(null, lo), lng1: Math.max.apply(null, lo) } : { lat0: 14.6645, lat1: 14.6645, lng0: 121.0195, lng1: 121.0195 };
-  if (g.lat1 - g.lat0 < 1e-6) { g.lat0 -= 0.005; g.lat1 += 0.005; }   // 0 or 1 located boxes: default 0.01 degree span
-  if (g.lng1 - g.lng0 < 1e-6) { g.lng0 -= 0.005; g.lng1 += 0.005; }
-  g.W = 900; g.H = Math.round(g.W * ((g.lat1 - g.lat0) / ((g.lng1 - g.lng0) * Math.cos(14.66 * Math.PI / 180))));
-  g.X = function (x) { return 20 + (x - g.lng0) / (g.lng1 - g.lng0) * (g.W - 40); };
-  g.Y = function (y) { return 20 + (g.lat1 - y) / (g.lat1 - g.lat0) * (g.H - 40); };
-  g.ix = function (x) { return g.lng0 + (x - 20) / (g.W - 40) * (g.lng1 - g.lng0); };
-  g.iy = function (y) { return g.lat1 - (y - 20) / (g.H - 40) * (g.lat1 - g.lat0); };
-  return g;
-}
 function isSel(b) { return !!(state.sel && b && b.box_id === state.sel.box_id); }
-function drawMap() {
-  var g = state.g = geo(), svg = $('map'); svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H);
-  var s = '';
-  state.boxes.forEach(function (b, i) {
-    if (b.lat == null || !inFilter(b)) return;
-    var dim = state.filter && state.filter !== b.kind;
-    s += '<circle data-i="' + i + '" cx="' + g.X(b.lng).toFixed(1) + '" cy="' + g.Y(b.lat).toFixed(1) + '" r="' + (isSel(b) ? 8 : b.kind === 'unverified' ? 3 : 4.5) +
-      '" fill="' + COL[b.kind] + '" opacity="' + (dim ? .12 : b.kind === 'unverified' ? .55 : .95) + '" stroke="' + (isSel(b) ? 'var(--ink)' : 'none') + '" stroke-width="2"/>';
+// Leaflet map. Persistent layers; markers are created once per data load and only restyled afterwards.
+var KCOL = { installable: '#1c8a4a', full: '#c23b3b', issue: '#d98518', stale: '#7d8a96', unverified: '#9aa6b2' };
+var LMAP = null, boxLayer = null, lineLayer = null, pinLayer = null, mapTip = null, mapMarkers = [], markersDirty = true, fitPending = true, mapFailed = false, tileOk = 0, tileBad = 0;
+function mapNote(msg) {
+  var host = $('map');
+  if (!LMAP) { host.innerHTML = '<div class="mapnote">' + esc(msg) + '</div>'; return; }
+  if (!document.getElementById('mapNote')) { var d = document.createElement('div'); d.id = 'mapNote'; d.className = 'mapnote'; d.textContent = msg; host.parentNode.appendChild(d); }
+}
+function initMap() {
+  if (LMAP || mapFailed) return !!LMAP;
+  if (typeof L === 'undefined') { mapFailed = true; mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); return false; }
+  try {
+    var rend = L.canvas({ padding: 0.5 });
+    LMAP = L.map('map', { preferCanvas: true, renderer: rend, zoomControl: true, attributionControl: true }).setView([14.6645, 121.0195], 15);
+    var tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(LMAP);
+    tl.on('tileload', function () { tileOk++; });
+    tl.on('tileerror', function () { tileBad++; if (!tileOk && tileBad >= 3) mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); });
+    boxLayer = L.layerGroup().addTo(LMAP); lineLayer = L.layerGroup().addTo(LMAP); pinLayer = L.layerGroup().addTo(LMAP);
+    mapTip = L.tooltip({ direction: 'top', offset: [0, -6] });
+    if (window.ResizeObserver) new ResizeObserver(function () { if (LMAP) LMAP.invalidateSize(); }).observe($('map'));
+    LMAP.on('click', function (e) { state.sub = { lat: e.latlng.lat, lng: e.latlng.lng }; drawBoard(); });
+    return true;
+  } catch (e) { LMAP = null; mapFailed = true; mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); return false; }
+}
+function markerStyle(b) {
+  var sel = isSel(b), dim = !!(state.filter && state.filter !== b.kind), unv = b.kind === 'unverified';
+  return { radius: sel ? 9 : unv ? 3 : 5, fillColor: KCOL[b.kind], color: sel ? '#111' : '#fff', weight: sel ? 3 : 1, fillOpacity: dim ? .12 : unv ? .55 : .95, opacity: dim ? .3 : 1, interactive: !dim };
+}
+function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' libre' : ''); }
+function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
+function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
+function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); }
+function rebuildMarkers() {
+  boxLayer.clearLayers(); mapMarkers = [];
+  state.boxes.forEach(function (b) {
+    if (b.lat == null || b.lng == null) return;
+    var m = L.circleMarker([b.lat, b.lng], Object.assign({ bubblingMouseEvents: false }, markerStyle(b)));
+    m._b = b; m._sig = ''; m._vis = false;
+    m.on('mouseover', onMarkerOver); m.on('mouseout', onMarkerOut); m.on('click', onMarkerClick);
+    mapMarkers.push(m);
   });
+  markersDirty = false;
+}
+function drawMap() {
+  if (!initMap()) return;
+  if (markersDirty) rebuildMarkers();
+  var pts = [];
+  mapMarkers.forEach(function (m) {
+    var b = m._b, vis = inFilter(b);
+    if (vis !== m._vis) { if (vis) boxLayer.addLayer(m); else boxLayer.removeLayer(m); m._vis = vis; }
+    if (!vis) return;
+    pts.push(m.getLatLng());
+    var sig = (state.filter && state.filter !== b.kind ? 'd' : 'n') + (isSel(b) ? 's' : '');
+    if (sig !== m._sig) { var st = markerStyle(b); m.options.interactive = st.interactive; m.setStyle(st); if (sig.indexOf('s') > 0) m.bringToFront(); m._sig = sig; }
+  });
+  lineLayer.clearLayers(); pinLayer.clearLayers();
   if (state.sub) {
-    nearestList().slice(0, 5).forEach(function (n) { s += '<line x1="' + g.X(state.sub.lng) + '" y1="' + g.Y(state.sub.lat) + '" x2="' + g.X(n.lng) + '" y2="' + g.Y(n.lat) + '" stroke="var(--pin)" stroke-width="1.2" stroke-dasharray="4 3" opacity=".7"/>'; });
-    s += '<circle cx="' + g.X(state.sub.lng) + '" cy="' + g.Y(state.sub.lat) + '" r="9" fill="var(--pin)" stroke="var(--panel)" stroke-width="3"/>';
+    nearestList().slice(0, 5).forEach(function (n) { if (n.lat != null) L.polyline([[state.sub.lat, state.sub.lng], [n.lat, n.lng]], { color: '#7a2fbf', weight: 1.5, dashArray: '4 3', opacity: .8, interactive: false }).addTo(lineLayer); });
+    L.circleMarker([state.sub.lat, state.sub.lng], { radius: 9, fillColor: '#7a2fbf', fillOpacity: 1, color: '#fff', weight: 3, interactive: false }).addTo(pinLayer);
   }
-  svg.innerHTML = s;
+  if (fitPending) {
+    fitPending = false; LMAP.invalidateSize();
+    if (pts.length) LMAP.fitBounds(L.latLngBounds(pts), { padding: [24, 24], maxZoom: 18 });
+    else LMAP.setView([14.6645, 121.0195], 15);
+  }
+}
+function focusSel() {
+  var b = state.sel; if (!LMAP || !b || b.lat == null) return;
+  var ll = [b.lat, b.lng];
+  if (LMAP.getZoom() >= 16) LMAP.panTo(ll); else LMAP.setView(ll, 17);
 }
 function drawKpis() {
   var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0;
@@ -385,18 +435,12 @@ async function showAudit(a, el, onReviewed) {
 }
 function drawBoard(refresh) { drawMap(); drawKpis(); drawList(); drawDetail(refresh); }
 
-$('map').addEventListener('click', function (ev) {
-  var svg = $('map'), p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; var q = p.matrixTransform(svg.getScreenCTM().inverse());
-  var c = ev.target.closest('circle[data-i]');
-  if (c && Math.hypot(+c.getAttribute('cx') - q.x, +c.getAttribute('cy') - q.y) < 10) state.sel = state.boxes[+c.dataset.i];
-  else state.sub = { lat: state.g.iy(q.y), lng: state.g.ix(q.x) };
-  drawBoard();
-});
 $('kpis').addEventListener('click', function (ev) { var k = ev.target.closest('.kpi'); if (!k) return; state.filter = state.filter === k.dataset.k ? null : k.dataset.k; drawBoard(); });
-$('list').addEventListener('click', function (ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.boxes.find(function (x) { return x.box_id === b.dataset.id; }); drawBoard(); });
+$('list').addEventListener('click', function (ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.boxes.find(function (x) { return x.box_id === b.dataset.id; }); drawBoard(); focusSel(); });
 $('mode').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b) return; state.mode = b.dataset.m; document.querySelectorAll('#mode button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); drawBoard(); });
 function tab(name) {
   ['board', 'audits', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
+  if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
   if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot();
 }
 ['board', 'audits', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
