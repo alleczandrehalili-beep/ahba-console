@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-10-15.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-10-15.2" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -161,6 +161,9 @@
           <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>QA Validation</span></button>
           <button class="nav-item" data-page="qafindings"><i data-icon="check"></i><span>QA Findings</span><b id="qaFindBadge" style="display:none">0</b></button>
         </div>
+        <!-- NAP VIEW (owner 2026-10-15): HINDI page — link papunta sa NAP Dashboard sa BAGONG browser tab. Kita lang sa GC console
+             user na may 'NAP Board' (napboard) sa Access Control, o superadmin (napViewNav() sa app.js). href = NAP_BOARD_URL. -->
+        <a class="nav-item" id="napViewNav" target="_blank" rel="noopener noreferrer" style="display:none;text-decoration:none"><i data-icon="pin"></i><span>NAP VIEW</span></a>
         <button class="nav-item" data-page="wims"><i data-icon="truck"></i><span>WIMS</span></button>
         <button class="nav-item" data-page="fms"><i data-icon="truck"></i><span>Fleet</span><b id="fmsBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
@@ -821,18 +824,18 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-10-15.1"></script>
-  <script src="qa-photo-corrections.js?v=2026-10-15.1"></script>
-  <script src="hr-core.js?v=2026-10-15.1"></script>
-  <script src="hr-api.js?v=2026-10-15.1"></script>
-  <script src="hr-attendance-import.js?v=2026-10-15.1"></script>
-  <script src="console-hr.js?v=2026-10-15.1"></script>
-  <script src="hr-entry.js?v=2026-10-15.1"></script>
-  <script src="app.js?v=2026-10-15.1"></script>
+  <script src="qa-wims-export.js?v=2026-10-15.2"></script>
+  <script src="qa-photo-corrections.js?v=2026-10-15.2"></script>
+  <script src="hr-core.js?v=2026-10-15.2"></script>
+  <script src="hr-api.js?v=2026-10-15.2"></script>
+  <script src="hr-attendance-import.js?v=2026-10-15.2"></script>
+  <script src="console-hr.js?v=2026-10-15.2"></script>
+  <script src="hr-entry.js?v=2026-10-15.2"></script>
+  <script src="app.js?v=2026-10-15.2"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-10-15.1"></script>
+  <script src="ahba-cloud.js?v=2026-10-15.2"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-10-15.1"></script><script src="qa-api.js?v=2026-10-15.1"></script><script src="console-qa.js?v=2026-10-15.1"></script><script src="console-qa-findings.js?v=2026-10-15.1"></script>
-  <script src="fms-core.js?v=2026-10-15.1"></script><script src="fms-api.js?v=2026-10-15.1"></script><script src="console-fms.js?v=2026-10-15.1"></script>
+  <script src="qa-core.js?v=2026-10-15.2"></script><script src="qa-api.js?v=2026-10-15.2"></script><script src="console-qa.js?v=2026-10-15.2"></script><script src="console-qa-findings.js?v=2026-10-15.2"></script>
+  <script src="fms-core.js?v=2026-10-15.2"></script><script src="fms-api.js?v=2026-10-15.2"></script><script src="console-fms.js?v=2026-10-15.2"></script>
 </body>
 </html>

@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-15.1';
+const APP_VERSION='2026-10-15.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1316,6 +1316,7 @@ async function loadOrgMap(){
     (r.ok?await r.json():[]).forEach(o=>{ orgById[o.id]={code:o.code,name:o.name}; if(o.code==='AHBA') gcOrgId=o.id; });
   }catch(e){}
   try{ tlBuildOrgFilter(); }catch(e){}
+  try{ napViewNav(); }catch(e){}   // NAP VIEW needs gcOrgId (GC check)
 }
 // GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
 // Options: "AHBA + MSA-SLI" (all) · "AHBA" (GC only) · "MSA - SLI" (all subcons only) · each subcon by name.
@@ -4122,6 +4123,19 @@ function startSlrTicker(){
 // its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
 // 'napboard' = "NAP Board" (owner 2026-10-15): not a page — an Access Control entry. View or Edit = VIEW-ONLY access to the standalone
 // NAP Dashboard (/nap-dashboard.html, Board tab only). Enforced server-side by nap.is_viewer() (nap-14); GC organization only.
+// NAP VIEW (owner 2026-10-15): sidebar link (NOT a page) that opens the NAP Dashboard in a NEW browser tab. Shown only when
+// napViewVisible(): superadmin, or a GC console user (org = AHBA, same rule as isGcConsole / nap.is_viewer) with 'napboard' in
+// allowed_pages. Only a convenience: the dashboard enforces the real access (nap.is_viewer() / my_role). It is a real <a target=_blank>
+// (window.open with 'noopener' always returns null, so a blocked popup cannot be detected; a user-clicked anchor is never blocked and
+// also works in installed PWAs). The dashboard keeps its OWN Supabase session (storageKey 'ahba-nap-dashboard'), so the first time
+// the user signs in there with the same console account: one hint toast per user per browser session.
+const NAP_BOARD_URL='https://console.ahbadevt.com/nap-dashboard.html';
+function napViewVisible(u,gcId){ return !!(u&&(u.is_super||(gcId&&u.org_id===gcId&&Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('napboard')))); }
+function napViewNav(){ const a=document.getElementById('napViewNav'); if(!a) return; const on=napViewVisible(window.dashUser,gcOrgId);
+  a.style.display=on?'':'none'; if(on) a.href=NAP_BOARD_URL; else a.removeAttribute('href');
+  if(!a._napWired){ a._napWired=1; a.addEventListener('click',()=>{ const u=window.dashUser; let k='napview_hint_'+((u&&u.username)||''), seen=false;
+    try{ seen=sessionStorage.getItem(k)==='1'; sessionStorage.setItem(k,'1'); }catch(e){ seen=!!napViewNav._hinted; } napViewNav._hinted=1;
+    if(!seen) showToast('Sign in with your console account (username@ahbadash.app)'); try{ closeSidebar(); }catch(e){} }); } }
 const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix'],['techreset','FieldOps PW Reset'],['napboard','NAP Board']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
@@ -4241,12 +4255,13 @@ function applyAccess(u){
   allowed=allowed.filter(p=>p!=='hrvalidate'&&(p!=='payroll'||(window.FieldOpsHR&&FieldOpsHR.canOpen(u))));
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u)||allowed.includes('techreset'))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='hr'){ n.style.display=(u.is_super||allowed.includes('attendance')||allowed.includes('payroll'))?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  $$('.nav-item').forEach(n=>{ if(n.id==='napViewNav') return; const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u)||allowed.includes('techreset'))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='hr'){ n.style.display=(u.is_super||allowed.includes('attendance')||allowed.includes('payroll'))?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   // Nav groups: itago ang header + wrapper kapag WALANG kahit isang kita na sub-tab
   // (hal. dispatcher na walang QA access, o subcon console na walang Field Ops Access).
   $$('.nav-group').forEach(g=>{ const any=[...g.querySelectorAll('.nav-item')].some(n=>n.style.display!=='none');
     g.style.display=any?'':'none';
     const h=document.querySelector(`.nav-group-head[data-grp="${g.dataset.grpbody}"]`); if(h) h.style.display=any?'':'none'; });
+  napViewNav();   // NAP VIEW link (GC check completes after loadOrgMap, which calls it again)
   navGrpBadges();
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   const _tanb=$('#teamAnalyzeBtn'); if(_tanb) _tanb.style.display=u.is_super?'':'none';   // 📊 superadmin only
@@ -4282,7 +4297,7 @@ async function deleteAllLoads(){
     renderJobs(); renderOverview(); showToast('✓ All loads cleared (kept for Superadmin).');
   }catch(e){ showToast('Clear failed: '+e.message); }
 }
-function dashLogout(){ resetHR(); if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
+function dashLogout(){ resetHR(); if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; try{ napViewNav(); }catch(e){} closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
 let accessUsers=[];
 // Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
@@ -5127,7 +5142,7 @@ function init(){
   // Live shift clock (updates every second)
   updateShiftClock(); setInterval(updateShiftClock, 1000);
 
-  $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
+  $$('.nav-item').forEach(b=>{ if(b.id==='napViewNav') return; b.onclick=()=>switchPage(b.dataset.page); });   // NAP VIEW is a link, not a page
   initNavGroups();
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
