@@ -133,6 +133,26 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 .mmtable .chg{overflow-wrap:anywhere}
 .mmtable .chg div+div{margin-top:2px}
 .mmwarn{color:var(--issue)}
+.bkbar{position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--panel);border-top:2px solid var(--accent);padding:8px 16px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;box-shadow:0 -3px 10px rgba(0,0,0,.12)}
+.bkbar .bktxt{font-size:13px;overflow-wrap:anywhere;min-width:0;flex:1 1 220px}
+.bkbar .bktxt b{font-family:var(--mono);font-weight:600}
+body.has-bk{padding-bottom:120px}
+body.has-bk .toast{bottom:96px}
+.ck{width:30px}
+.ck input{width:17px;height:17px;margin:0;vertical-align:middle}
+tr.inb td{background:var(--bg)}
+.linkish{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.linkish:hover{color:var(--accent);text-decoration:underline}
+.teamck{display:flex;flex-direction:column;gap:4px;margin:6px 0 10px}
+.teamck label{display:flex;gap:8px;align-items:baseline;font-size:13px;overflow-wrap:anywhere}
+.teamck .meta{font-size:12px}
+.bkplan td{font-size:12.5px}
+.bkplan input[type=date]{padding:3px;font-size:12.5px}
+.bkplan tr.open td{background:var(--bg)}
+.bklist{max-height:420px;overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:8px}
+.bklist table td,.bklist table th{font-size:12.5px}
+.bksum{font-size:13px;margin:0 0 8px;overflow-wrap:anywhere}
+.bkres{margin-top:10px}
 .photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 </style>
 </head>
@@ -208,7 +228,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
       </div>
 
       <div class="card">
-        <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><ul class="list inrad" id="inRad"></ul></div>
+        <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><ul class="list inrad" id="inRad"></ul><div class="row" style="margin-top:8px"><button class="btn sm" id="radAdd" type="button" hidden>Add these to the basket</button></div></div>
         <h2>Where should the team go?</h2>
         <div class="row">
           <div class="seg" id="mode">
@@ -219,6 +239,13 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         <ul class="list" id="list"></ul>
         <div class="detail" id="detail" hidden></div>
       </div>
+    </div>
+    <div class="card" id="blCard" style="margin-top:14px">
+      <h2 id="blH">NAPs in this barangay</h2>
+      <p class="hint" id="blHint" style="margin:0 0 8px"></p>
+      <div class="row"><label class="meta"><input type="checkbox" id="blAll"> <span id="blAllT">Select all in view</span></label><button class="btn sm" id="blNone" type="button">Select none</button><span class="meta" id="blSelN" role="status" aria-live="polite"></span></div>
+      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="ck"><span class="meta">Add</span></th><th>Stencil</th><th>Street</th><th>Status</th><th>Last check</th></tr></thead><tbody id="blRows"></tbody></table></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" id="blMore" type="button">Show more</button><span class="meta" id="blCount"></span></div>
     </div>
     </section>
     <section id="v-audits" hidden>
@@ -234,7 +261,29 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
       <div class="card" style="margin-top:12px"><h2>Settings</h2><div class="row" id="settingsRow"></div></div>
     </section>
     <section id="v-dispatch" hidden>
-      <div class="card"><h2>Load a list</h2>
+      <div class="card" id="bkCard"><h2>Basket</h2>
+        <p class="bksum" id="bkSum"></p>
+        <div id="bkFlags"></div>
+        <details class="brgys" id="bkRev"><summary id="bkRevSum">Review the basket</summary>
+          <div class="row" style="margin-top:8px"><label class="meta">Barangay <select id="bkRevB" aria-label="Show the basket of one barangay"></select></label><button class="btn sm" id="bkRevRm" type="button">Remove selected</button><span class="meta" id="bkRevSelN"></span></div>
+          <div class="bklist"><table><thead><tr><th class="ck"><input type="checkbox" id="bkRevAll" aria-label="Select all rows shown"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th></tr></thead><tbody id="bkRevRows"></tbody></table></div>
+          <div class="row" style="margin-top:6px"><button class="btn sm" id="bkRevMore" type="button">Show more</button><span class="meta" id="bkRevCount"></span></div>
+        </details>
+        <h2 style="margin-top:14px" id="bkAssignH">Assign the basket</h2>
+        <p class="hint" style="margin:0 0 6px">Choose the teams that take part. A team that already has open work shows its load. <b>Split evenly</b> gives each team a compact area (barangay by barangay, then by location); move NAPs between teams before you dispatch.</p>
+        <div class="err" id="bkTeamsErr" role="alert" hidden></div>
+        <div class="teamck" id="bkTeams"></div>
+        <div class="row"><label class="meta">Due date (all teams) <input type="date" id="bkDue" aria-label="Due date for all teams"></label><button class="btn pri" id="bkSplit" type="button">Split evenly</button><button class="btn" id="bkClearPlan" type="button">Clear</button></div>
+        <div class="tablewrap" style="margin-top:8px"><table class="bkplan"><thead><tr><th>Team</th><th>NAPs</th><th>Barangays</th><th>Due</th><th></th></tr></thead><tbody id="bkPlanRows"></tbody></table></div>
+        <div id="bkListBox" hidden>
+          <div class="row dpassign"><span class="meta" id="bkListH"></span><label class="meta"><input type="checkbox" id="bkListAll"> all in this list</label><select id="bkMvTo" aria-label="Move the selected NAPs to"></select><button class="btn sm" id="bkMv" type="button">Move selected</button><span class="meta" id="bkMvN"></span></div>
+          <div class="bklist"><table><thead><tr><th class="ck"></th><th>Stencil</th><th>Barangay</th><th>Street</th></tr></thead><tbody id="bkListRows"></tbody></table></div>
+          <div class="row" style="margin-top:6px"><button class="btn sm" id="bkListMore" type="button">Show more</button><span class="meta" id="bkListCount"></span></div>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn pri" id="bkGo" type="button" disabled>Dispatch 0 NAPs</button><span class="meta" id="bkGoMsg" role="status" aria-live="polite"></span></div>
+        <div id="bkResult" class="bkres"></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h2>Load a list</h2>
         <div class="err" id="dpTeamsErr" role="alert" hidden style="margin-bottom:8px"></div>
         <div class="row"><input type="file" id="dpFile" accept=".csv,.tsv,.xlsx,.txt" aria-label="List file"></div>
         <textarea id="dpPaste" rows="4" placeholder="Paste rows from a Google Sheet here: stencil, team, due" aria-label="Paste rows"></textarea>
@@ -247,7 +296,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
           </div>
           <div class="meta" id="dpSummary" style="margin:8px 0"></div>
           <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Status</th><th>Team</th><th>Due</th></tr></thead><tbody id="dpPrevRows"></tbody></table></div>
-          <div class="row" style="margin-top:10px"><button class="btn pri" id="dpGo" disabled>Dispatch 0 valid</button><button class="btn" id="dpClear">Clear preview</button></div>
+          <div class="row" style="margin-top:10px"><button class="btn pri" id="dpGo" disabled>Dispatch 0 valid</button><button class="btn" id="dpToBasket" type="button" disabled>Add 0 found NAPs to the basket</button><button class="btn" id="dpClear">Clear preview</button></div>
         </div>
         <div id="dpResult"></div>
       </div>
@@ -261,8 +310,8 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
       </div>
       <div class="card" style="margin-top:12px"><h2>Aging (Dispatch)</h2>
         <p class="hint" style="margin:0 0 8px" id="agHint">Stale and not-yet-visited NAPs of the barangay selected on the Board, oldest first (all dwellings).</p>
-        <div class="row dpassign"><select id="agTeam" aria-label="Assign to team"></select><input type="date" id="agDue" aria-label="Due date"><button class="btn sm pri" id="agGo">Dispatch selected</button><span class="meta" id="agSelN"></span></div>
-        <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th><input type="checkbox" id="agAll" aria-label="Select all visible"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th><th>Age</th></tr></thead><tbody id="agRows"></tbody></table></div>
+        <div class="row dpassign"><span class="meta" id="agSelN"></span><button class="btn sm pri" id="agGo" type="button">Assign the basket</button></div>
+        <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="ck"><input type="checkbox" id="agAll" aria-label="Select all loaded rows"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th><th>Age</th></tr></thead><tbody id="agRows"></tbody></table></div>
         <div class="row" style="margin-top:8px"><button class="btn sm" id="agMore">Show more</button><span class="meta" id="agCount"></span></div>
         <div id="agResult"></div>
       </div>
@@ -304,16 +353,20 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
     </section>
   </div>
 </div>
+<div class="bkbar" id="bkBar" hidden role="region" aria-label="Basket">
+  <span class="bktxt" id="bkTxt" role="status" aria-live="polite"></span>
+  <button class="btn sm" id="bkBarRev" type="button">Review</button><button class="btn sm pri" id="bkBarAssign" type="button">Assign</button><button class="btn sm" id="bkBarClear" type="button">Clear</button>
+</div>
 <div class="toast" id="toast" hidden></div>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.2"></script>
-<script src="nap-api.js?v=2026-10-15.2"></script>
+<script src="nap-core.js?v=2026-10-15.3"></script>
+<script src="nap-api.js?v=2026-10-15.3"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -346,6 +399,7 @@ async function boot() {
     $('who').textContent = state.email + ' · ' + state.role + ' · v' + NAP_DASH_VERSION;
     $('tb-pilot').hidden = !(state.role === 'admin' || state.role === 'superadmin');
     show('app');
+    if (!bk.restored) { bk.restored = true; bkRestore(); }
     await loadAll();
   } catch (e) { showErr(e); }
 }
@@ -665,7 +719,10 @@ function computeRad() {
 function drawRadius() {
   var on = !!state.sub;
   $('subClear').hidden = !on; $('radSec').hidden = !on;
-  if (!on) { $('inRad').innerHTML = ''; return; }
+  if (!on) { $('inRad').innerHTML = ''; $('radAdd').hidden = true; return; }
+  var addN = radHit.filter(function (b) { return !inBk(b.box_id); }).length;
+  $('radAdd').hidden = !radHit.length; $('radAdd').disabled = !addN;
+  $('radAdd').textContent = addN ? 'Add ' + fmtN(addN) + ' NAP' + (addN === 1 ? '' : 's') + ' within ' + state.radius + ' m to the basket' : 'All of these are in the basket';
   var r = radHit.slice().sort(function (a, b) { return (a.kind === 'installable' ? 0 : 1) - (b.kind === 'installable' ? 0 : 1) || a.distance_m - b.distance_m; });
   $('radH').textContent = 'Within ' + state.radius + ' m of the subscriber (' + r.length + ')';
   $('inRad').innerHTML = r.length ? r.map(function (b, i) {
@@ -674,7 +731,7 @@ function drawRadius() {
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + age + '</span></span><span style="text-align:right">' + pill + '<br><span class="meta">' + Math.round(b.distance_m) + ' m</span></span></button></li>';
   }).join('') : '<li class="meta">No NAP within ' + state.radius + ' m. Increase the radius or click another location.</li>';
 }
-function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawDetail(refresh); }
+function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawBoardList(); drawDetail(refresh); }
 function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); }
 
 // Subscriber pin: set by map click, a pasted lat,lng, or an address search. Never stored. Its coordinates go to our own database only
@@ -705,6 +762,7 @@ $('subRad').addEventListener('change', function () {
   try { localStorage.setItem(RADIUS_KEY, String(n)); } catch (e) {}
   drawBoard(); fetchNear(true);
 });
+$('radAdd').onclick = function () { var r = bkAdd(radHit.map(function (b) { return b.box_id; })); toast('Added ' + fmtN(r.added) + ' to the basket.'); };
 $('subClear').onclick = function () { state.sub = null; state.near = []; state.nearest = []; nearTok++; fitSub = false; markersDirty = true; drawBoard(); };
 
 // Address search through OpenStreetMap Nominatim: only on an explicit search, at most one request per 1100 ms, typed text only.
@@ -918,7 +976,7 @@ $('exportCsv').onclick = async function () {
 };
 
 // ---------- Dispatch tab ----------
-var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, agSel: {}, busy: false, seq: 0, teamsErr: '' };
+var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, busy: false, seq: 0, teamsErr: '' };
 var ag = { brgy: null, rows: [], offset: 0, done: false, tok: 0, busy: false, err: '' };
 var DP_REASON = { unmatched: 'not found', duplicate: 'duplicate', already_open: 'already has an open dispatch', bad_team: 'missing / wrong team', inactive: 'NAP is deactivated' };
 var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['not found', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['already has an open dispatch', 'p-issue'], inactive: ['NAP is deactivated', 'p-full'] };
@@ -929,11 +987,10 @@ function teamOpts(first, cur) {
   return (first != null ? '<option value="">' + esc(first) + '</option>' : '') + dp.teams.map(function (t) { return '<option' + (t === cur ? ' selected' : '') + ' value="' + esc(t) + '">' + esc(t) + '</option>'; }).join('');
 }
 function fillTeamSelects() {
-  var cur = { dpTeam: $('dpTeam').value, diTeam: $('diTeam').value, diMoveTeam: $('diMoveTeam').value, agTeam: $('agTeam').value };
+  var cur = { dpTeam: $('dpTeam').value, diTeam: $('diTeam').value, diMoveTeam: $('diMoveTeam').value };
   $('dpTeam').innerHTML = teamOpts('Select a team', cur.dpTeam);
   $('diTeam').innerHTML = teamOpts('All', cur.diTeam);
   $('diMoveTeam').innerHTML = teamOpts('Move to team…', cur.diMoveTeam);
-  $('agTeam').innerHTML = teamOpts('Assign to team…', cur.agTeam);
 }
 async function dpOpen() {
   dp.teamsErr = '';
@@ -943,8 +1000,9 @@ async function dpOpen() {
   } catch (e) { dp.teams = []; dp.teamsErr = msgOf(e); toast('Cannot load the teams: ' + dp.teamsErr); }
   fillTeamSelects();
   var te = $('dpTeamsErr'); te.hidden = !dp.teamsErr; te.innerHTML = dp.teamsErr ? 'Cannot load the list of teams: ' + esc(dp.teamsErr) : '';
-  ['dpTeam', 'diTeam', 'diMoveTeam', 'agTeam'].forEach(function (id) { $(id).disabled = !!dp.teamsErr; });
+  ['dpTeam', 'diTeam', 'diMoveTeam'].forEach(function (id) { $(id).disabled = !!dp.teamsErr; });
   drawPreview(); loadItems(); loadAging(ag.brgy !== state.brgy || !ag.rows.length); loadGeo();
+  drawBasket(); loadTeamLoad(); bkRefresh(true);
 }
 function teamValid(t) { return !!t && dp.teams.indexOf(String(t).toUpperCase()) >= 0; }
 function dpSendable(r) { return r.status === 'ok' && teamValid(r.team); }
@@ -974,7 +1032,7 @@ async function dpIngest(res, source, fileName, tok) {
   if (tok !== dp.seq) return;
   $('dpReadMsg').textContent = '';
   dp.source = source; dp.fileName = fileName || '';   // set only together with the preview they describe
-  dp.preview = (m || []).map(function (x) { return { stencil: x.stencil, box: x.box_stencil || '', status: x.status, team: x.team ? String(x.team).toUpperCase() : '', due: x.due || '' }; });
+  dp.preview = (m || []).map(function (x) { return { stencil: x.stencil, box: x.box_stencil || '', box_id: x.box_id || null, status: x.status, team: x.team ? String(x.team).toUpperCase() : '', due: x.due || '' }; });
   drawPreview();
 }
 // SheetJS is only needed for .xlsx picks, so it is loaded on the first one (pinned version + subresource integrity hash of the cdnjs file).
@@ -1076,6 +1134,7 @@ function drawPreview() {
     return '<tr' + (bad ? ' class="dpbad"' : '') + '><td class="stencil">' + esc(r.stencil) + (r.box && r.box !== r.stencil ? '<div class="meta">&rarr; ' + esc(r.box) + '</div>' : '') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td>' + esc(r.due) + '</td></tr>';
   }).join('');
   var b = $('dpGo'); b.textContent = 'Dispatch ' + ok + ' valid'; b.disabled = ok === 0 || dp.busy;
+  var found = dpFoundIds(); $('dpToBasket').textContent = 'Add ' + fmtN(found.length) + ' found NAP' + (found.length === 1 ? '' : 's') + ' to the basket'; $('dpToBasket').disabled = !found.length || dp.busy;
   ['dpFile', 'dpPaste', 'dpRead'].forEach(function (id) { $(id).disabled = dp.busy; });
 }
 $('dpApplyTeam').onclick = function () {
@@ -1087,6 +1146,14 @@ $('dpApplyDue').onclick = function () {
   dp.preview.forEach(function (r) { if (!r.due) r.due = d; }); drawPreview();
 };
 $('dpClear').onclick = function () { $('dpPaste').value = ''; $('dpFile').value = ''; dpClearPreview(); };
+// the matched rows (status ok: found in the master, active, no open dispatch) go to the basket; teams / dates of the file are not used there
+function dpFoundIds() { return dp.preview.filter(function (r) { return r.status === 'ok' && r.box_id; }).map(function (r) { return r.box_id; }); }
+$('dpToBasket').onclick = function () {
+  var ids = dpFoundIds(); if (!ids.length) return;
+  var r = bkAdd(ids);
+  toast('Added ' + fmtN(r.added) + ' to the basket' + (r.dup ? ' (' + fmtN(r.dup) + ' were already in it)' : '') + '.');
+  goBasket(false);
+};
 function skippedHtml(sk) {
   if (!sk || !sk.length) return '';
   return '<div class="warn" style="margin-top:10px"><b>Skipped (' + sk.length + '):</b>' + sk.slice(0, 50).map(function (x) { return '<div><span class="stencil">' + esc(x.stencil) + '</span>: ' + esc(DP_REASON[x.reason] || x.reason) + '</div>'; }).join('') + (sk.length > 50 ? '<div>… and ' + (sk.length - 50) + ' more</div>' : '') + '</div>';
@@ -1173,7 +1240,7 @@ $('diCancel').onclick = async function () {
 // --- Aging (Dispatch) --- the selected barangay's stale + never-visited boxes, oldest first, from the server (kind 'aging'),
 // AG_PAGE rows per "Show more". Selections are kept by box id while the barangay stays the same.
 async function loadAging(reset) {
-  if (reset) { ag = { brgy: state.brgy, rows: [], offset: 0, done: false, tok: ag.tok + 1, busy: false, err: '' }; dp.agSel = {}; }
+  if (reset) { ag = { brgy: state.brgy, rows: [], offset: 0, done: false, tok: ag.tok + 1, busy: false, err: '' }; }
   if (!ag.brgy) { ag.done = true; return drawAging(); }
   if (ag.busy || ag.done) return drawAging();
   var tok = ag.tok; ag.busy = true; ag.err = ''; drawAging();
@@ -1189,45 +1256,29 @@ async function loadAging(reset) {
 }
 function drawAging() {
   var all = ag.rows, row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) : all.length;
-  var valid = {}; all.forEach(function (b) { valid[b.box_id] = true; });
-  Object.keys(dp.agSel).forEach(function (id) { if (!valid[id]) delete dp.agSel[id]; });
-  $('agHint').textContent = 'Stale and not-yet-visited NAPs of ' + (ag.brgy || 'the barangay selected on the Board') + ', oldest first (all dwellings). Choose another barangay on the Board.';
+  $('agHint').textContent = 'Stale and not-yet-visited NAPs of ' + (ag.brgy || 'the barangay selected on the Board') + ', oldest first (all dwellings). Choose another barangay on the Board. ' +
+    'Ticked NAPs go to the basket; the box in the header ticks the ' + fmtN(all.length) + ' rows loaded so far' + (ag.done ? '' : ' (Show more loads ' + AG_PAGE + ' more)') + '.';
   $('agRows').innerHTML = all.map(function (b) {
-    return '<tr><td><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Select"' + (dp.agSel[b.box_id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
+    return '<tr' + (inBk(b.box_id) ? ' class="inb"' : '') + '><td class="ck"><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (inBk(b.box_id) ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
   }).join('') || '<tr><td colspan="6" class="meta">' + (ag.busy ? 'Loading…' : ag.err ? 'Cannot load: ' + esc(ag.err) : 'No stale or unverified NAPs in ' + esc(ag.brgy || 'this barangay') + '.') + '</td></tr>';
   $('agCount').textContent = (ag.busy && all.length ? 'Loading… ' : '') + fmtN(all.length) + ' of ' + fmtN(Math.max(expected, all.length)) + (ag.err && all.length ? ' · cannot load more: ' + ag.err : '');
   $('agMore').hidden = ag.done && !ag.err;
   $('agMore').disabled = ag.busy;
-  $('agAll').checked = all.length > 0 && all.every(function (b) { return dp.agSel[b.box_id]; });
-  var n = Object.keys(dp.agSel).length; $('agSelN').textContent = n ? n + ' selected' : '';
+  var inN = all.filter(function (b) { return inBk(b.box_id); }).length;
+  $('agAll').checked = all.length > 0 && inN === all.length; $('agAll').indeterminate = inN > 0 && inN < all.length;
+  $('agSelN').textContent = fmtN(inN) + ' of these in the basket · basket: ' + fmtN(bk.ids.length) + ' NAP' + (bk.ids.length === 1 ? '' : 's');
+  $('agGo').disabled = !bk.ids.length;
 }
 $('agRows').addEventListener('change', function (ev) {
   var id = ev.target.dataset.ag; if (!id) return;
-  if (ev.target.checked) { if (Object.keys(dp.agSel).length >= 500) { ev.target.checked = false; return toast('Up to 500 NAPs per dispatch.'); } dp.agSel[id] = true; }
-  else delete dp.agSel[id];
-  drawAging();
+  if (ev.target.checked) bkAdd([id]); else bkRemove([id]);
 });
 $('agAll').addEventListener('change', function () {
-  var on = this.checked, left = 500 - Object.keys(dp.agSel).length;
-  ag.rows.forEach(function (b) { if (!on) delete dp.agSel[b.box_id]; else if (!dp.agSel[b.box_id] && left > 0) { dp.agSel[b.box_id] = true; left--; } });
-  if (on && left <= 0) toast('Up to 500 NAPs per dispatch.');
-  drawAging();
+  var ids = ag.rows.map(function (b) { return b.box_id; });
+  if (this.checked) bkAdd(ids); else bkRemove(ids);
 });
 $('agMore').onclick = function () { if (ag.err) { ag.err = ''; ag.done = false; } loadAging(false); };
-$('agGo').onclick = async function () {
-  drawAging();   // prune hidden / no-longer-stale selections before reading them
-  var ids = Object.keys(dp.agSel), t = $('agTeam').value, btn = this;
-  if (!ids.length) return toast('Select a NAP first.');
-  if (ids.length > 500) return toast('Up to 500 NAPs per dispatch.');
-  if (!t) return toast('Select a team.');
-  btn.disabled = true;
-  try {
-    var r = await api.dispatchFromBoxes({ box_ids: ids, team: t, due: $('agDue').value || null });
-    doneToast(r); $('agResult').innerHTML = skippedHtml(r && r.skipped);
-    loadAging(true); loadItems();
-  } catch (e) { toast('Not dispatched: ' + msgOf(e)); }
-  finally { btn.disabled = false; }
-};
+$('agGo').onclick = function () { goBasket(false); };
 
 // --- Pagbabago ng lokasyon (admin/superadmin act; dispatcher reads) ---
 var GEO_CLS = { proposed: 'p-issue', moved: 'p-issue', applied: 'p-ok', accepted: 'p-ok', rejected: 'p-stale', reverted: 'p-stale' };
@@ -1439,6 +1490,324 @@ $('mmGo').onclick = async function () {
   var eb = $('mmApplyErr'); if (eb) eb.onclick = function () { mmErrorsDownload(mm.errors); };
   toast(failed ? 'Import stopped: ' + msgOf(failed) : 'NAP Master import applied.');
   if (res.batches) loadAll();   // the board, summary and lists reflect the new master
+};
+
+// ---------- Basket + bulk assignment (phase 4) ----------
+// The dispatcher ticks NAPs on the Board list, in Aging, near a subscriber pin, or from a file / paste preview: they go to ONE basket
+// (box ids only, at most NapCore.BASKET_MAX = 2000) that survives switching barangay / filters / tabs (memory) and a page refresh
+// (sessionStorage, ids only). Box details come from the loaded lists (state.known) and from nap.boxes_by_ids, which also says which
+// boxes already have an open dispatch item or were deactivated: those are flagged and left out when dispatching.
+// "Assign the basket" builds a plan [{team, due, box_ids}] (Split evenly = NapCore.splitEvenly; Move = NapCore.moveBoxes) that
+// nap.dispatch_plan writes in one transaction.
+var BK_KEY = 'ahba-nap-basket', BK_LIST_PAGE = 300, BL_PAGE = 100;
+var bk = { ids: [], set: {}, info: {}, fetched: {}, tok: 0, timer: null, loading: 0, err: '', armed: null, revB: '', revShown: BK_LIST_PAGE, revSel: {} };
+var pl = { teams: [], on: {}, init: false, load: {}, loadErr: '', plan: [], due: '', open: '', sel: {}, shown: BK_LIST_PAGE, busy: false };
+var bl = { shown: BL_PAGE, key: '' };
+var BK_REASON = { already_open: 'already has an open dispatch', inactive: 'NAP is deactivated', unknown_box: 'not in the NAP master', bad_team: 'not an active field team', duplicate: 'twice in the plan' };
+function inBk(id) { return !!bk.set[id]; }
+function bkBox(id) { return bk.info[id] || state.known[id] || null; }
+function bkInfo() { var m = {}; bk.ids.forEach(function (id) { var b = bkBox(id); if (b) m[id] = b; }); return m; }
+function bkSave() { try { if (bk.ids.length) sessionStorage.setItem(BK_KEY, JSON.stringify(bk.ids)); else sessionStorage.removeItem(BK_KEY); } catch (e) { /* private mode: memory only */ } }
+function bkRestore() { var t = null; try { t = sessionStorage.getItem(BK_KEY); } catch (e) {} bk.ids = t ? C.basketParse(t) : []; bkChanged(); if (bk.ids.length) bkRefresh(true); }
+function bkAdd(ids) {
+  var r = C.basketAdd(bk.ids, ids, C.BASKET_MAX);
+  if (r.added) { bk.ids = r.ids; bkChanged(); }
+  if (r.over) toast('The basket holds up to ' + fmtN(C.BASKET_MAX) + ' NAPs: ' + fmtN(r.over) + ' not added. Dispatch or remove some first.');
+  return r;
+}
+function bkRemove(ids) { var before = bk.ids.length; bk.ids = C.basketRemove(bk.ids, ids); if (bk.ids.length !== before) bkChanged(); }
+function bkChanged() {
+  bk.set = {}; bk.ids.forEach(function (id) { bk.set[id] = true; });
+  pl.plan = pl.plan.map(function (e) { return { team: e.team, due: e.due, box_ids: e.box_ids.filter(inBk) }; });
+  [pl.sel, bk.revSel].forEach(function (m) { Object.keys(m).forEach(function (id) { if (!inBk(id)) delete m[id]; }); });
+  bkSave(); drawBkBar(); drawBoardList(); drawRadius();
+  if (!$('v-dispatch').hidden) { drawAging(); drawBasket(); bkSchedule(); }
+}
+// id -> reason for the boxes that cannot be dispatched now (known only once nap.boxes_by_ids answered for them)
+function bkExcluded() {
+  var ex = {};
+  bk.ids.forEach(function (id) {
+    var r = bk.info[id];
+    if (!r) { if (bk.fetched[id]) ex[id] = 'unknown_box'; }
+    else if (r.active === false) ex[id] = 'inactive';
+    else if (r.open_item_id) ex[id] = 'already_open';
+  });
+  return ex;
+}
+function bkSchedule() { clearTimeout(bk.timer); if (bk.ids.some(function (id) { return !bk.fetched[id]; })) bk.timer = setTimeout(function () { bkRefresh(false); }, 300); }
+// Box rows + open items for the basket (all ids, or only the ones never asked). Resolves false when the server could not answer.
+async function bkRefresh(all) {
+  var ids = all ? bk.ids.slice() : bk.ids.filter(function (id) { return !bk.fetched[id]; });
+  if (!ids.length) return true;
+  var tok = ++bk.tok; bk.loading++; drawBasketIfShown();
+  var rows;
+  try { rows = await api.boxesByIds(ids); }
+  catch (e) { bk.loading--; if (tok === bk.tok) bk.err = msgOf(e); drawBasketIfShown(); return false; }
+  bk.loading--; if (tok === bk.tok) bk.err = '';
+  ids.forEach(function (id) { bk.fetched[id] = true; delete bk.info[id]; });   // an id the server did not return is not in the master
+  rows.forEach(function (r) { bk.info[r.box_id] = r; });
+  drawBkBar(); drawBasketIfShown();
+  return true;
+}
+function drawBasketIfShown() { if (!$('v-dispatch').hidden) { drawBasket(); drawAging(); } }
+function brgyList(groups, max) {
+  return groups.slice(0, max).map(function (g) { return esc(g.barangay) + ' ' + fmtN(g.n); }).join(', ') + (groups.length > max ? ' +' + (groups.length - max) + ' more' : '');
+}
+function drawBkBar() {
+  var n = bk.ids.length;
+  $('bkBar').hidden = !n; document.body.classList.toggle('has-bk', !!n);
+  if (!n) { disarmBkClear(); return; }
+  var g = C.basketGroups(bk.ids, bkInfo());
+  $('bkTxt').innerHTML = '<b>' + fmtN(n) + '</b> NAP' + (n === 1 ? '' : 's') + ' selected in ' + fmtN(g.length) + ' barangay' + (g.length === 1 ? '' : 's') + ': ' + brgyList(g, 2);
+}
+function disarmBkClear() { if (bk.armed) { clearTimeout(bk.armed); bk.armed = null; } $('bkBarClear').textContent = 'Clear'; }
+$('bkBarClear').onclick = function () {
+  if (!bk.armed) {   // first click asks to confirm for 4 seconds (no confirm() dialog)
+    this.textContent = 'Clear ' + fmtN(bk.ids.length) + '? Click again';
+    bk.armed = setTimeout(disarmBkClear, 4000); return;
+  }
+  disarmBkClear(); bk.ids = []; pl.plan = []; pl.sel = {}; pl.open = ''; bk.revSel = {}; bkChanged(); toast('Basket cleared.');
+};
+function goBasket(review) {
+  if ($('v-dispatch').hidden) tab('dispatch');
+  if (review) $('bkRev').open = true;
+  setTimeout(function () { (review ? $('bkCard') : $('bkAssignH')).scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+}
+$('bkBarRev').onclick = function () { goBasket(true); };
+$('bkBarAssign').onclick = function () { goBasket(false); };
+
+// --- Board list: the selected barangay's boxes in the current view (dwelling filter + the status box picked above), paged on screen ---
+function boardView() { return visibleBoxes().filter(function (b) { return !state.filter || b.kind === state.filter; }); }
+function ageText(b) { return b.kind === 'unverified' || b.age_days == null ? 'not yet visited' : b.age_days === 0 ? 'today' : b.age_days + ' days ago'; }
+function kindPill(b) { return '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind === 'inactive' ? 'full' : esc(b.kind)) + '">' + esc(LBL[b.kind] || (b.kind === 'inactive' ? 'Deactivated' : b.kind || '?')) + '</span>'; }
+function drawBoardList() {
+  var view = boardView(), n = view.length, key = state.brgy + '|' + state.bf.dwelling + '|' + (state.filter || '');
+  if (key !== bl.key) { bl.key = key; bl.shown = BL_PAGE; }
+  var inN = 0; view.forEach(function (b) { if (inBk(b.box_id)) inN++; });
+  var what = (state.filter ? LBL[state.filter] + ' only' : 'all statuses') + (state.bf.dwelling ? ', ' + state.bf.dwelling + ' only' : '');
+  $('blH').textContent = state.brgy ? 'NAPs in ' + state.brgy + ' (' + fmtN(n) + ')' : 'NAPs';
+  $('blHint').textContent = !state.brgy ? 'Choose a barangay above.' : !n ? 'No NAPs in this view (' + what + ').' :
+    'View: ' + what + '. Showing ' + fmtN(Math.min(bl.shown, n)) + ' of ' + fmtN(n) + '. "Select all" adds all ' + fmtN(n) + ' NAPs of this view to the basket, not only the rows shown' +
+    (n > C.BASKET_MAX ? ' (the basket holds up to ' + fmtN(C.BASKET_MAX) + ')' : '') + '. Narrow the view with the status boxes and the Dwelling filter above.';
+  $('blAllT').textContent = 'Select all ' + fmtN(n) + ' in view';
+  $('blAll').checked = n > 0 && inN === n; $('blAll').indeterminate = inN > 0 && inN < n; $('blAll').disabled = !n;
+  $('blNone').disabled = !inN;
+  $('blSelN').textContent = inN ? fmtN(inN) + ' of this view in the basket' : '';
+  $('blRows').innerHTML = view.slice(0, bl.shown).map(function (b) {
+    var on = inBk(b.box_id);
+    return '<tr' + (on ? ' class="inb"' : '') + '><td class="ck"><input type="checkbox" data-bl="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (on ? ' checked' : '') + '></td>' +
+      '<td><button type="button" class="linkish stencil" data-pick="' + esc(b.box_id) + '" title="Show on the map">' + esc(b.stencil) + '</button></td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') +
+      '</td><td>' + kindPill(b) + '</td><td>' + esc(ageText(b)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="meta">' + (state.brgy ? 'No NAPs in this view.' : 'No barangay selected.') + '</td></tr>';
+  $('blMore').hidden = bl.shown >= n;
+  $('blCount').textContent = n > bl.shown ? fmtN(bl.shown) + ' of ' + fmtN(n) + ' shown' : '';
+}
+$('blRows').addEventListener('change', function (ev) { var id = ev.target.dataset.bl; if (!id) return; if (ev.target.checked) bkAdd([id]); else bkRemove([id]); });
+$('blRows').addEventListener('click', function (ev) {
+  var b = ev.target.closest('[data-pick]'); if (!b) return;
+  state.sel = state.known[b.dataset.pick] || null; drawBoard(); focusSel();
+  $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+$('blAll').addEventListener('change', function () { var ids = boardView().map(function (b) { return b.box_id; }); if (this.checked) bkAdd(ids); else bkRemove(ids); });
+$('blNone').onclick = function () { bkRemove(boardView().map(function (b) { return b.box_id; })); };
+$('blMore').onclick = function () { bl.shown += 2 * BL_PAGE; drawBoardList(); };
+
+// --- Basket card (Dispatch tab) ---
+async function loadTeamLoad() {
+  var rows = null;
+  try { rows = await api.teamLoad(); pl.loadErr = ''; }
+  catch (e) { pl.loadErr = msgOf(e); }
+  pl.load = {};
+  if (rows) { rows.forEach(function (r) { pl.load[r.team] = r; }); pl.teams = rows.map(function (r) { return r.team; }); }
+  else pl.teams = dp.teams.slice();
+  Object.keys(pl.on).forEach(function (t) { if (pl.teams.indexOf(t) < 0) delete pl.on[t]; });
+  if (!pl.init && pl.teams.length) { pl.init = true; pl.teams.slice(0, C.PLAN_MAX_TEAMS).forEach(function (t) { pl.on[t] = true; }); }
+  drawBasket();
+}
+function loadLine(t) {
+  var l = pl.load[t]; if (!l) return pl.loadErr ? '' : 'no load yet';
+  var parts = [fmtN(l.pending) + ' pending'];
+  if (Number(l.blocked)) parts.push(fmtN(l.blocked) + ' blocked');
+  if (Number(l.overdue)) parts.push(fmtN(l.overdue) + ' overdue');
+  parts.push(fmtN(l.done_today) + ' done today');
+  if (l.oldest_pending_days != null) parts.push('oldest ' + (l.oldest_pending_days === 0 ? 'today' : l.oldest_pending_days + ' d'));
+  return parts.join(' · ');
+}
+function onTeams() { return pl.teams.filter(function (t) { return pl.on[t]; }); }
+function planEntry(t, make) { var e = pl.plan.find(function (x) { return x.team === t; }); if (!e && make) { e = { team: t, due: pl.due, box_ids: [] }; pl.plan.push(e); } return e || null; }
+function eligibleIds(ex) { return bk.ids.filter(function (id) { return !ex[id]; }); }
+function poolIds(ex) { var used = {}; pl.plan.forEach(function (e) { e.box_ids.forEach(function (id) { used[id] = true; }); }); return eligibleIds(ex).filter(function (id) { return !used[id]; }); }
+function exText(r, id) { var b = bk.info[id]; return r === 'already_open' && b && b.open_team ? 'open dispatch: ' + b.open_team + ' (' + b.open_status + ')' : BK_REASON[r] || r; }
+function drawBasket() {
+  var n = bk.ids.length, info = bkInfo(), ex = bkExcluded(), g = C.basketGroups(bk.ids, info);
+  $('bkSum').innerHTML = n ? '<b>' + fmtN(n) + '</b> NAP' + (n === 1 ? '' : 's') + ' in ' + fmtN(g.length) + ' barangay' + (g.length === 1 ? '' : 's') + ': ' + brgyList(g, 12) +
+      (bk.loading ? ' <span class="meta">· checking the basket…</span>' : '') + (bk.err ? ' <span class="err">· cannot check the basket: ' + esc(bk.err) + '</span>' : '')
+    : 'The basket is empty. Tick NAPs on the Board list or in Aging below; you can also add the NAPs found in a file / paste below, or the NAPs near a subscriber pin on the Board.';
+  var c = {}; Object.keys(ex).forEach(function (id) { c[ex[id]] = (c[ex[id]] || 0) + 1; });
+  var exN = Object.keys(ex).length;
+  $('bkFlags').innerHTML = exN ? '<div class="warn"><b>' + fmtN(exN) + ' NAP' + (exN === 1 ? '' : 's') + ' will be left out:</b> ' +
+      Object.keys(c).map(function (k) { return fmtN(c[k]) + ' ' + esc(BK_REASON[k] || k); }).join(' · ') +
+      (c.already_open ? '. To give those to another team, use Move to team in Dispatches below.' : '.') +
+      ' <button class="btn sm" type="button" id="bkRmEx">Remove them from the basket</button></div>' : '';
+  drawBkReview(info, ex, g); drawBkTeams(); drawPlan(info, ex);
+}
+$('bkFlags').addEventListener('click', function (ev) { if (ev.target.id === 'bkRmEx') { var ex = bkExcluded(); bkRemove(Object.keys(ex)); toast('Removed ' + fmtN(Object.keys(ex).length) + ' from the basket.'); } });
+function drawBkReview(info, ex, g) {
+  if (bk.revB && !g.some(function (x) { return x.barangay === bk.revB; })) bk.revB = '';
+  $('bkRevSum').textContent = 'Review the basket (' + fmtN(bk.ids.length) + ')';
+  $('bkRevB').innerHTML = '<option value="">All (' + fmtN(bk.ids.length) + ')</option>' + g.map(function (x) { return '<option value="' + esc(x.barangay) + '"' + (x.barangay === bk.revB ? ' selected' : '') + '>' + esc(x.barangay) + ' (' + fmtN(x.n) + ')</option>'; }).join('');
+  if (!$('bkRev').open) return;   // the rows are drawn only while the section is open
+  var list = bk.ids.filter(function (id) { return !bk.revB || C.basketGroups([id], info)[0].barangay === bk.revB; });
+  var shown = list.slice(0, bk.revShown);
+  $('bkRevRows').innerHTML = shown.map(function (id) {
+    var b = bkBox(id), r = ex[id];
+    return '<tr><td class="ck"><input type="checkbox" data-rv="' + esc(id) + '" aria-label="Select"' + (bk.revSel[id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b ? b.stencil : id.slice(0, 8) + '…') + '</td><td>' + esc(b ? b.barangay || '' : '') +
+      '</td><td>' + esc(b ? b.street || '' : '') + '</td><td>' + (b ? kindPill(b) : '') + (r ? ' <span class="pill p-issue">' + esc(exText(r, id)) + '</span>' : !bk.fetched[id] ? ' <span class="meta">checking…</span>' : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="5" class="meta">The basket is empty.</td></tr>';
+  $('bkRevAll').checked = shown.length > 0 && shown.every(function (id) { return bk.revSel[id]; });
+  $('bkRevMore').hidden = list.length <= shown.length;
+  $('bkRevCount').textContent = list.length > shown.length ? fmtN(shown.length) + ' of ' + fmtN(list.length) + ' shown' : '';
+  var sn = Object.keys(bk.revSel).length; $('bkRevSelN').textContent = sn ? fmtN(sn) + ' selected' : ''; $('bkRevRm').disabled = !sn;
+}
+$('bkRev').addEventListener('toggle', function () { if ($('bkRev').open) drawBasket(); });
+$('bkRevB').onchange = function () { bk.revB = this.value; bk.revShown = BK_LIST_PAGE; drawBasket(); };
+$('bkRevRows').addEventListener('change', function (ev) { var id = ev.target.dataset.rv; if (!id) return; if (ev.target.checked) bk.revSel[id] = true; else delete bk.revSel[id]; drawBasket(); });
+$('bkRevAll').addEventListener('change', function () { var on = this.checked; $('bkRevRows').querySelectorAll('[data-rv]').forEach(function (x) { if (on) bk.revSel[x.dataset.rv] = true; else delete bk.revSel[x.dataset.rv]; }); drawBasket(); });
+$('bkRevRm').onclick = function () { var ids = Object.keys(bk.revSel); bk.revSel = {}; bkRemove(ids); toast('Removed ' + fmtN(ids.length) + ' from the basket.'); };
+$('bkRevMore').onclick = function () { bk.revShown += BK_LIST_PAGE; drawBasket(); };
+
+function drawBkTeams() {
+  var te = $('bkTeamsErr'); te.hidden = !pl.loadErr; te.textContent = pl.loadErr ? 'Cannot load the team load: ' + pl.loadErr : '';
+  $('bkTeams').innerHTML = pl.teams.length ? pl.teams.map(function (t) {
+    return '<label><input type="checkbox" data-tm="' + esc(t) + '"' + (pl.on[t] ? ' checked' : '') + (pl.busy ? ' disabled' : '') + '> <b>' + esc(t) + '</b> <span class="meta">' + esc(loadLine(t)) + '</span></label>';
+  }).join('') : '<span class="meta">No active field team in the pilot list (Pilot tab).</span>';
+}
+$('bkTeams').addEventListener('change', function (ev) {
+  var t = ev.target.dataset.tm; if (!t) return;
+  if (ev.target.checked) {
+    if (onTeams().length >= C.PLAN_MAX_TEAMS) { ev.target.checked = false; return toast('Up to ' + C.PLAN_MAX_TEAMS + ' teams per dispatch.'); }
+    pl.on[t] = true;
+  } else {   // its NAPs go back to "Not assigned"
+    delete pl.on[t];
+    pl.plan = pl.plan.filter(function (e) { return e.team !== t; });
+    if (pl.open === t) pl.open = '';
+  }
+  drawBasket();
+});
+function drawPlan(info, ex) {
+  var teams = onTeams(), pool = poolIds(ex), sum = C.planSummary(pl.plan.filter(function (e) { return pl.on[e.team]; }), info, ex), by = {};
+  sum.teams.forEach(function (t) { by[t.team] = t; });
+  var rows = teams.map(function (t) {
+    var s = by[t] || { count: 0, excluded: 0, barangays: [], due: '' }, e = planEntry(t);
+    return '<tr' + (pl.open === t ? ' class="open"' : '') + '><td><b>' + esc(t) + '</b><div class="meta">' + esc(loadLine(t)) + '</div></td><td>' + fmtN(s.count) + (s.excluded ? ' <span class="meta">(+' + fmtN(s.excluded) + ' left out)</span>' : '') +
+      '</td><td>' + (s.barangays.length ? brgyList(s.barangays, 3) : '<span class="meta">none</span>') + '</td><td><input type="date" data-due="' + esc(t) + '" aria-label="Due date for ' + esc(t) + '" value="' + esc(e ? e.due || '' : pl.due) + '"' + (pl.busy ? ' disabled' : '') + '></td>' +
+      '<td><button class="btn sm" type="button" data-view="' + esc(t) + '"' + (s.count + (s.excluded || 0) ? '' : ' disabled') + '>' + (pl.open === t ? 'Hide' : 'View') + '</button></td></tr>';
+  });
+  var pg = C.basketGroups(pool, info);
+  rows.push('<tr' + (pl.open === '__pool' ? ' class="open"' : '') + '><td><b>Not assigned</b><div class="meta">stays in the basket</div></td><td>' + fmtN(pool.length) + '</td><td>' + (pg.length ? brgyList(pg, 3) : '<span class="meta">none</span>') +
+    '</td><td></td><td><button class="btn sm" type="button" data-view="__pool"' + (pool.length ? '' : ' disabled') + '>' + (pl.open === '__pool' ? 'Hide' : 'View') + '</button></td></tr>');
+  $('bkPlanRows').innerHTML = teams.length || pool.length ? rows.join('') : '<tr><td colspan="5" class="meta">Choose at least one team.</td></tr>';
+  drawPlanList(info, ex, pool);
+  var pay = C.planPayload(pl.plan.filter(function (e) { return pl.on[e.team]; }), ex), total = 0;
+  pay.assignments.forEach(function (a) { total += a.box_ids.length; });
+  var go = $('bkGo');
+  go.textContent = pl.busy ? 'Dispatching…' : 'Dispatch ' + fmtN(total) + ' NAP' + (total === 1 ? '' : 's') + (pay.assignments.length ? ' to ' + pay.assignments.length + ' team' + (pay.assignments.length === 1 ? '' : 's') : '');
+  go.disabled = pl.busy || !total;
+  ['bkSplit', 'bkClearPlan', 'bkDue', 'bkMv'].forEach(function (id) { $(id).disabled = pl.busy; });
+  $('bkSplit').disabled = pl.busy || !teams.length || !eligibleIds(ex).length;
+  $('bkGoMsg').textContent = pl.busy ? '' : pool.length && total ? fmtN(pool.length) + ' not assigned (they stay in the basket).' : !total && bk.ids.length ? 'Press Split evenly, or open Not assigned and move NAPs to a team.' : '';
+}
+function drawPlanList(info, ex, pool) {
+  var box = $('bkListBox');
+  if (pl.open && pl.open !== '__pool' && !pl.on[pl.open]) pl.open = '';
+  if (!pl.open) { box.hidden = true; return; }
+  box.hidden = false;
+  var e = planEntry(pl.open), ids = pl.open === '__pool' ? pool : (e ? e.box_ids : []);
+  $('bkListH').textContent = (pl.open === '__pool' ? 'Not assigned' : pl.open) + ': ' + fmtN(ids.length) + ' NAP' + (ids.length === 1 ? '' : 's');
+  var shown = ids.slice(0, pl.shown);
+  $('bkListRows').innerHTML = shown.map(function (id) {
+    var b = bkBox(id), r = ex[id];
+    return '<tr><td class="ck"><input type="checkbox" data-mv="' + esc(id) + '" aria-label="Select"' + (pl.sel[id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b ? b.stencil : id.slice(0, 8) + '…') +
+      (r ? ' <span class="pill p-issue">' + esc(exText(r, id)) + '</span>' : '') + '</td><td>' + esc(b ? b.barangay || '' : '') + '</td><td>' + esc(b ? b.street || '' : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="meta">No NAPs.</td></tr>';
+  $('bkListAll').checked = ids.length > 0 && ids.every(function (id) { return pl.sel[id]; });
+  $('bkListMore').hidden = ids.length <= shown.length;
+  $('bkListCount').textContent = ids.length > shown.length ? fmtN(shown.length) + ' of ' + fmtN(ids.length) + ' shown' : '';
+  var cur = $('bkMvTo').value;
+  $('bkMvTo').innerHTML = '<option value="">Move to…</option>' + onTeams().filter(function (t) { return t !== pl.open; }).map(function (t) { return '<option value="' + esc(t) + '"' + (t === cur ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') +
+    (pl.open !== '__pool' ? '<option value="__pool"' + (cur === '__pool' ? ' selected' : '') + '>Not assigned</option>' : '');
+  var sn = Object.keys(pl.sel).length; $('bkMvN').textContent = sn ? fmtN(sn) + ' selected' : '';
+}
+$('bkPlanRows').addEventListener('click', function (ev) {
+  var b = ev.target.closest('[data-view]'); if (!b) return;
+  pl.open = pl.open === b.dataset.view ? '' : b.dataset.view; pl.sel = {}; pl.shown = BK_LIST_PAGE; drawBasket();
+});
+$('bkPlanRows').addEventListener('change', function (ev) {
+  var t = ev.target.dataset.due; if (!t) return;
+  planEntry(t, true).due = ev.target.value || ''; drawBasket();
+});
+$('bkListRows').addEventListener('change', function (ev) { var id = ev.target.dataset.mv; if (!id) return; if (ev.target.checked) pl.sel[id] = true; else delete pl.sel[id]; drawBasket(); });
+$('bkListAll').addEventListener('change', function () {
+  var ex = bkExcluded(), e = planEntry(pl.open), ids = pl.open === '__pool' ? poolIds(ex) : (e ? e.box_ids : []), on = this.checked;
+  ids.forEach(function (id) { if (on) pl.sel[id] = true; else delete pl.sel[id]; }); drawBasket();
+});
+$('bkListMore').onclick = function () { pl.shown += BK_LIST_PAGE; drawBasket(); };
+$('bkMv').onclick = function () {
+  var ids = Object.keys(pl.sel), to = $('bkMvTo').value;
+  if (!ids.length) return toast('Select NAPs in the list first.');
+  if (!to) return toast('Choose where to move them.');
+  if (to !== '__pool') planEntry(to, true);
+  pl.plan = C.moveBoxes(pl.plan, ids, to === '__pool' ? '' : to);
+  pl.sel = {}; toast('Moved ' + fmtN(ids.length) + ' to ' + (to === '__pool' ? 'Not assigned' : to) + '.'); drawBasket();
+};
+$('bkDue').addEventListener('change', function () { pl.due = this.value || ''; onTeams().forEach(function (t) { planEntry(t, true).due = pl.due; }); drawBasket(); });
+$('bkClearPlan').onclick = function () { pl.plan = []; pl.sel = {}; pl.open = ''; drawBasket(); };
+$('bkSplit').onclick = async function () {
+  if (pl.busy) return;
+  var teams = onTeams(); if (!teams.length) return toast('Choose at least one team.');
+  if (bk.ids.some(function (id) { return !bk.fetched[id]; })) await bkRefresh(false);   // flags first: open / deactivated NAPs are not split
+  var ex = bkExcluded(), boxes = eligibleIds(ex).map(function (id) { return bkBox(id) || { box_id: id }; });
+  var old = {}; pl.plan.forEach(function (e) { old[e.team] = e.due; });
+  pl.plan = C.splitEvenly(boxes, teams).map(function (e) { return { team: e.team, due: old[e.team] != null ? old[e.team] : pl.due, box_ids: e.box_ids }; });
+  pl.sel = {}; pl.open = '';
+  drawBasket();
+};
+function skipGroups(sk) {
+  var g = {}; (sk || []).forEach(function (x) { (g[x.reason] = g[x.reason] || []).push(x); });
+  return Object.keys(g).map(function (k) {
+    var l = g[k];
+    return '<div><b>' + esc(BK_REASON[k] || k) + ' (' + fmtN(l.length) + '):</b> ' + l.slice(0, 20).map(function (x) { var b = bkBox(x.box_id); return '<span class="stencil">' + esc(x.stencil || (b && b.stencil) || x.box_id) + '</span>'; }).join(', ') +
+      (l.length > 20 ? ' … and ' + fmtN(l.length - 20) + ' more' : '') + '</div>';
+  }).join('');
+}
+$('bkGo').onclick = async function () {
+  if (pl.busy) return;
+  pl.busy = true; drawBasket(); $('bkGoMsg').textContent = 'Checking the basket…';
+  var res = null, err = null, sent = 0, leftOut = 0;
+  try {
+    if (!(await bkRefresh(true))) throw new Error('cannot check the basket: ' + bk.err);   // fresh flags: nothing already open is sent
+    var ex = bkExcluded(), plan = pl.plan.filter(function (e) { return pl.on[e.team]; });
+    plan.forEach(function (e) { e.box_ids.forEach(function (id) { if (ex[id]) leftOut++; }); });
+    var pay = C.planPayload(plan, ex);
+    pay.assignments.forEach(function (a) { sent += a.box_ids.length; });
+    if (!sent) throw new Error('nothing to dispatch: every assigned NAP is left out (see the basket)');
+    $('bkGoMsg').textContent = 'Dispatching ' + fmtN(sent) + ' NAPs…';
+    res = await api.dispatchPlan(pay);
+  } catch (e) { err = e; }
+  pl.busy = false;
+  if (err) { $('bkGoMsg').textContent = ''; $('bkResult').innerHTML = '<div class="warn"><b>Not dispatched:</b> ' + esc(msgOf(err)) + '</div>'; drawBasket(); toast('Not dispatched: ' + msgOf(err)); return; }
+  var sk = res.skipped || [], skipped = {}; sk.forEach(function (x) { skipped[x.box_id] = true; });
+  var made = [];
+  C.planPayload(pl.plan.filter(function (e) { return pl.on[e.team]; }), bkExcluded()).assignments.forEach(function (a) { a.box_ids.forEach(function (id) { if (!skipped[id]) made.push(id); }); });
+  if (made.length !== Number(res.created || 0)) made = [];   // never drop from the basket what the server did not confirm
+  $('bkResult').innerHTML = '<div class="okmsg"><b>Dispatched ' + fmtN(res.created || 0) + ' of ' + fmtN(sent) + ' NAPs:</b> ' +
+      (res.teams || []).filter(function (t) { return Number(t.created); }).map(function (t) { return esc(t.team) + ' ' + fmtN(t.created) + (t.due ? ' (due ' + esc(t.due) + ')' : ''); }).join(' · ') + '</div>' +
+    (sk.length ? '<div class="warn"><b>Skipped by the server (' + fmtN(sk.length) + '), still in the basket:</b>' + skipGroups(sk) + '</div>' : '') +
+    (leftOut ? '<div class="meta">' + fmtN(leftOut) + ' NAP' + (leftOut === 1 ? ' was' : 's were') + ' left out before sending (open dispatch / deactivated / not in the master).</div>' : '');
+  toast('Dispatched ' + fmtN(res.created || 0) + '; ' + fmtN(sk.length) + ' skipped');
+  pl.plan = []; pl.sel = {}; pl.open = '';
+  bkRemove(made);
+  bk.fetched = {}; bkRefresh(true); loadTeamLoad(); loadItems();
 };
 
 boot();

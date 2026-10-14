@@ -368,7 +368,134 @@
     return toCsv(['row', 'stencil', 'reason', 'details'], rows, {});
   }
 
+  // ---------- dispatch basket + plan (phase 4; server: nap.dispatch_plan, same caps) ----------
+  // The basket is an ordered list of box ids (strings). Box details live outside it (info: id -> box row) so the basket itself can be
+  // stored as ids only. A plan is an ordered list of {team, due, box_ids}; the dashboard sends it to nap.dispatch_plan as is.
+  var BASKET_MAX = 2000, PLAN_MAX_TEAMS = 20;
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function isUuid(s) { return typeof s === 'string' && UUID_RE.test(s); }
+  function uniq(list) { var seen = {}, out = []; (list || []).forEach(function (x) { if (x != null && x !== '' && !seen[x]) { seen[x] = true; out.push(x); } }); return out; }
+  // Adds ids in order, skipping ones already there and stopping at cap. {ids (new array), added, dup, over}
+  function basketAdd(ids, add, cap) {
+    var max = cap == null ? BASKET_MAX : cap, cur = (ids || []).slice(), have = {}, added = 0, dup = 0, over = 0;
+    cur.forEach(function (x) { have[x] = true; });
+    (add || []).forEach(function (x) {
+      if (x == null || x === '') return;
+      if (have[x]) { dup++; return; }
+      if (cur.length >= max) { over++; return; }
+      have[x] = true; cur.push(x); added++;
+    });
+    return { ids: cur, added: added, dup: dup, over: over };
+  }
+  function basketRemove(ids, rm) { var gone = {}; (rm || []).forEach(function (x) { gone[x] = true; }); return (ids || []).filter(function (x) { return !gone[x]; }); }
+  function brgyName(b) { return b ? (String(b.barangay == null ? '' : b.barangay).trim() || 'UNASSIGNED') : 'UNKNOWN'; }
+  // [{barangay, n}] most NAPs first, then by name. An id without info counts as UNKNOWN (still loading, or not in the master).
+  function basketGroups(ids, info) {
+    var m = {};
+    (ids || []).forEach(function (id) { var k = brgyName(info && info[id]); m[k] = (m[k] || 0) + 1; });
+    return Object.keys(m).map(function (k) { return { barangay: k, n: m[k] }; }).sort(function (a, b) { return b.n - a.n || (a.barangay < b.barangay ? -1 : a.barangay > b.barangay ? 1 : 0); });
+  }
+  // sessionStorage text -> ids (uuids only, de-duplicated, capped); anything unreadable -> []
+  function basketParse(text, cap) {
+    var arr; try { arr = JSON.parse(text); } catch (e) { return []; }
+    if (!Array.isArray(arr)) return [];
+    return uniq(arr.filter(isUuid)).slice(0, cap == null ? BASKET_MAX : cap);
+  }
+  // Position of a point on a Hilbert curve (65,536 x 65,536 cells) laid over a square frame: points close on the curve are close on the
+  // ground, so cutting the curve into contiguous pieces gives compact areas. The frame defaults to Quezon City; walkOrder fits it to the
+  // boxes being split (a tighter frame = a finer curve over them). Outside the frame a point is clamped to the edge.
+  var QC_FRAME = { lat0: 14.55, lng0: 120.95, size: 0.25 }, HN = 65536;
+  function hilbertIndex(lat, lng, frame) {
+    var f = frame || QC_FRAME, n = HN;
+    function cell(v, a) { var c = Math.floor((v - a) / f.size * n); return c < 0 ? 0 : c >= n ? n - 1 : c; }
+    var x = cell(lng, f.lng0), y = cell(lat, f.lat0), d = 0, s, rx, ry, t;
+    for (s = n / 2; s >= 1; s = s / 2) {
+      rx = (x & s) > 0 ? 1 : 0; ry = (y & s) > 0 ? 1 : 0;
+      d += s * s * ((3 * rx) ^ ry);
+      if (ry === 0) { if (rx === 1) { x = n - 1 - x; y = n - 1 - y; } t = x; x = y; y = t; }
+    }
+    return d;
+  }
+  // the smallest square frame around the points (a little margin), or the QC frame when there is nothing to fit
+  function fitFrame(pts) {
+    if (!pts.length) return QC_FRAME;
+    var la0 = Infinity, la1 = -Infinity, ln0 = Infinity, ln1 = -Infinity;
+    pts.forEach(function (p) { la0 = Math.min(la0, p[0]); la1 = Math.max(la1, p[0]); ln0 = Math.min(ln0, p[1]); ln1 = Math.max(ln1, p[1]); });
+    var size = Math.max(la1 - la0, ln1 - ln0, 1e-6) * 1.001;
+    return { lat0: la0, lng0: ln0, size: size };
+  }
+  function hasXY(b) { return b && b.lat != null && b.lng != null && b.lat !== '' && b.lng !== '' && isFinite(Number(b.lat)) && isFinite(Number(b.lng)); }
+  function cmpStr(a, b) { a = String(a == null ? '' : a); b = String(b == null ? '' : b); return a < b ? -1 : a > b ? 1 : 0; }
+  // Boxes in "walking order": barangay by barangay (barangays ordered by where their boxes are, along the same curve; barangays with no
+  // coordinates at all last, by name), inside a barangay the boxes with coordinates along the curve, then the ones without coordinates
+  // by street then stencil. Ties by stencil then id: the order never depends on the input order.
+  function walkOrder(boxes) {
+    var groups = {}, list = [], all = uniqBy(boxes);
+    var frame = fitFrame(all.filter(hasXY).map(function (b) { return [Number(b.lat), Number(b.lng)]; }));
+    all.forEach(function (b) { var k = brgyName(b); (groups[k] = groups[k] || []).push(b); });
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k], xy = [], no = [], sx = 0, sy = 0;
+      g.forEach(function (b) { if (hasXY(b)) { xy.push({ b: b, h: hilbertIndex(Number(b.lat), Number(b.lng), frame) }); sx += Number(b.lat); sy += Number(b.lng); } else no.push(b); });
+      xy.sort(function (p, q) { return p.h - q.h || cmpStr(p.b.stencil, q.b.stencil) || cmpStr(p.b.box_id, q.b.box_id); });
+      no.sort(function (p, q) { return cmpStr(p.street, q.street) || cmpStr(p.stencil, q.stencil) || cmpStr(p.box_id, q.box_id); });
+      list.push({ name: k, key: xy.length ? hilbertIndex(sx / xy.length, sy / xy.length, frame) : null, boxes: xy.map(function (p) { return p.b; }).concat(no) });
+    });
+    list.sort(function (a, b) {
+      if ((a.key == null) !== (b.key == null)) return a.key == null ? 1 : -1;
+      return (a.key == null ? 0 : a.key - b.key) || cmpStr(a.name, b.name);
+    });
+    return [].concat.apply([], list.map(function (g) { return g.boxes; }));
+  }
+  function uniqBy(boxes) { var seen = {}; return (boxes || []).filter(function (b) { if (!b || b.box_id == null || seen[b.box_id]) return false; seen[b.box_id] = true; return true; }); }
+  // Splits the boxes over the teams (in the order given): walking order, cut into contiguous pieces whose sizes differ by at most 1
+  // (the first n % k teams get one more). Deterministic. -> [{team, box_ids}] (one entry per team, possibly empty).
+  function splitEvenly(boxes, teams) {
+    var tl = uniq((teams || []).map(function (t) { return t == null ? '' : String(t); }));
+    if (!tl.length) return [];
+    var order = walkOrder(boxes), n = order.length, k = tl.length, base = Math.floor(n / k), extra = n % k, at = 0;
+    return tl.map(function (t, i) {
+      var size = base + (i < extra ? 1 : 0), part = order.slice(at, at + size); at += size;
+      return { team: t, box_ids: part.map(function (b) { return b.box_id; }) };
+    });
+  }
+  // Moves ids to toTeam (appended in the given order; the team entry is added when missing). toTeam '' / null = unassign (remove only).
+  function moveBoxes(plan, ids, toTeam) {
+    var mv = uniq(ids), gone = {}; mv.forEach(function (x) { gone[x] = true; });
+    var out = (plan || []).map(function (e) { var c = {}; for (var k in e) c[k] = e[k]; c.box_ids = (e.box_ids || []).filter(function (x) { return !gone[x]; }); return c; });
+    if (toTeam) {
+      var t = out.find(function (e) { return e.team === toTeam; });
+      if (!t) { t = { team: toTeam, box_ids: [] }; out.push(t); }
+      t.box_ids = t.box_ids.concat(mv);
+    }
+    return out;
+  }
+  // Per team: NAP count (excluded ones apart), barangays covered (most first). excluded: id -> reason (open item, inactive, unknown).
+  // A box listed under two teams counts for the first only (the server rule: first assignment wins).
+  function planSummary(plan, info, excluded) {
+    var seen = {}, total = 0, out = (plan || []).map(function (e) {
+      var ids = [], ex = 0, dup = 0;
+      (e.box_ids || []).forEach(function (id) { if (seen[id]) { dup++; return; } seen[id] = true; if (excluded && excluded[id]) ex++; else ids.push(id); });
+      total += ids.length;
+      return { team: e.team, due: e.due || '', count: ids.length, excluded: ex, duplicate: dup, barangays: basketGroups(ids, info) };
+    });
+    return { teams: out, total: total };
+  }
+  // The nap.dispatch_plan payload: excluded and repeated ids dropped, teams without NAPs dropped, blank due = null.
+  function planPayload(plan, excluded, o) {
+    o = o || {};
+    var seen = {}, as = [];
+    (plan || []).forEach(function (e) {
+      var ids = (e.box_ids || []).filter(function (id) { if (seen[id] || (excluded && excluded[id])) return false; seen[id] = true; return true; });
+      if (ids.length && e.team) as.push({ team: e.team, due: e.due ? String(e.due) : null, box_ids: ids });
+    });
+    var p = { source: 'plan', assignments: as };
+    if (o.note) p.note = String(o.note);
+    return p;
+  }
+
   return { STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
+    BASKET_MAX: BASKET_MAX, PLAN_MAX_TEAMS: PLAN_MAX_TEAMS, isUuid: isUuid, basketAdd: basketAdd, basketRemove: basketRemove, basketGroups: basketGroups,
+    basketParse: basketParse, hilbertIndex: hilbertIndex, walkOrder: walkOrder, splitEvenly: splitEvenly, moveBoxes: moveBoxes, planSummary: planSummary, planPayload: planPayload,
     MASTER_IMPORT_COLS: MASTER_IMPORT_COLS, MASTER_EXPORT_COLS: MASTER_EXPORT_COLS, MASTER_COMPUTED: MASTER_COMPUTED, MASTER_NUMERIC: MASTER_NUMERIC,
     MASTER_MAX_ROWS: MASTER_MAX_ROWS, MASTER_BATCH: MASTER_BATCH, MASTER_EXPORT_README: MASTER_EXPORT_README, headerKey: headerKey, masterColumn: masterColumn, isMasterStencil: isMasterStencil,
     stencilNps: stencilNps, masterCell: masterCell, findMasterHeader: findMasterHeader, parseMasterGrid: parseMasterGrid, parseMasterText: parseMasterText, splitBatches: splitBatches,

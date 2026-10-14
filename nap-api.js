@@ -4,7 +4,7 @@
   else root.NapApi = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var BUCKET = 'nap-photos', PAGE = 1000, OPEN_STATUSES = ['pending', 'blocked', 'unassigned'], OPEN_MAX = 2000;
+  var BUCKET = 'nap-photos', PAGE = 1000, OPEN_STATUSES = ['pending', 'blocked', 'unassigned'], OPEN_MAX = 2000, BY_IDS_CHUNK = 500;
 
   function fail(error) {
     var msg = (error && error.message) || String(error);
@@ -115,6 +115,21 @@
       dispatchAssign: function (payload) { return unwrap(nap().rpc('dispatch_assign', { p: payload })); },
       dispatchCancel: function (payload) { return unwrap(nap().rpc('dispatch_cancel', { p: payload })); },
       myDispatch: function () { return unwrap(nap().rpc('my_dispatch')); },
+      // ---------- dispatch plan (phase 4, board only; the server checks) ----------
+      // plan = {source?, note?, assignments: [{team, due, box_ids}]} -> {dispatch_id, requested, created, teams: [...], skipped: [{box_id, stencil, team, reason}]}
+      dispatchPlan: function (plan) { return unwrap(nap().rpc('dispatch_plan', { p_plan: plan })); },
+      // One row per active pilot field team: pending, blocked, done_today, overdue, oldest_pending_at / _days.
+      teamLoad: function () { return unwrap(nap().rpc('team_load')).then(function (r) { return r || []; }); },
+      // Box rows (status + open dispatch item) for a list of ids, in the order given. PostgREST returns at most 1000 rows per call, so the ids
+      // go BY_IDS_CHUNK at a time, one request after the other (at most 2000 ids = 4 requests).
+      boxesByIds: function (ids) {
+        var list = (ids || []).slice(), out = [];
+        function next(i) {
+          if (i >= list.length) return Promise.resolve(out);
+          return unwrap(nap().rpc('boxes_by_ids', { p_ids: list.slice(i, i + BY_IDS_CHUNK) })).then(function (rows) { out = out.concat(rows || []); return next(i + BY_IDS_CHUNK); });
+        }
+        return next(0);
+      },
       // Newest `limit` items, PLUS every open item (pending / blocked / unassigned, up to OPEN_MAX): a busy week of done items must never push
       // an old pending or blocked item out of the list or skew the per-team counts. Each row also carries audit:{review_status} when linked.
       listDispatchItems: function (o) {
