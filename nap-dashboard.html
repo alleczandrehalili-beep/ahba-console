@@ -89,6 +89,14 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
 th{color:var(--muted);font-weight:600}
 .tablewrap{overflow-x:auto}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.filters label{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);min-width:0;flex:1 1 140px}
+select,.filters select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);max-width:100%}
+.hist{margin-top:10px}
+.hist table{font-size:12.5px}
+.hist .exp td{background:var(--bg)}
+.err{color:var(--full)}
+.photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 </style>
 </head>
 <body>
@@ -124,6 +132,11 @@ th{color:var(--muted);font-weight:600}
     <section id="v-board">
     <div class="board">
       <div class="card">
+        <div class="filters" id="boardFilters">
+          <label>Barangay<select id="fBrgy"></select></label>
+          <label>District<select id="fDist"></select></label>
+          <label>Dwelling<select id="fDwell"></select></label>
+        </div>
         <div class="kpis" id="kpis"></div>
         <div class="mapbox"><svg id="map" role="img" aria-label="Mapa ng NAP boxes sa Bahay Toro"></svg></div>
         <div class="legend">
@@ -151,14 +164,15 @@ th{color:var(--muted);font-weight:600}
     </div>
     </section>
     <section id="v-audits" hidden>
-      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">Lahat</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Hindi nahanap</button></div></div>
+      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">Lahat</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Hindi nahanap</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button></div></div>
       <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Petsa</th><th>NAP</th><th>NP</th><th>Team</th><th>Libre</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
       <div id="auditDetail" class="detail" hidden></div></div>
     </section>
     <section id="v-pilot" hidden>
       <div class="card"><h2>Pilot access</h2>
         <div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Org</th><th>Gate</th><th>Active</th><th></th></tr></thead><tbody id="pilotRows"></tbody></table></div>
-        <div class="row" style="margin-top:10px"><input id="pnUser" placeholder="username" style="font:inherit;padding:6px"><select id="pnRole"><option>field</option><option>dispatcher</option><option>admin</option></select><button class="btn sm pri" id="pnAdd">Idagdag</button></div></div>
+        <div class="row" style="margin-top:10px"><input id="pnUser" placeholder="username" aria-label="Username" style="font:inherit;padding:6px"><select id="pnRole" aria-label="Role"><option>field</option><option>dispatcher</option><option>admin</option></select><select id="pnOrg" aria-label="Org"><option selected>AHBA</option><option>SUBCON</option></select><button class="btn sm pri" id="pnAdd">Idagdag</button></div>
+        <p class="hint" id="pnHint">Field: username ng team sa app (UPPERCASE, kapareho ng nasa header ng app). Dispatcher/admin: dashboard username.</p></div>
       <div class="card" style="margin-top:12px"><h2>Settings</h2><div class="row" id="settingsRow"></div></div>
     </section>
   </div>
@@ -166,11 +180,11 @@ th{color:var(--muted);font-weight:600}
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-14.1"></script>
-<script src="nap-api.js?v=2026-10-14.1"></script>
+<script src="nap-core.js?v=2026-10-14.2"></script>
+<script src="nap-api.js?v=2026-10-14.2"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-14.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-14.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -178,12 +192,12 @@ var $ = function (id) { return document.getElementById(id); };
 var C = NapCore, S = C.STATUS;
 var sb = supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, storageKey: 'ahba-nap-dashboard' } });
 var api = NapApi.create(sb);
-var state = { role: 'none', boxes: [], sel: null, sub: null, mode: 'install', filter: null, settings: {} };
+var state = { role: 'none', boxes: [], sel: null, sub: null, mode: 'install', filter: null, settings: {}, bf: { barangay: '', district: '', dwelling: '' } };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 var tt; function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 3200); }
 function show(view) { ['loginView', 'noAccess', 'errView', 'app'].forEach(function (v) { $(v).hidden = v !== view; }); }
-function msgOf(e) { return String((e && e.message) || e || 'Unknown error'); }
+function msgOf(e) { return String((e && e.message) || e || 'Unknown error').replace(/^NAP_[A-Z_]+:\s*/, ''); }
 function showErr(e) { $('errMsg').textContent = msgOf(e); show('errView'); }
 var ALLOWED = ['admin', 'dispatcher', 'superadmin'];
 
@@ -221,8 +235,25 @@ async function loadAll() {
   } catch (e) { return showErr(e); }
   var id = state.sel && state.sel.box_id;
   state.sel = id ? (state.boxes.find(function (b) { return b.box_id === id; }) || null) : null;
+  fillFilters();
   drawBoard(true);
 }
+// Board filters (barangay, district, dwelling): options come from the loaded boxes; they narrow the map dots, KPIs and nearest list.
+var BF = [['barangay', 'fBrgy'], ['district', 'fDist'], ['dwelling', 'fDwell']];
+function fillFilters() {
+  BF.forEach(function (f) {
+    var vals = {}; state.boxes.forEach(function (b) { if (b[f[0]]) vals[b[f[0]]] = true; });
+    var cur = state.bf[f[0]], list = Object.keys(vals).sort();
+    if (cur && !vals[cur]) cur = state.bf[f[0]] = '';
+    $(f[1]).innerHTML = '<option value="">Lahat</option>' + list.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + ' value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
+  });
+}
+function inFilter(b) { return BF.every(function (f) { return !state.bf[f[0]] || b[f[0]] === state.bf[f[0]]; }); }
+function visibleBoxes() { return state.boxes.filter(inFilter); }
+$('boardFilters').addEventListener('change', function (ev) {
+  var f = BF.find(function (x) { return x[1] === ev.target.id; }); if (!f) return;
+  state.bf[f[0]] = ev.target.value; drawBoard();
+});
 // Same rule everywhere: when a session expires, send the user back to sign-in.
 window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Mag-sign in ulit.'); setTimeout(out, 1200); } });
 
@@ -249,7 +280,7 @@ function drawMap() {
   var g = state.g = geo(), svg = $('map'); svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H);
   var s = '';
   state.boxes.forEach(function (b, i) {
-    if (b.lat == null) return;
+    if (b.lat == null || !inFilter(b)) return;
     var dim = state.filter && state.filter !== b.kind;
     s += '<circle data-i="' + i + '" cx="' + g.X(b.lng).toFixed(1) + '" cy="' + g.Y(b.lat).toFixed(1) + '" r="' + (isSel(b) ? 8 : b.kind === 'unverified' ? 3 : 4.5) +
       '" fill="' + COL[b.kind] + '" opacity="' + (dim ? .12 : b.kind === 'unverified' ? .55 : .95) + '" stroke="' + (isSel(b) ? 'var(--ink)' : 'none') + '" stroke-width="2"/>';
@@ -262,14 +293,14 @@ function drawMap() {
 }
 function drawKpis() {
   var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0;
-  state.boxes.forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; });
+  visibleBoxes().forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; });
   $('kpis').innerHTML = ['installable', 'full', 'issue', 'stale', 'unverified'].map(function (k) {
     return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + c[k] + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + ports + ' libreng port' : '') + '</span></button>';
   }).join('');
 }
 function nearestList() {
   var from = state.sub || { lat: 14.6645, lng: 121.0195 };
-  return C.nearest(state.boxes, from, state.mode, 6);
+  return C.nearest(visibleBoxes(), from, state.mode, 6);
 }
 function drawList() {
   var r = nearestList();
@@ -279,7 +310,7 @@ function drawList() {
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub ? Math.round(b.distance_m) + ' m' : '') + '</span></span></button></li>';
   }).join('') : '<li class="meta">Walang tugma. Mag-audit ng bagong NAP o habaan ang freshness window sa Pilot tab.</li>';
 }
-var detailTok = 0, portsCache = null;   // portsCache = {box_id, ports}; refetch only on box change or explicit refresh
+var detailTok = 0, portsCache = null, histCache = null;   // {box_id, ...}; refetch only on box change or explicit refresh
 async function drawDetail(refresh) {
   var el = $('detail'), b = state.sel, tok = ++detailTok;
   if (!b) { el.hidden = true; return; }
@@ -303,7 +334,54 @@ async function drawDetail(refresh) {
         list.map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
         (tags ? '<div style="margin-top:6px">' + tags + '</div>' : '') +
         (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active pero walang label. Ipa-tag sa team.</div>' : '') + '</div>';
-    }).join('') + '</div>';
+    }).join('') + '</div><div class="hist" id="hist"><h2>Huling 5 audit</h2><div class="meta">Naglo-load…</div></div>';
+  drawHistory(b, tok, refresh);
+}
+// Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
+async function drawHistory(b, tok, refresh) {
+  var rows;
+  if (!refresh && histCache && histCache.box_id === b.box_id) rows = histCache.rows;
+  else {
+    try { rows = await api.listAudits({ boxId: b.box_id, limit: 5 }); }
+    catch (e) { if (tok === detailTok && $('hist')) $('hist').innerHTML = '<h2>Huling 5 audit</h2><div class="meta err">Hindi ma-load ang history: ' + esc(msgOf(e)) + '</div>'; return; }
+    if (tok !== detailTok) return;
+    histCache = { box_id: b.box_id, rows: rows };
+  }
+  var el = $('hist'); if (!el) return;
+  el.innerHTML = '<h2>Huling 5 audit</h2>' + (rows.length ? '<div class="tablewrap"><table><thead><tr><th>Petsa</th><th>NP</th><th>Team</th><th>Libre</th><th>Status</th><th>Photo</th><th></th></tr></thead><tbody>' +
+    rows.map(function (a, i) {
+      return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td>' + (a.audit_photos || []).length + '</td><td><button class="btn sm" data-hi="' + i + '">Tingnan</button></td></tr>' +
+        '<tr class="exp" hidden data-hx="' + i + '"><td colspan="7"><div class="detail" style="margin:0;border:0;padding:0"></div></td></tr>';
+    }).join('') + '</tbody></table></div>' : '<div class="meta">Wala pang audit sa NAP na ito.</div>');
+  el.onclick = function (ev) {
+    var btn = ev.target.closest('[data-hi]'); if (!btn) return;
+    var tr = el.querySelector('[data-hx="' + btn.dataset.hi + '"]'), open = tr.hidden;
+    tr.hidden = !open; btn.textContent = open ? 'Isara' : 'Tingnan';
+    if (open) showAudit(rows[+btn.dataset.hi], tr.querySelector('.detail'), function () { histCache = null; drawDetail(true); });
+  };
+}
+function freeCell(a) { return a.review_status === 'not_found' ? '-' : String((a.audit_ports || []).filter(function (p) { return C.isUsable(p.status); }).length); }
+function statusPills(a) {
+  var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
+  return '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
+    (a.gps_lat == null && a.review_status === 'flagged' ? ' <span class="pill p-issue">Walang GPS</span>' : '');
+}
+// Renders one audit (ports, photos, review button) into el. Photos that cannot be signed show "Hindi ma-load" instead of vanishing.
+async function showAudit(a, el, onReviewed) {
+  var tok = el._tok = (el._tok || 0) + 1;
+  el.hidden = false; el.innerHTML = '<div class="meta">Naglo-load…</div>';
+  var urls = [], photoErr = false;
+  try { urls = (a.audit_photos || []).length ? await api.signedPhotoUrls(a.audit_photos.map(function (p) { return p.path; })) : []; } catch (e) { photoErr = true; }
+  if (tok !== el._tok) return;
+  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Hindi nahanap: ' + esc(a.not_found_reason) : '') + (a.gps_lat == null ? ' · Walang GPS' : '') + '</div>' +
+    '<div class="ports" style="margin:8px 0">' + (a.audit_ports || []).slice().sort(function (x, y) { return x.port - y.port; }).map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
+    (photoErr ? '<div class="meta err">Hindi ma-load ang photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) {
+      return u.url ? '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="NAP reading"></a>'
+        : '<span class="photo-missing" title="' + esc(u.path + (u.error ? ': ' + u.error : '')) + '">Hindi ma-load</span>';
+    }).join('') + '</div>' +
+    ((state.role === 'admin' || state.role === 'superadmin') && a.review_status !== 'ok' && a.review_status !== 'reviewed' ? '<div class="actions"><button class="btn sm pri js-review">Markahan na-review</button></div>' : '');
+  var mr = el.querySelector('.js-review');
+  if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Na-review na.'); onReviewed(); } catch (e) { mr.disabled = false; toast('Hindi na-save: ' + msgOf(e)); } };
 }
 function drawBoard(refresh) { drawMap(); drawKpis(); drawList(); drawDetail(refresh); }
 
@@ -325,28 +403,22 @@ function tab(name) {
 async function loadAudits() {
   var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
   var rows;
-  try { rows = await api.listAudits({ reviewStatus: f || undefined, limit: 200 }); } catch (e) { return toast('Hindi ma-load ang audits: ' + msgOf(e)); }
+  // 'awo' (Active w/o tagging) is filtered here over the loaded audits; the others are review_status filters on the server
+  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo') ? f : undefined, limit: 200 }); } catch (e) { return toast('Hindi ma-load ang audits: ' + msgOf(e)); }
+  if (f === 'awo') rows = rows.filter(function (a) { return (a.audit_ports || []).some(function (p) { return p.status === S.AWO; }); });
   state.audits = rows;
   $('auditRows').innerHTML = rows.map(function (a, i) {
-    var free = a.audit_ports.filter(function (p) { return C.isUsable(p.status); }).length;
-    var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
-    return '<tr><td>' + new Date(a.created_at).toLocaleString() + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + a.np + '</td><td>' + esc(a.team) + '</td><td>' + (a.review_status === 'not_found' ? '-' : free) + '</td><td><span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span></td><td><button class="btn sm" data-ai="' + i + '">Tingnan</button></td></tr>';
-  }).join('') || '<tr><td colspan="7" class="meta">Wala pang audit.</td></tr>';
+    return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td><button class="btn sm" data-ai="' + i + '">Tingnan</button></td></tr>';
+  }).join('') || '<tr><td colspan="7" class="meta">' + (f ? 'Walang tugma.' : 'Wala pang audit.') + '</td></tr>';
 }
 $('auditFilter').addEventListener('click', function (ev) {
   var b = ev.target.closest('button'); if (!b) return;
   document.querySelectorAll('#auditFilter button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); loadAudits();
 });
-$('auditRows').addEventListener('click', async function (ev) {
+$('auditRows').addEventListener('click', function (ev) {
   var b = ev.target.closest('[data-ai]'); if (!b) return;
-  var a = state.audits[+b.dataset.ai], el = $('auditDetail'); el.hidden = false;
-  var urls = [], photoErr = false;
-  try { urls = a.audit_photos.length ? await api.signedPhotoUrls(a.audit_photos.map(function (p) { return p.path; })) : []; } catch (e) { photoErr = true; }
-  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + a.np + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Hindi nahanap: ' + esc(a.not_found_reason) : '') + '</div>' +
-    '<div class="ports" style="margin:8px 0">' + a.audit_ports.sort(function (x, y) { return x.port - y.port; }).map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
-    (photoErr ? '<div class="meta" style="color:var(--full)">Hindi ma-load ang photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) { return '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="NAP reading"></a>'; }).join('') + '</div>' +
-    ((state.role === 'admin' || state.role === 'superadmin') && a.review_status !== 'ok' && a.review_status !== 'reviewed' ? '<div class="actions"><button class="btn sm pri" id="markReviewed">Markahan na-review</button></div>' : '');
-  var mr = $('markReviewed'); if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Na-review na.'); loadAudits(); el.hidden = true; } catch (e) { mr.disabled = false; toast('Hindi na-save: ' + msgOf(e)); } };
+  var el = $('auditDetail');
+  showAudit(state.audits[+b.dataset.ai], el, function () { histCache = null; loadAudits(); el.hidden = true; });
 });
 async function loadPilot(quiet) {
   var rows;
@@ -392,14 +464,16 @@ $('pilotRows').addEventListener('click', async function (ev) {
   if (await guarded([d], async function () { await api.removePilot(u); }, loadPilot)) loadPilot();
 });
 $('pnAdd').onclick = async function () {
-  var btn = $('pnAdd'), u = $('pnUser').value.trim(); if (!u) return toast('Ilagay ang username.');
+  // field usernames are the app's team name = public.my_team() (UPPERCASE of the email local part); dashboard usernames stay as typed
+  var btn = $('pnAdd'), role = $('pnRole').value, org = $('pnOrg').value, u = $('pnUser').value.trim(); if (!u) return toast('Ilagay ang username.');
+  if (role === 'field') u = u.toUpperCase();
   btn.disabled = true;
   try {
     var rows = await api.listPilot(); state.pilot = rows;
     if (rows.some(function (r) { return String(r.username).toLowerCase() === u.toLowerCase(); })) { toast('Nandoon na ang username.'); return; }
   } catch (e) { toast('Hindi na-save: ' + msgOf(e)); return; }
   finally { btn.disabled = false; }
-  if (await guarded([btn, $('pnUser'), $('pnRole')], async function () { await api.savePilot({ username: u, role: $('pnRole').value, org: 'AHBA', gate: false, active: true }); }, loadPilot)) { $('pnUser').value = ''; loadPilot(); }
+  if (await guarded([btn, $('pnUser'), $('pnRole'), $('pnOrg')], async function () { await api.savePilot({ username: u, role: role, org: org, gate: false, active: true }); }, loadPilot)) { $('pnUser').value = ''; loadPilot(); }
 };
 $('settingsRow').addEventListener('change', async function (ev) {
   var t = ev.target, k = t.dataset.set; if (!k) return;
