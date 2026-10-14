@@ -143,7 +143,55 @@
         if (o.boxId) q = q.eq('box_id', o.boxId);
         return unwrap(q);
       },
-      geoReview: function (payload) { return unwrap(nap().rpc('geo_review', { p: payload })); }
+      geoReview: function (payload) { return unwrap(nap().rpc('geo_review', { p: payload })); },
+
+      // ---------- NAP Master (board only; the server checks) ----------
+      // Preview (nothing written) / apply (written, one transaction per call) of up to 5000 import rows: {row, stencil, barangay, ...}.
+      masterPreview: function (rows) { return unwrap(nap().rpc('master_preview', { p_rows: rows })); },
+      masterApply: function (rows) { return unwrap(nap().rpc('master_apply', { p_rows: rows })); },
+      // Applies rows in sequential batches (default 1000). Resolves { counts (summed), results, new_barangays, batches }.
+      // A failing batch rejects with err.partial = what the earlier batches applied (each batch is atomic; re-applying is safe).
+      masterApplyAll: function (rows, o) {
+        o = o || {};
+        var self = this, size = o.batchSize || 1000, list = rows || [], out = { counts: {}, results: [], new_barangays: [], batches: 0, rows: 0 };
+        function next(i) {
+          if (i >= list.length) return Promise.resolve(out);
+          var part = list.slice(i, i + size);
+          if (o.onBatch) { try { o.onBatch(out.batches + 1, Math.ceil(list.length / size), i); } catch (e) { /* progress only */ } }
+          return self.masterApply(part).then(function (r) {
+            r = r || {};
+            Object.keys(r.counts || {}).forEach(function (k) { out.counts[k] = (out.counts[k] || 0) + Number(r.counts[k] || 0); });
+            out.results = out.results.concat(r.results || []);
+            (r.new_barangays || []).forEach(function (b) { if (out.new_barangays.indexOf(b) < 0) out.new_barangays.push(b); });
+            out.batches++; out.rows += part.length;
+            return next(i + size);
+          }, function (e) { e.partial = out; throw e; });
+        }
+        return next(0);
+      },
+      // One page of the master export (exact export-template columns), ordered by stencil. barangay null = the whole QC master.
+      exportBoxes: function (o) {
+        o = o || {};
+        return unwrap(nap().rpc('export_boxes', { p_barangay: o.barangay || null, p_include_inactive: o.includeInactive !== false,
+          p_limit: o.limit == null ? PAGE : o.limit, p_offset: o.offset || 0 })).then(function (r) { return r || []; });
+      },
+      // Every row of an export scope, PAGE rows per request, until a page comes back EMPTY (so a server row cap below PAGE can never end
+      // it early and lose rows). Rows are de-duplicated by stencil (a box added meanwhile can shift a page). At most 200 requests.
+      exportBoxesAll: function (o) {
+        o = o || {};
+        var self = this, out = [], seen = {}, size = o.pageSize || PAGE, n = 0;
+        function next(offset) {
+          return self.exportBoxes({ barangay: o.barangay, includeInactive: o.includeInactive, limit: size, offset: offset }).then(function (rows) {
+            n++;
+            rows.forEach(function (r) { var k = r && r.stencil; if (k == null || !seen[k]) { if (k != null) seen[k] = true; out.push(r); } });
+            if (o.onPage) { try { o.onPage(out.length, n); } catch (e) { /* progress only */ } }
+            if (!rows.length) return out;
+            if (n >= 200) { var e = new Error('NAP_TOO_MANY_PAGES: the export stopped after 200 pages'); e.code = 'NAP_TOO_MANY_PAGES'; throw e; }
+            return next(offset + rows.length);
+          });
+        }
+        return next(0);
+      }
     };
   }
   return { create: create, BUCKET: BUCKET };

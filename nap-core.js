@@ -177,14 +177,17 @@
     row.push(cell); rows.push(row);
     return rows;
   }
+  // tab if the first non-blank line has one, else comma / semicolon (whichever appears more; comma on a tie), ignoring quoted text
+  function detectDelimiter(t) {
+    var first = String(t || '').split(/\r\n|\n|\r/).find(function (l) { return l.trim() !== ''; }) || '';
+    var unq = first.replace(/"[^"]*("|$)/g, '');  // ignore delimiters inside double quotes
+    var count = function (c) { return unq.split(c).length - 1; };
+    return count('\t') > 0 ? '\t' : count(',') >= count(';') && count(',') > 0 ? ',' : count(';') > 0 ? ';' : ',';
+  }
   function parseDispatchText(text) {
     var t = String(text == null ? '' : text).replace(/^\uFEFF/, '');
     if (!t.trim()) return { rows: [], skipped: 0, warnings: [] };
-    var first = t.split(/\r\n|\n|\r/).find(function (l) { return l.trim() !== ''; }) || '';
-    var unq = first.replace(/"[^"]*("|$)/g, '');  // ignore delimiters inside double quotes
-    var count = function (c) { return unq.split(c).length - 1; };
-    var delim = count('\t') > 0 ? '\t' : count(',') >= count(';') && count(',') > 0 ? ',' : count(';') > 0 ? ';' : ',';
-    return parseDispatchRows(splitDelimited(t, delim));
+    return parseDispatchRows(splitDelimited(t, detectDelimiter(t)));
   }
 
   // Mirrors the SQL rule in nap.submit_audit (geo block). accuracyM / distanceM in meters.
@@ -217,7 +220,159 @@
     return { lat: lat, lng: lng };
   }
 
+  // ---------- NAP Master (import / export) helpers. The server (nap._master_run, nap-12) validates every row: these only read files. ----------
+  var MASTER_IMPORT_COLS = ['stencil', 'barangay', 'district', 'dwelling', 'street', 'olt', 'lat', 'lng', 'converge_available', 'active', 'note'];
+  var MASTER_EXPORT_COLS = ['stencil', 'barangay', 'district', 'dwelling', 'street', 'olt', 'lat', 'lng', 'geo_source', 'geo_updated_at', 'np_numbers',
+    'total_ports', 'status', 'checked_ports', 'free_ports', 'bad_ports', 'age_days', 'last_audit_at', 'last_audit_team', 'converge_available', 'active'];
+  // grey (computed) export columns: recognized and ignored on import, so an exported file can be imported back as is
+  var MASTER_COMPUTED = MASTER_EXPORT_COLS.filter(function (c) { return MASTER_IMPORT_COLS.indexOf(c) < 0; });
+  var MASTER_NUMERIC = { lat: 1, lng: 1, total_ports: 1, checked_ports: 1, free_ports: 1, bad_ports: 1, age_days: 1, converge_available: 1 };
+  var MASTER_MAX_ROWS = 5000, MASTER_BATCH = 1000;
+  // header spellings (after headerKey: lower case, non-alphanumerics -> '_')
+  var MASTER_ALIAS = {
+    stencil: /^(nap_?stencil|stencil|nap|nap_?name)$/, barangay: /^(barangay|brgy|barangay_?name)$/, district: /^(district|dist|district_?no)$/,
+    dwelling: /^(dwelling|dwelling_?type)$/, street: /^(street|street_?name|street_?area)$/, olt: /^(olt|olt_?name)$/,
+    lat: /^(lat|latitude)$/, lng: /^(lng|lon|long|longitude)$/, converge_available: /^(converge_?available|converge|available|avail)$/,
+    active: /^(active|is_?active)$/, note: /^(note|notes|remark|remarks)$/
+  };
+  // READ ME sheet of the dashboard's .xlsx export. JSON-style strings on purpose: scripts/nap-build-templates.py reads this same list
+  // for docs/nap-monitoring/templates/NAP-Export-Template.xlsx, so the template and the real export never disagree.
+  var MASTER_EXPORT_README = [
+    "NAP MASTER EXPORT (NAP Dashboard, tab NAP Master)",
+    "",
+    "One row = one NAP box (the physical box, as in the Converge POI list). The red column (stencil) is the key: never change it.",
+    "Master columns (blue, editable, imported back): stencil, barangay, district, dwelling, street, olt, lat, lng, converge_available, active.",
+    "Computed columns (grey, read-only, IGNORED when this file is imported back): geo_source (seed | audit | manual), geo_updated_at, np_numbers,",
+    "  total_ports (8 per NAP number), status (installable | full | issue | stale | unverified | inactive), checked_ports, free_ports (fresh Vacant/Released only),",
+    "  bad_ports (Hi Loss/Defective), age_days (days since the newest check), last_audit_at and last_audit_team (the newest visit, a not-found visit included).",
+    "",
+    "TO UPDATE BOXES: edit the blue columns, save as .xlsx or .csv, then NAP Master > Import > preview > Apply. Up to 5,000 rows per import file,",
+    "  so import one barangay (or a 5,000-row part of the whole-QC file) at a time.",
+    "- A blank cell never erases existing data.",
+    "- TEAM GPS WINS: a box whose geo_source is audit (its location came from a team's GPS) keeps its coordinates; imported lat/lng are ignored for it.",
+    "- active: YES or NO. NO deactivates the NAP: hidden from every list, map, search and dispatch, open dispatches cancelled, no new audits;",
+    "  its history is kept. YES brings it back with its history. Deactivated boxes appear only in this export (status inactive).",
+    "- Port statuses, audits, photos and dispatch history are never changed by an import.",
+    "Dates and times are in the time zone of the computer that made the export (Philippine time on AHBA computers)."
+  ];
+  // same rule as nap._master_run: PREFIX LP## NP#(-#)*, NAP numbers of 1 to 4 digits
+  var MASTER_STENCIL = /^[A-Z0-9]+ LP[0-9]+ NP[0-9]{1,4}(-[0-9]{1,4})*$/;
+
+  function headerKey(c) { return String(c == null ? '' : c).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+  // canonical import column for a header cell, '#computed' for a known export-only column, or null
+  function masterColumn(h) {
+    var k = headerKey(h);
+    if (!k) return null;
+    for (var c in MASTER_ALIAS) if (MASTER_ALIAS[c].test(k)) return c;
+    return MASTER_COMPUTED.indexOf(k) >= 0 ? '#computed' : null;
+  }
+  function isMasterStencil(s) { return MASTER_STENCIL.test(normStencil(s)); }
+  // 'QCY003 LP114 NP6-8-7-7' -> [6,7,8] (sorted, unique), as the server stores np_numbers; null when not a valid stencil
+  function stencilNps(s) {
+    var t = normStencil(s);
+    if (!MASTER_STENCIL.test(t)) return null;
+    var seen = {};
+    return t.split(' NP')[1].split('-').map(Number).filter(function (n) { if (seen[n]) return false; seen[n] = true; return true; }).sort(function (a, b) { return a - b; });
+  }
+  // One cell as text for the server: booleans TRUE/FALSE, finite numbers as written by JS, whitespace collapsed, trimmed. A leading
+  // apostrophe that our CSV export put in front of = + - @ (formula guard) is removed again.
+  function masterCell(v) {
+    if (v == null) return '';
+    if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+    if (typeof v === 'number') return isFinite(v) ? String(v) : '';
+    if (v instanceof Date) return isNaN(v) ? '' : v.toISOString();
+    var s = String(v).replace(/[\s\u00a0\ufeff]+/g, ' ').trim();
+    return /^'[=+\-@]/.test(s) ? s.slice(1) : s;
+  }
+  function isBlankRow(r) { return !r || !r.some(function (c) { return masterCell(c) !== ''; }); }
+  // index of the header row (the first row, among the first 20 non-blank ones, that has a stencil column), or -1
+  function findMasterHeader(grid) {
+    var seen = 0;
+    for (var i = 0; i < (grid || []).length && seen < 20; i++) {
+      var r = grid[i]; if (isBlankRow(r)) continue; seen++;
+      if (r.some(function (c) { return masterColumn(c) === 'stencil'; })) return i;
+    }
+    return -1;
+  }
+  // grid: array of arrays (one sheet / CSV). firstRow = spreadsheet row number of grid[0] (default 1).
+  // Returns { rows:[{row, stencil, ...only the columns the file has}], blank, columns:[canonical], ignored:[computed headers], unknown:[headers],
+  //           warnings:[], error } . Rows are never dropped except fully blank ones (counted in `blank`): a row without a stencil is still
+  // sent, so the preview reports it (bad_stencil).
+  function parseMasterGrid(grid, firstRow) {
+    var out = { rows: [], blank: 0, columns: [], ignored: [], unknown: [], warnings: [], error: null };
+    var base = firstRow == null ? 1 : firstRow, hi = findMasterHeader(grid);
+    if (hi < 0) { out.error = 'No header row with a "stencil" column was found. Use the NAP Master import template (or an exported file).'; return out; }
+    var map = {}, head = grid[hi];
+    head.forEach(function (c, j) {
+      var col = masterColumn(c), label = masterCell(c);
+      if (!label) return;
+      if (col === '#computed') { out.ignored.push(label); return; }
+      if (!col) { out.unknown.push(label); return; }
+      if (map[col] != null) { out.warnings.push('Column "' + label + '" appears twice; the first one is used.'); return; }
+      map[col] = j; out.columns.push(col);
+    });
+    for (var i = hi + 1; i < grid.length; i++) {
+      var r = grid[i] || [];
+      if (isBlankRow(r)) { out.blank++; continue; }
+      var o = { row: base + i };
+      for (var col in map) o[col] = col === 'stencil' ? normStencil(masterCell(r[map[col]])) : masterCell(r[map[col]]);
+      out.rows.push(o);
+    }
+    if (out.rows.length > MASTER_MAX_ROWS) out.error = 'Up to ' + MASTER_MAX_ROWS.toLocaleString('en-US') + ' rows per file (this file has ' + out.rows.length.toLocaleString('en-US') + '). Split it into smaller files.';
+    else if (!out.rows.length) out.error = 'The file has a header but no rows.';
+    return out;
+  }
+  // a .csv / .tsv file of the NAP Master: same splitter and delimiter rule as Dispatch; blank lines are kept so row numbers match the file
+  function parseMasterText(text) { var t = String(text == null ? '' : text).replace(/^\uFEFF/, ''); return parseMasterGrid(splitDelimited(t, detectDelimiter(t)), 1); }
+  function splitBatches(arr, n) { var out = [], size = Math.max(1, n || MASTER_BATCH); for (var i = 0; i < (arr || []).length; i += size) out.push(arr.slice(i, i + size)); return out; }
+
+  // CSV: every cell quoted; text that a spreadsheet would run as a formula (= + - @ tab CR) gets a leading apostrophe (numbers never do)
+  function csvCell(v, numeric) {
+    var t = v == null ? '' : String(v);
+    if (!numeric && /^[=+\-@\t\r]/.test(t)) t = "'" + t;
+    return '"' + t.replace(/"/g, '""') + '"';
+  }
+  function toCsv(head, rows, numericCols) {
+    var num = numericCols || {};
+    return [head.map(function (h) { return csvCell(h); }).join(',')].concat((rows || []).map(function (r) {
+      return r.map(function (v, j) { return csvCell(v, !!num[head[j]] && typeof v === 'number'); }).join(',');
+    })).join('\r\n');
+  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  // ISO timestamp -> 'YYYY-MM-DD HH:MM' in the browser's time zone ('' when empty / unreadable)
+  function fmtStamp(v) {
+    if (v == null || v === '') return '';
+    var d = new Date(v); if (isNaN(d)) return '';
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+  // one export_boxes row -> the export sheet's cells, in MASTER_EXPORT_COLS order (numbers stay numbers, timestamps become local text)
+  function masterExportCells(b) {
+    return MASTER_EXPORT_COLS.map(function (c) {
+      var v = b ? b[c] : null;
+      if (c === 'geo_updated_at' || c === 'last_audit_at') return fmtStamp(v);
+      if (MASTER_NUMERIC[c]) return v == null || v === '' || !isFinite(Number(v)) ? '' : Number(v);
+      return v == null ? '' : String(v);
+    });
+  }
+  function masterFileName(scope, ext, now) {
+    var d = now instanceof Date ? now : new Date();
+    var slug = String(scope || 'whole-qc').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'whole-qc';
+    return 'nap-master-' + slug + '-' + d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + '.' + ext;
+  }
+  // error rows of a preview / apply -> CSV text (row, stencil, reason codes, reason text)
+  function masterErrorsCsv(results) {
+    var rows = (results || []).filter(function (r) { return r && r.status === 'error'; }).map(function (r) {
+      var rs = r.reasons || [];
+      return [r.row, r.stencil, rs.map(function (x) { return x.code; }).join('; '), rs.map(function (x) { return x.text; }).join('; ')];
+    });
+    return toCsv(['row', 'stencil', 'reason', 'details'], rows, {});
+  }
+
   return { STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
+    MASTER_IMPORT_COLS: MASTER_IMPORT_COLS, MASTER_EXPORT_COLS: MASTER_EXPORT_COLS, MASTER_COMPUTED: MASTER_COMPUTED, MASTER_NUMERIC: MASTER_NUMERIC,
+    MASTER_MAX_ROWS: MASTER_MAX_ROWS, MASTER_BATCH: MASTER_BATCH, MASTER_EXPORT_README: MASTER_EXPORT_README, headerKey: headerKey, masterColumn: masterColumn, isMasterStencil: isMasterStencil,
+    stencilNps: stencilNps, masterCell: masterCell, findMasterHeader: findMasterHeader, parseMasterGrid: parseMasterGrid, parseMasterText: parseMasterText, splitBatches: splitBatches,
+    csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
     normStencil: normStencil, parseDueDate: parseDueDate, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
     boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox };

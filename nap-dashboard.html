@@ -23,7 +23,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14p
 header{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline;justify-content:space-between}
 h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
 .sub{color:var(--muted);font-size:13px;margin:2px 0 0}
-.tabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
 .tab{border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:7px 14px;border-radius:6px;cursor:pointer}
 .tab[aria-selected=true]{background:var(--accent);color:var(--accent-ink)}
 .tab:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -125,6 +125,14 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 .brgytable tr[data-b]:hover td,.brgytable tr.cur td{background:var(--bg)}
 .findrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
 .findrow input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;flex:1 1 220px}
+.p-upd{background:var(--bg);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.mmcounts{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.mmcounts .pill{font-size:12.5px;padding:3px 10px}
+.mmtable{max-height:460px;overflow:auto;margin-top:8px}
+.mmtable td{font-size:12.5px}
+.mmtable .chg{overflow-wrap:anywhere}
+.mmtable .chg div+div{margin-top:2px}
+.mmwarn{color:var(--issue)}
 .photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 </style>
 </head>
@@ -153,6 +161,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
           <button class="tab" role="tab" id="tb-board" aria-selected="true">Board</button>
           <button class="tab" role="tab" id="tb-audits" aria-selected="false">Audits</button>
           <button class="tab" role="tab" id="tb-dispatch" aria-selected="false">Dispatch</button>
+          <button class="tab" role="tab" id="tb-master" aria-selected="false">NAP Master</button>
           <button class="tab" role="tab" id="tb-pilot" aria-selected="false" hidden>Pilot</button>
         </div>
         <button class="btn sm" id="exportCsv">Export CSV</button>
@@ -261,6 +270,38 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Before &rarr; After</th><th>Distance</th><th>Accuracy</th><th>Result</th><th>Date</th><th></th></tr></thead><tbody id="geoRows"></tbody></table></div>
       </div>
     </section>
+    <section id="v-master" hidden>
+      <div class="card"><h2>Export the NAP master</h2>
+        <p class="hint" style="margin:0 0 10px">One row per NAP box: the master columns you can edit and import back, plus the computed status (read-only). Deactivated NAPs are listed with status <b>inactive</b> and active <b>NO</b>; this export is the only place they appear.</p>
+        <div class="row">
+          <label class="meta">Scope <select id="mxScope" aria-label="Export scope"></select></label>
+          <label class="meta"><input type="checkbox" id="mxInactive" checked> Include deactivated NAPs</label>
+          <button class="btn pri" id="mxXlsx" type="button">Download .xlsx</button>
+          <button class="btn" id="mxCsv" type="button">Download .csv</button>
+        </div>
+        <p class="meta" id="mxMsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+      </div>
+      <div class="card" style="margin-top:12px"><h2>Import: add or update NAP boxes</h2>
+        <div class="warn" style="font-size:12.5px"><b>Team GPS wins over imported coordinates.</b> A NAP whose location came from a team's GPS during an audit keeps it; imported lat/lng are applied only to NAPs with Converge (seed) or manually entered coordinates, or none.
+          Blank cells never erase data. Port statuses, audits, photos and dispatch history are never changed. <b>active = NO</b> deactivates a NAP (hidden from every list, map and dispatch; its open dispatches are cancelled); <b>YES</b> brings it back.</div>
+        <div class="row"><input type="file" id="mmFile" accept=".xlsx,.csv,.tsv,.txt" aria-label="NAP Master file (.xlsx or .csv)"><button class="btn" id="mmClear" type="button">Clear</button></div>
+        <p class="hint" style="margin:6px 0 0">Use the NAP Master import template, or a file exported above. Up to 5,000 rows per file. Nothing is saved until you press Apply.</p>
+        <p class="meta" id="mmMsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+        <div id="mmWarn"></div>
+        <div id="mmPrev" hidden>
+          <div class="mmcounts" id="mmCounts"></div>
+          <div id="mmNewB"></div>
+          <div class="row"><label class="meta">Show <select id="mmShow" aria-label="Rows to show">
+            <option value="changes">Changes and errors</option><option value="all">All rows</option><option value="error">Errors</option><option value="warn">Rows with a warning</option>
+            <option value="new">New</option><option value="update">Update</option><option value="deactivate">Deactivate</option><option value="reactivate">Reactivate</option><option value="unchanged">Unchanged</option>
+          </select></label><span class="meta" id="mmShown"></span></div>
+          <div class="tablewrap mmtable"><table><thead><tr><th>Row</th><th>Stencil</th><th>Status</th><th>Details</th></tr></thead><tbody id="mmRows"></tbody></table></div>
+          <div class="row" style="margin-top:10px"><button class="btn pri" id="mmGo" type="button" disabled>Apply 0 changes</button><button class="btn" id="mmErrCsv" type="button" hidden>Download errors (CSV)</button></div>
+        </div>
+        <p class="meta" id="mmProg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
+        <div id="mmResult"></div>
+      </div>
+    </section>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -268,11 +309,11 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.1"></script>
-<script src="nap-api.js?v=2026-10-15.1"></script>
+<script src="nap-core.js?v=2026-10-15.2"></script>
+<script src="nap-api.js?v=2026-10-15.2"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -751,11 +792,11 @@ $('findHits').addEventListener('click', async function (ev) {
   state.sel = state.known[b.box_id] || b; drawBoard(); focusSel();
 });
 function tab(name) {
-  ['board', 'audits', 'dispatch', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
+  ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
-  if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen();
+  if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
 }
-['board', 'audits', 'dispatch', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
+['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
 async function loadAudits() {
   var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
   var rows;
@@ -879,8 +920,8 @@ $('exportCsv').onclick = async function () {
 // ---------- Dispatch tab ----------
 var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, agSel: {}, busy: false, seq: 0, teamsErr: '' };
 var ag = { brgy: null, rows: [], offset: 0, done: false, tok: 0, busy: false, err: '' };
-var DP_REASON = { unmatched: 'not found', duplicate: 'duplicate', already_open: 'already has an open dispatch', bad_team: 'missing / wrong team' };
-var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['not found', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['already has an open dispatch', 'p-issue'] };
+var DP_REASON = { unmatched: 'not found', duplicate: 'duplicate', already_open: 'already has an open dispatch', bad_team: 'missing / wrong team', inactive: 'NAP is deactivated' };
+var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['not found', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['already has an open dispatch', 'p-issue'], inactive: ['NAP is deactivated', 'p-full'] };
 var IT_CLS = { pending: 'p-issue', done: 'p-ok', blocked: 'p-full', cancelled: 'p-stale', unassigned: 'p-stale' };
 function ymdLocal(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function isAdminRole() { return state.role === 'admin' || state.role === 'superadmin'; }
@@ -954,37 +995,53 @@ function loadXlsx() {
 }
 var DP_EXT = ['csv', 'txt', 'tsv', 'xlsx'], DP_MAX_BYTES = 5 * 1024 * 1024, DP_MAX_LINES = 20000;
 function dpRejectFile(msg) { $('dpFile').value = ''; toast(msg); }
+// Shared by Dispatch and NAP Master: reads a picked file with the same type / size / line caps. Resolves {name, ext, wb} for .xlsx (SheetJS
+// loaded lazily) or {name, ext, text}; resolves null when alive() turned false meanwhile (a newer pick won); rejects with a message for the user.
+// alt = what else the user can use when a type / the Excel reader fails ('CSV or paste' on Dispatch, 'CSV' on NAP Master).
+function readListFile(file, alive, alt) {
+  return new Promise(function (resolve, reject) {
+    var name = file.name || '', ext = (name.indexOf('.') >= 0 ? name.split('.').pop() : '').toLowerCase();
+    if (DP_EXT.indexOf(ext) < 0) return reject(new Error('Unsupported file type; use ' + (alt === 'CSV' ? '.xlsx or .csv' : '.xlsx, .csv or paste')));
+    if (file.size > DP_MAX_BYTES) return reject(new Error('The file is too large (up to 5 MB)'));
+    var rd = new FileReader();
+    rd.onerror = function () { reject(new Error('Cannot read the file.')); };
+    if (ext === 'xlsx') {
+      rd.onload = async function () {
+        if (!alive()) return resolve(null);
+        try { await loadXlsx(); } catch (e) { return reject(new Error('Cannot load the Excel reader; use ' + alt)); }
+        if (!alive()) return resolve(null);
+        try { resolve({ name: name, ext: ext, wb: XLSX.read(rd.result, { type: 'array' }) }); }   // no cellDates: dates arrive as Excel serials (timezone-proof)
+        catch (e) { reject(new Error('Cannot read the Excel file: ' + msgOf(e))); }
+      };
+      rd.readAsArrayBuffer(file);
+    } else {
+      rd.onload = function () {
+        if (!alive()) return resolve(null);
+        var txt = String(rd.result), lines = 1, k = -1;
+        while ((k = txt.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return reject(new Error('Too many lines in the file (up to 20,000)')); }
+        resolve({ name: name, ext: ext, text: txt });
+      };
+      rd.readAsText(file);
+    }
+  });
+}
+// One sheet as rows of raw cells (blank rows kept, so row numbers match the spreadsheet), with the same row cap.
+// firstRow = the spreadsheet row number of grid[0] (a sheet whose used range starts below row 1).
+function sheetGrid(ws) {
+  if (!ws || !ws['!ref']) return { grid: [], firstRow: 1 };
+  var rg = XLSX.utils.decode_range(ws['!ref']);
+  if (rg.e.r + 1 > DP_MAX_LINES) throw new Error('Too many rows in the file (up to 20,000)');
+  return { grid: XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true }), firstRow: rg.s.r + 1 };
+}
 function dpFromFile(file) {
   var tok = ++dp.seq;
-  var name = file.name || '', ext = (name.indexOf('.') >= 0 ? name.split('.').pop() : '').toLowerCase();
-  if (DP_EXT.indexOf(ext) < 0) return dpRejectFile('Unsupported file type; use .xlsx, .csv or paste');
-  if (file.size > DP_MAX_BYTES) return dpRejectFile('The file is too large (up to 5 MB)');
-  var rd = new FileReader();
-  rd.onerror = function () { if (tok === dp.seq) toast('Cannot read the file.'); };
-  if (ext === 'xlsx') {
-    rd.onload = async function () {
-      if (tok !== dp.seq) return;
-      var res;
-      try { await loadXlsx(); } catch (e) { if (tok === dp.seq) { dpRejectFile('Cannot load the Excel reader; use CSV or paste'); } return; }
-      if (tok !== dp.seq) return;
-      try {
-        var wb = XLSX.read(rd.result, { type: 'array' });   // no cellDates: dates arrive as Excel serials (timezone-proof)
-        var ws = wb.Sheets[wb.SheetNames[0]];
-        if (ws && ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).e.r + 1 > DP_MAX_LINES) return dpRejectFile('Too many rows in the file (up to 20,000)');
-        res = C.parseDispatchRows(XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
-      } catch (e) { return toast('Cannot read the Excel file: ' + msgOf(e)); }
-      dpIngest(res, 'upload', name, tok);
-    };
-    rd.readAsArrayBuffer(file);
-  } else {
-    rd.onload = function () {
-      if (tok !== dp.seq) return;
-      var txt = String(rd.result), lines = 1, k = -1;
-      while ((k = txt.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return dpRejectFile('Too many lines in the file (up to 20,000)'); }
-      dpIngest(C.parseDispatchText(txt), 'upload', name, tok);
-    };
-    rd.readAsText(file);
-  }
+  readListFile(file, function () { return tok === dp.seq; }, 'CSV or paste').then(function (f) {
+    if (!f || tok !== dp.seq) return;
+    var res;
+    try { res = f.wb ? C.parseDispatchRows(sheetGrid(f.wb.Sheets[f.wb.SheetNames[0]]).grid) : C.parseDispatchText(f.text); }
+    catch (e) { return dpRejectFile(msgOf(e)); }
+    dpIngest(res, 'upload', f.name, tok);
+  }, function (e) { if (tok === dp.seq) dpRejectFile(msgOf(e)); });
 }
 $('dpFile').addEventListener('change', function () {
   if (dp.busy) return;
@@ -1202,6 +1259,187 @@ $('geoRows').addEventListener('click', async function (ev) {
   try { await api.geoReview({ history_id: b.dataset.h, action: b.dataset.geo }); toast('Saved.'); await loadGeo(); loadAll(); }
   catch (e) { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; toast('Not saved: ' + msgOf(e)); }
 });
+
+// ---------- NAP Master tab (dispatcher / admin / super, like Dispatch; the server checks nap.is_board) ----------
+// Export: nap.export_boxes paged 1000 at a time (PostgREST max-rows) until an empty page. Import: the file is read here (shared reader,
+// header mapping in NapCore.parseMasterGrid), nap.master_preview judges every row (nothing written), Apply sends only the rows the preview
+// accepted, 1000 per nap.master_apply call. Everything from the file is untrusted: every cell is escaped when shown.
+var mx = { busy: false };
+var mm = { seq: 0, busy: false, name: '', rows: [], prev: null, armed: null, errors: [] };
+var MM_ST = { 'new': ['new', 'p-ok'], update: ['update', 'p-upd'], unchanged: ['unchanged', 'p-stale'], deactivate: ['deactivate', 'p-issue'], reactivate: ['reactivate', 'p-ok'], error: ['error', 'p-full'] };
+var MM_APPLY = { 'new': 1, update: 1, deactivate: 1, reactivate: 1 };
+var MM_SHOW_MAX = 1000;
+var MX_WIDTHS = { stencil: 26, barangay: 24, district: 10, dwelling: 10, street: 28, olt: 14, lat: 12, lng: 12, geo_source: 12, geo_updated_at: 18, np_numbers: 12,
+                  total_ports: 12, status: 13, checked_ports: 14, free_ports: 12, bad_ports: 10, age_days: 10, last_audit_at: 18, last_audit_team: 16, converge_available: 18, active: 8 };
+function mxMsg(t) { $('mxMsg').textContent = t || ''; }
+function mmMsg(t) { $('mmMsg').textContent = t || ''; }
+function mmProg(t) { $('mmProg').textContent = t || ''; }
+function saveBlob(blob, name) {
+  var url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+}
+function mxOpen() {
+  var cur = $('mxScope').value;
+  var rows = state.summary.slice().sort(function (a, b) { return String(a.barangay).localeCompare(String(b.barangay)); });
+  var total = rows.reduce(function (t, r) { return t + Number(r.boxes || 0); }, 0);
+  $('mxScope').innerHTML = '<option value="">Whole QC (' + fmtN(total) + ' active boxes)</option>' + rows.map(function (r) {
+    return '<option value="' + esc(r.barangay) + '"' + (r.barangay === cur ? ' selected' : '') + '>' + esc(r.barangay) + ' (' + fmtN(r.boxes) + ')</option>';
+  }).join('');
+  mmDraw();
+}
+async function mxRun(kind) {
+  if (mx.busy) return;
+  mx.busy = true; $('mxXlsx').disabled = $('mxCsv').disabled = $('mxScope').disabled = true;
+  var scope = $('mxScope').value, label = scope || 'Whole QC', inc = $('mxInactive').checked;
+  try {
+    if (kind === 'xlsx') { mxMsg('Loading the Excel writer…'); try { await loadXlsx(); } catch (e) { throw new Error('Cannot load the Excel writer; use .csv'); } }
+    mxMsg('Exporting ' + label + '…');
+    var rows = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, onPage: function (n) { mxMsg('Exporting ' + label + '… ' + fmtN(n) + ' rows'); } });
+    mxMsg('Building the file (' + fmtN(rows.length) + ' rows)…');
+    await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
+    var cells = rows.map(C.masterExportCells), name = C.masterFileName(scope || 'whole-qc', kind), blob;
+    if (kind === 'csv') blob = new Blob(['\ufeff' + C.toCsv(C.MASTER_EXPORT_COLS, cells, C.MASTER_NUMERIC)], { type: 'text/csv;charset=utf-8' });
+    else {
+      var wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([C.MASTER_EXPORT_COLS].concat(cells));
+      ws['!cols'] = C.MASTER_EXPORT_COLS.map(function (c) { return { wch: MX_WIDTHS[c] || 12 }; });
+      XLSX.utils.book_append_sheet(wb, ws, 'EXPORT');
+      var rm = XLSX.utils.aoa_to_sheet(C.MASTER_EXPORT_README.map(function (l) { return [l]; }));
+      rm['!cols'] = [{ wch: 150 }];
+      XLSX.utils.book_append_sheet(wb, rm, 'READ ME');
+      blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+    saveBlob(blob, name);
+    var off = rows.filter(function (r) { return r.active === 'NO'; }).length;
+    mxMsg('Exported ' + fmtN(rows.length) + ' NAP boxes (' + label + (off ? ', ' + fmtN(off) + ' deactivated' : '') + ') to ' + name + '.');
+  } catch (e) { mxMsg('Cannot export: ' + msgOf(e)); }
+  finally { mx.busy = false; $('mxXlsx').disabled = $('mxCsv').disabled = $('mxScope').disabled = false; }
+}
+$('mxXlsx').onclick = function () { mxRun('xlsx'); };
+$('mxCsv').onclick = function () { mxRun('csv'); };
+
+// --- import ---
+function mmDisarm() { if (mm.armed) { clearTimeout(mm.armed); mm.armed = null; } }
+function mmReset() {   // a new file / Clear invalidates whatever was read or previewed: nothing stale can be applied
+  mm.seq++; mm.rows = []; mm.prev = null; mm.name = ''; mmDisarm();
+  mmMsg(''); $('mmWarn').innerHTML = ''; mmDraw();
+}
+function mmSendable() { return mm.prev ? mm.prev.results.filter(function (r) { return MM_APPLY[r.status]; }) : []; }
+function mmPick(wb) {   // the sheet to import: the first one with a stencil header (IMPORT / EXPORT, never READ ME), else the first sheet
+  var names = wb.SheetNames || [];
+  for (var i = 0; i < names.length; i++) { var g = sheetGrid(wb.Sheets[names[i]]); if (C.findMasterHeader(g.grid) >= 0) return { name: names[i], g: g }; }
+  return { name: names[0], g: sheetGrid(wb.Sheets[names[0]]) };
+}
+function mmFromFile(file) {
+  var tok = ++mm.seq;
+  mmMsg('Reading ' + file.name + '…');
+  readListFile(file, function () { return tok === mm.seq; }, 'CSV').then(async function (f) {
+    if (!f || tok !== mm.seq) return;
+    var res, where = '';
+    try {
+      if (f.wb) { var p = mmPick(f.wb); where = ' (sheet ' + p.name + ')'; res = C.parseMasterGrid(p.g.grid, p.g.firstRow); }
+      else res = C.parseMasterText(f.text);
+    } catch (e) { $('mmFile').value = ''; mmMsg(''); return toast(msgOf(e)); }
+    if (res.error) { mmMsg(res.error); return; }
+    var notes = [];
+    if (res.ignored.length) notes.push('Computed columns ignored: ' + res.ignored.join(', ') + '.');
+    if (res.unknown.length) notes.push('Unknown columns ignored: ' + res.unknown.join(', ') + '.');
+    if (res.columns.length === 1) notes.push('Only the stencil column was recognized: rows can only be added, nothing else changes.');
+    if (res.blank) notes.push(fmtN(res.blank) + ' blank rows skipped.');
+    $('mmWarn').innerHTML = notes.concat(res.warnings).length ? '<div class="warn" style="margin-top:10px">' + notes.concat(res.warnings).map(function (x) { return '<div>' + esc(x) + '</div>'; }).join('') + '</div>' : '';
+    mmMsg('Checking ' + fmtN(res.rows.length) + ' rows from ' + f.name + where + '…');
+    var prev;
+    try { prev = await api.masterPreview(res.rows); }
+    catch (e) { if (tok === mm.seq) mmMsg('Cannot check the file: ' + msgOf(e)); return; }
+    if (tok !== mm.seq) return;   // a newer file / Clear superseded this one
+    // every row sent must come back, in order: never apply a preview that does not cover the file
+    if (!prev || !Array.isArray(prev.results) || prev.results.length !== res.rows.length ||
+        prev.results.some(function (r, i) { return r.i !== i + 1 || r.row !== res.rows[i].row; })) { mmMsg('The preview does not match the file; nothing can be applied. Try again.'); return; }
+    mm.rows = res.rows; mm.prev = prev; mm.name = f.name;
+    mmMsg(fmtN(res.rows.length) + ' rows read from ' + f.name + where + ' and checked. Review them, then press Apply.');
+    $('mmResult').innerHTML = ''; mmProg('');
+    mmDraw();
+  }, function (e) { if (tok === mm.seq) { $('mmFile').value = ''; mmMsg(''); toast(msgOf(e)); } });
+}
+function mmDetail(r) {
+  var h = (r.changes || []).map(function (c) {
+    if (c.col === 'np_numbers') return '<div class="meta">NAP numbers ' + esc(c.to) + '</div>';
+    return '<div>' + esc(c.col) + ': ' + (c.from != null && c.from !== '' ? esc(c.from) + ' &rarr; ' : '') + '<b>' + esc(c.to) + '</b>' + (c.distance_m != null ? ' <span class="meta">(' + esc(Math.round(c.distance_m)) + ' m)</span>' : '') + '</div>';
+  }).join('');
+  h += (r.reasons || []).map(function (x) { return '<div class="err">' + esc(x.text) + ' <span class="meta">[' + esc(x.code) + ']</span></div>'; }).join('');
+  h += (r.warnings || []).map(function (x) { return '<div class="mmwarn">' + esc(x.text) + '</div>'; }).join('');
+  if (r.open_items) h += '<div class="mmwarn">' + esc(r.open_items) + ' open dispatch item' + (r.open_items > 1 ? 's' : '') + ' will be cancelled</div>';
+  return h;
+}
+function mmDraw() {
+  var p = mm.prev;
+  $('mmPrev').hidden = !p;
+  ['mmFile', 'mmClear'].forEach(function (id) { $(id).disabled = mm.busy; });
+  if (!p) return;
+  var c = p.counts || {}, send = mmSendable().length;
+  $('mmCounts').innerHTML = ['new', 'update', 'deactivate', 'reactivate', 'unchanged', 'error'].map(function (k) {
+    return '<span class="pill ' + MM_ST[k][1] + '">' + fmtN(c[k] || 0) + ' ' + esc(MM_ST[k][0]) + '</span>';
+  }).join('') + (c.skipped_coords ? '<span class="pill p-issue">' + fmtN(c.skipped_coords) + ' coordinates kept (team GPS)</span>' : '') +
+    (c.open_items ? '<span class="pill p-issue">' + fmtN(c.open_items) + ' open dispatches to cancel</span>' : '');
+  var nb = p.new_barangays || [];
+  $('mmNewB').innerHTML = nb.length ? '<div class="warn"><b>New barangay' + (nb.length > 1 ? 's' : '') + ' (not in the master yet), check the spelling:</b> ' + nb.map(esc).join(', ') + '</div>' : '';
+  var f = $('mmShow').value, rows = p.results.filter(function (r) {
+    return f === 'all' ? true : f === 'changes' ? r.status !== 'unchanged' : f === 'warn' ? (r.warnings || []).length > 0 : r.status === f;
+  });
+  $('mmShown').textContent = rows.length > MM_SHOW_MAX ? 'Showing the first ' + fmtN(MM_SHOW_MAX) + ' of ' + fmtN(rows.length) + ' rows' + (c.error ? ' (download the errors for the full list)' : '') : fmtN(rows.length) + ' rows';
+  $('mmRows').innerHTML = rows.slice(0, MM_SHOW_MAX).map(function (r) {
+    var st = MM_ST[r.status] || [r.status, 'p-stale'];
+    return '<tr' + (r.status === 'error' ? ' class="dpbad"' : '') + '><td>' + esc(r.row) + '</td><td class="stencil">' + esc(r.stencil || '(no stencil)') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td class="chg">' + mmDetail(r) + '</td></tr>';
+  }).join('') || '<tr><td colspan="4" class="meta">No rows.</td></tr>';
+  var b = $('mmGo');
+  if (!mm.armed) b.textContent = 'Apply ' + fmtN(send) + ' change' + (send === 1 ? '' : 's');
+  b.disabled = mm.busy || send === 0;
+  $('mmErrCsv').hidden = !(c.error > 0);
+}
+$('mmShow').onchange = mmDraw;
+$('mmFile').addEventListener('change', function () {
+  if (mm.busy) return;
+  mmReset(); $('mmResult').innerHTML = ''; mmProg('');
+  var f = this.files && this.files[0]; if (f) mmFromFile(f);
+});
+$('mmClear').onclick = function () { if (mm.busy) return; $('mmFile').value = ''; mmReset(); $('mmResult').innerHTML = ''; mmProg(''); };
+function mmErrorsDownload(list) { saveBlob(new Blob(['\ufeff' + C.masterErrorsCsv(list)], { type: 'text/csv;charset=utf-8' }), C.masterFileName('errors', 'csv')); }
+$('mmErrCsv').onclick = function () { if (mm.prev) mmErrorsDownload(mm.prev.results); };
+$('mmGo').onclick = async function () {
+  if (mm.busy || !mm.prev) return;
+  var picked = mmSendable(), c = mm.prev.counts || {};
+  if (!picked.length) return;
+  var rows = picked.map(function (r) { return mm.rows[r.i - 1]; });
+  if (rows.some(function (x, k) { return !x || x.row !== picked[k].row; })) { mmMsg('The preview does not match the file; read the file again.'); return; }
+  if (c.deactivate > 0 && !mm.armed) {   // deactivating needs a second click within 6 seconds
+    var b = this;
+    b.textContent = 'Confirm: deactivate ' + fmtN(c.deactivate) + ' NAP' + (c.deactivate > 1 ? 's' : '') + (c.open_items ? ' and cancel ' + fmtN(c.open_items) + ' open dispatch' + (c.open_items > 1 ? 'es' : '') : '') + ', apply ' + fmtN(picked.length);
+    mm.armed = setTimeout(function () { mm.armed = null; mmDraw(); }, 6000);
+    return;
+  }
+  mmDisarm();
+  mm.busy = true; var tok = mm.seq, name = mm.name; mmDraw();
+  var res, failed = null;
+  try {
+    res = await api.masterApplyAll(rows, { batchSize: C.MASTER_BATCH, onBatch: function (b, of, at) { mmProg('Applying batch ' + b + ' of ' + of + ' (rows ' + fmtN(at + 1) + ' to ' + fmtN(Math.min(at + C.MASTER_BATCH, rows.length)) + ' of ' + fmtN(rows.length) + ')…'); } });
+  } catch (e) { failed = e; res = e.partial || { counts: {}, results: [], batches: 0, rows: 0 }; }
+  mm.busy = false;
+  var k = res.counts || {}, errs = (res.results || []).filter(function (r) { return r.status === 'error'; });
+  mm.errors = errs;
+  var sum = fmtN(k['new'] || 0) + ' new, ' + fmtN(k.updated || 0) + ' updated, ' + fmtN(k.deactivated || 0) + ' deactivated, ' + fmtN(k.reactivated || 0) + ' reactivated, ' +
+            fmtN(k.unchanged || 0) + ' unchanged, ' + fmtN(k.errors || 0) + ' errors' + (k.skipped_coords ? '; ' + fmtN(k.skipped_coords) + ' coordinates kept (team GPS)' : '') +
+            (k.cancelled_items ? '; ' + fmtN(k.cancelled_items) + ' open dispatches cancelled' : '');
+  var html = failed
+    ? '<div class="warn" style="margin-top:10px"><b>Stopped at batch ' + esc((res.batches || 0) + 1) + ':</b> ' + esc(msgOf(failed)) + '<br>Applied before it (' + fmtN(res.rows || 0) + ' rows): ' + esc(sum) +
+      '.<br>Nothing of the failed batch was saved. Choose the file again: rows already applied will show as unchanged.</div>'
+    : '<div class="okmsg" style="margin-top:10px"><b>Applied ' + esc(name) + ':</b> ' + esc(sum) + '.</div>';
+  if (errs.length) html += '<div class="warn"><b>' + fmtN(errs.length) + ' rows were refused while applying</b> (the data changed after the preview). <button class="btn sm" type="button" id="mmApplyErr">Download these errors (CSV)</button></div>';
+  if (tok === mm.seq) { $('mmFile').value = ''; mmReset(); }   // the preview is stale now
+  $('mmResult').innerHTML = html; mmProg('');
+  var eb = $('mmApplyErr'); if (eb) eb.onclick = function () { mmErrorsDownload(mm.errors); };
+  toast(failed ? 'Import stopped: ' + msgOf(failed) : 'NAP Master import applied.');
+  if (res.batches) loadAll();   // the board, summary and lists reflect the new master
+};
 
 boot();
 </script>
