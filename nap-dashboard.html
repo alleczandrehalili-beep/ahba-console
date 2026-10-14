@@ -115,6 +115,16 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 .hits .btn{text-align:left;overflow-wrap:anywhere;width:100%}
 .radsec{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
 .inrad{max-height:340px;overflow-y:auto}
+.scope{color:var(--muted);font-size:12.5px;margin:0 0 8px;overflow-wrap:anywhere}
+.scope b{color:var(--ink);font-weight:600}
+.brgys{margin:0 0 10px}
+.brgys summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-weight:500}
+.brgytable{max-height:320px;overflow:auto;margin-top:6px}
+.brgytable td,.brgytable th{white-space:nowrap;font-variant-numeric:tabular-nums}
+.brgytable tr[data-b]{cursor:pointer}
+.brgytable tr[data-b]:hover td,.brgytable tr.cur td{background:var(--bg)}
+.findrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.findrow input{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;flex:1 1 220px}
 .photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 </style>
 </head>
@@ -153,10 +163,18 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
     <div class="board">
       <div class="card">
         <div class="filters" id="boardFilters">
-          <label>Barangay<select id="fBrgy"></select></label>
           <label>District<select id="fDist"></select></label>
+          <label>Barangay<select id="fBrgy"></select></label>
           <label>Dwelling<select id="fDwell"></select></label>
         </div>
+        <p class="scope" id="cityLine"></p>
+        <details class="brgys" id="brgyBox"><summary id="brgySum">All barangays</summary>
+          <div class="tablewrap brgytable"><table><thead><tr><th>Barangay</th><th>District</th><th>Boxes</th><th>Installable</th><th>Free ports</th><th>Full</th><th>Issue</th><th>Stale</th><th>Unverified</th><th>No coordinates</th><th>Last check</th></tr></thead><tbody id="brgyRows"></tbody></table></div>
+        </details>
+        <div class="findrow"><input type="search" id="findQ" maxlength="80" placeholder="Find a NAP by stencil (e.g. QCY003 LP114)" aria-label="Find a NAP by stencil" autocomplete="off" enterkeyhint="search"><span class="meta" id="findMsg" role="status" aria-live="polite"></span></div>
+        <div class="hits" id="findHits" hidden></div>
+        <p class="scope" id="loadMsg" role="status" aria-live="polite" hidden></p>
+        <p class="scope" id="kpiScope"></p>
         <div class="kpis" id="kpis"></div>
         <div class="subbar">
           <input type="search" id="subQ" class="q" maxlength="200" placeholder="Search the subscriber address" aria-label="Search the subscriber address" autocomplete="off" enterkeyhint="search">
@@ -167,7 +185,8 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         <div class="hits" id="subHits" hidden></div>
         <p class="subnote" id="subMsg" role="status" aria-live="polite" hidden></p>
         <p class="subnote">The address you type is sent to OpenStreetMap (Nominatim) to find the location.</p>
-        <div class="mapbox" style="margin-top:10px"><div id="map" aria-label="Map of NAP boxes in Bahay Toro"></div></div>
+        <div class="mapbox" style="margin-top:10px"><div id="map" aria-label="Map of NAP boxes"></div></div>
+        <p class="hint" id="noCoordNote" hidden></p>
         <div class="legend">
           <span><i class="dot" style="background:var(--ok)"></i>Installable</span>
           <span><i class="dot" style="background:var(--full)"></i>Full</span>
@@ -232,7 +251,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th></th><th>Stencil</th><th>Barangay</th><th>Team</th><th>Due</th><th>Status</th><th>Done</th></tr></thead><tbody id="diRows"></tbody></table></div>
       </div>
       <div class="card" style="margin-top:12px"><h2>Aging (Dispatch)</h2>
-        <p class="hint" style="margin:0 0 8px">Stale and not-yet-visited NAPs, based on the Board filters (barangay, district, dwelling).</p>
+        <p class="hint" style="margin:0 0 8px" id="agHint">Stale and not-yet-visited NAPs of the barangay selected on the Board, oldest first (all dwellings).</p>
         <div class="row dpassign"><select id="agTeam" aria-label="Assign to team"></select><input type="date" id="agDue" aria-label="Due date"><button class="btn sm pri" id="agGo">Dispatch selected</button><span class="meta" id="agSelN"></span></div>
         <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th><input type="checkbox" id="agAll" aria-label="Select all visible"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th><th>Age</th></tr></thead><tbody id="agRows"></tbody></table></div>
         <div class="row" style="margin-top:8px"><button class="btn sm" id="agMore">Show more</button><span class="meta" id="agCount"></span></div>
@@ -249,11 +268,11 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-14.8"></script>
-<script src="nap-api.js?v=2026-10-14.8"></script>
+<script src="nap-core.js?v=2026-10-15.1"></script>
+<script src="nap-api.js?v=2026-10-15.1"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-14.8';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -261,8 +280,13 @@ var $ = function (id) { return document.getElementById(id); };
 var C = NapCore, S = C.STATUS;
 var sb = supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, storageKey: 'ahba-nap-dashboard' } });
 var api = NapApi.create(sb);
-var RADIUS_DEFAULT = 150, RADIUS_KEY = 'ahba-nap-radius';
-var state = { role: 'none', boxes: [], sel: null, sub: null, radius: RADIUS_DEFAULT, mode: 'install', filter: null, settings: {}, bf: { barangay: '', district: '', dwelling: '' } };
+var RADIUS_DEFAULT = 150, RADIUS_KEY = 'ahba-nap-radius', BRGY_KEY = 'ahba-nap-barangay', FIND_MIN = 3, FIND_MS = 400, AG_PAGE = 200;
+// Phase 2B (whole QC, ~46k boxes): nothing here downloads every box. On load: nap.barangay_summary (one row per barangay, ~140 rows).
+// The map, list, KPIs, Aging and the CSV cover ONE barangay at a time (nap.boxes_in_barangay, paged). The subscriber pin uses
+// nap.boxes_near + nap.nearest_installable (server side, any barangay); the stencil box uses nap.search_boxes.
+// state.boxes = the selected barangay's boxes; state.known = every box row seen (by id) so a click on any list resolves.
+var state = { role: 'none', summary: [], brgy: '', boxes: [], known: {}, sel: null, sub: null, radius: RADIUS_DEFAULT, mode: 'install', filter: null, settings: {},
+              bf: { district: '', dwelling: '' }, near: [], nearest: [] };
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 var tt; function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 3200); }
@@ -298,32 +322,97 @@ function out() { Promise.resolve(sb.auth.signOut({ scope: 'local' })).catch(func
 $('signOut').onclick = out; $('noOut').onclick = out; $('errOut').onclick = out;
 $('errRetry').onclick = function () { boot(); };
 
+function fmtN(n) { return Number(n || 0).toLocaleString('en-US'); }
+function remember(b, partial) { if (b && b.box_id && (!partial || !state.known[b.box_id])) state.known[b.box_id] = b; return b; }
+function summaryRow(name) { return state.summary.find(function (r) { return r.barangay === name; }) || null; }
+function districtRows() { return state.summary.filter(function (r) { return !state.bf.district || String(r.district || '') === state.bf.district; }); }
+function biggest(rows) { return rows.slice().sort(function (a, b) { return Number(b.boxes) - Number(a.boxes) || String(a.barangay).localeCompare(String(b.barangay)); })[0] || null; }
+function savedBrgy() { try { return localStorage.getItem(BRGY_KEY) || ''; } catch (e) { return ''; } }
+function saveBrgy(v) { try { localStorage.setItem(BRGY_KEY, v); } catch (e) {} }
+
+// Summary first (one small request), then the chosen barangay: the one already open, else the last one chosen on this browser,
+// else the barangay with the most boxes.
 async function loadAll() {
   try {
     state.settings = await api.getSettings();
-    state.boxes = await api.boxStatus();
+    state.summary = await api.barangaySummary();
   } catch (e) { return showErr(e); }
+  var pick = summaryRow(state.brgy) ? state.brgy : summaryRow(savedBrgy()) ? savedBrgy() : (biggest(state.summary) || {}).barangay || '';
+  if (pick && state.bf.district && String((summaryRow(pick) || {}).district || '') !== state.bf.district) state.bf.district = '';
+  fillDistricts(); drawCity();
+  await loadBarangay(pick, true);
+}
+var brgyTok = 0;
+function loadMsg(t) { var m = $('loadMsg'); m.textContent = t || ''; m.hidden = !t; }
+// Every box of one barangay (paged; the summary count tells when it is complete).
+async function loadBarangay(name, keepSel) {
+  var tok = ++brgyTok, row = summaryRow(name), expected = row ? Number(row.boxes) : null;
+  state.brgy = name || ''; if (name) saveBrgy(name);
+  fillBrgys(); drawBrgyTable();
+  if (!name) { state.boxes = []; fillDwell(); markersDirty = true; fitPending = true; drawBoard(true); return; }
+  loadMsg('Loading ' + name + '…');
+  var rows;
+  try {
+    rows = await api.boxesInBarangayAll({ barangay: name, expected: expected, onPage: function (n) { if (tok === brgyTok) loadMsg('Loading ' + name + '… ' + fmtN(n) + (expected != null ? ' of ' + fmtN(expected) : '')); } });
+  } catch (e) { if (tok === brgyTok) { loadMsg(''); toast('Cannot load ' + name + ': ' + msgOf(e)); } return; }
+  if (tok !== brgyTok) return;   // another barangay was chosen meanwhile
+  loadMsg('');
+  state.boxes = rows; rows.forEach(function (b) { remember(b); });
   var id = state.sel && state.sel.box_id;
-  state.sel = id ? (state.boxes.find(function (b) { return b.box_id === id; }) || null) : null;
-  fillFilters();
-  markersDirty = true;
+  state.sel = keepSel && id ? (state.known[id] || null) : null;
+  fillDwell(); markersDirty = true; fitPending = true;
   drawBoard(true);
+  if (!$('v-dispatch').hidden) loadAging(true);
 }
-// Board filters (barangay, district, dwelling): options come from the loaded boxes; they narrow the map dots, KPIs and nearest list.
-var BF = [['barangay', 'fBrgy'], ['district', 'fDist'], ['dwelling', 'fDwell']];
-function fillFilters() {
-  BF.forEach(function (f) {
-    var vals = {}; state.boxes.forEach(function (b) { if (b[f[0]]) vals[b[f[0]]] = true; });
-    var cur = state.bf[f[0]], list = Object.keys(vals).sort();
-    if (cur && !vals[cur]) cur = state.bf[f[0]] = '';
-    $(f[1]).innerHTML = '<option value="">All</option>' + list.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + ' value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
-  });
+function fillDistricts() {
+  var ds = {}; state.summary.forEach(function (r) { if (r.district) ds[r.district] = true; });
+  var list = Object.keys(ds).sort(function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); });
+  if (state.bf.district && !ds[state.bf.district]) state.bf.district = '';
+  $('fDist').innerHTML = '<option value="">All of QC</option>' + list.map(function (d) { return '<option value="' + esc(d) + '"' + (d === state.bf.district ? ' selected' : '') + '>District ' + esc(d) + '</option>'; }).join('');
 }
-function inFilter(b) { return BF.every(function (f) { return !state.bf[f[0]] || b[f[0]] === state.bf[f[0]]; }); }
-function visibleBoxes() { return state.boxes.filter(inFilter); }
+function fillBrgys() {
+  var rows = districtRows().slice().sort(function (a, b) { return String(a.barangay).localeCompare(String(b.barangay)); });
+  if (state.brgy && !rows.some(function (r) { return r.barangay === state.brgy; }) && summaryRow(state.brgy)) rows.unshift(summaryRow(state.brgy));
+  $('fBrgy').innerHTML = rows.length ? rows.map(function (r) {
+    return '<option value="' + esc(r.barangay) + '"' + (r.barangay === state.brgy ? ' selected' : '') + '>' + esc(r.barangay) + ' (' + fmtN(r.boxes) + ')</option>';
+  }).join('') : '<option value="">No NAP boxes yet</option>';
+}
+function fillDwell() {
+  var vals = {}; state.boxes.forEach(function (b) { if (b.dwelling) vals[b.dwelling] = true; });
+  if (state.bf.dwelling && !vals[state.bf.dwelling]) state.bf.dwelling = '';
+  $('fDwell').innerHTML = '<option value="">All</option>' + Object.keys(vals).sort().map(function (v) { return '<option value="' + esc(v) + '"' + (v === state.bf.dwelling ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('');
+}
+// City-wide (or district-wide) totals from the summary sums.
+function drawCity() {
+  var rows = districtRows(), t = { boxes: 0, installable: 0, full: 0, issue: 0, stale: 0, unverified: 0, boxes_without_coords: 0, free_ports: 0 };
+  rows.forEach(function (r) { for (var k in t) t[k] += Number(r[k] || 0); });
+  $('cityLine').innerHTML = '<b>' + (state.bf.district ? 'District ' + esc(state.bf.district) : 'All of Quezon City') + '</b>: ' + fmtN(rows.length) + ' barangays · ' + fmtN(t.boxes) + ' NAP boxes · ' +
+    fmtN(t.installable) + ' installable (' + fmtN(t.free_ports) + ' free ports) · ' + fmtN(t.full) + ' full · ' + fmtN(t.issue) + ' issue · ' + fmtN(t.stale) + ' stale · ' +
+    fmtN(t.unverified) + ' unverified · ' + fmtN(t.boxes_without_coords) + ' without coordinates';
+  $('brgySum').textContent = 'All barangays (' + rows.length + ')';
+  drawBrgyTable();
+}
+function drawBrgyTable() {
+  var rows = districtRows();
+  $('brgyRows').innerHTML = rows.map(function (r) {
+    return '<tr data-b="' + esc(r.barangay) + '"' + (r.barangay === state.brgy ? ' class="cur"' : '') + '><td>' + esc(r.barangay) + '</td><td>' + esc(r.district || '') + '</td><td>' + fmtN(r.boxes) + '</td><td>' + fmtN(r.installable) + '</td><td>' + fmtN(r.free_ports) + '</td><td>' + fmtN(r.full) + '</td><td>' + fmtN(r.issue) + '</td><td>' + fmtN(r.stale) + '</td><td>' + fmtN(r.unverified) + '</td><td>' + fmtN(r.boxes_without_coords) + '</td><td>' + (r.newest_check ? esc(new Date(r.newest_check).toLocaleDateString()) : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="11" class="meta">No NAP boxes yet.</td></tr>';
+}
+$('brgyRows').addEventListener('click', function (ev) { var tr = ev.target.closest('[data-b]'); if (tr && tr.dataset.b !== state.brgy) loadBarangay(tr.dataset.b); });
+function dwellOk(b) { return !state.bf.dwelling || b.dwelling === state.bf.dwelling; }
+function inBrgy(b) { return !!b && (b.barangay === state.brgy || (state.brgy === 'UNASSIGNED' && !String(b.barangay || '').trim())); }
+function visibleBoxes() { return state.boxes.filter(dwellOk); }
 $('boardFilters').addEventListener('change', function (ev) {
-  var f = BF.find(function (x) { return x[1] === ev.target.id; }); if (!f) return;
-  state.bf[f[0]] = ev.target.value; fitPending = true; drawBoard();
+  var id = ev.target.id;
+  if (id === 'fDist') {
+    state.bf.district = ev.target.value; drawCity(); fillBrgys();
+    var cur = summaryRow(state.brgy);
+    if (state.bf.district && (!cur || String(cur.district || '') !== state.bf.district)) { var b = biggest(districtRows()); if (b) loadBarangay(b.barangay); }
+  } else if (id === 'fBrgy') {
+    if (ev.target.value && ev.target.value !== state.brgy) loadBarangay(ev.target.value);
+  } else if (id === 'fDwell') {
+    state.bf.dwelling = ev.target.value; fitPending = true; drawBoard();
+  }
 });
 // Same rule everywhere: when a session expires, send the user back to sign-in.
 window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Please sign in again.'); setTimeout(out, 1200); } });
@@ -368,10 +457,17 @@ function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kin
 function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
 function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
 function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); }
+function mapRows() {
+  var seen = {}, out = [];
+  state.boxes.concat(state.near, state.nearest).forEach(function (b) { if (b && b.box_id && !seen[b.box_id]) { seen[b.box_id] = true; out.push(state.known[b.box_id] || b); } });
+  return out;
+}
+var nearestIds = {};
+function markerVisible(b) { return inBrgy(b) ? dwellOk(b) : !!(radIds[b.box_id] || nearestIds[b.box_id]); }
 function rebuildMarkers() {
   boxLayer.clearLayers(); mapMarkers = [];
-  state.boxes.forEach(function (b) {
-    if (b.lat == null || b.lng == null) return;
+  mapRows().forEach(function (b) {
+    if (b.lat == null || b.lng == null || !KCOL[b.kind]) return;
     var m = L.circleMarker([b.lat, b.lng], Object.assign({ bubblingMouseEvents: false }, markerStyle(b)));
     m._b = b; m._sig = ''; m._vis = false;
     m.on('mouseover', onMarkerOver); m.on('mouseout', onMarkerOut); m.on('click', onMarkerClick);
@@ -384,10 +480,10 @@ function drawMap() {
   if (markersDirty) rebuildMarkers();
   var pts = [];
   mapMarkers.forEach(function (m) {
-    var b = m._b, vis = inFilter(b);
+    var b = m._b, vis = markerVisible(b);
     if (vis !== m._vis) { if (vis) boxLayer.addLayer(m); else boxLayer.removeLayer(m); m._vis = vis; }
     if (!vis) return;
-    pts.push(m.getLatLng());
+    if (inBrgy(b)) pts.push(m.getLatLng());
     var sig = (state.filter && state.filter !== b.kind ? 'd' : 'n') + (isSel(b) ? 's' : '') + (radIds[b.box_id] ? 'h' : state.sub ? 'o' : '');
     if (sig !== m._sig) { var st = markerStyle(b); m.options.interactive = st.interactive; m.setStyle(st); if (sig.indexOf('s') > 0 || sig.indexOf('h') > 0) m.bringToFront(); m._sig = sig; }
   });
@@ -403,7 +499,7 @@ function drawMap() {
   } else if (fitPending) {
     fitPending = false; LMAP.invalidateSize();
     if (pts.length) LMAP.fitBounds(L.latLngBounds(pts), { padding: [24, 24], maxZoom: 18 });
-    else LMAP.setView([14.6645, 121.0195], 15);
+    else LMAP.setView([14.6500, 121.0400], 12);   // no box of this barangay has coordinates yet: show QC
   }
 }
 function focusSel() {
@@ -412,23 +508,36 @@ function focusSel() {
   if (LMAP.getZoom() >= 16) LMAP.panTo(ll); else LMAP.setView(ll, 17);
 }
 function drawKpis() {
-  var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0;
-  visibleBoxes().forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; });
+  var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0, vis = visibleBoxes(), noc = 0, row = summaryRow(state.brgy);
+  vis.forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; if (b.lat == null || b.lng == null) noc++; });
+  $('kpiScope').innerHTML = state.brgy ? 'Barangay <b>' + esc(state.brgy) + '</b>' + (row && row.district ? ' (District ' + esc(row.district) + ')' : '') + ' · ' + fmtN(vis.length) + ' boxes' +
+    (state.bf.dwelling ? ' (' + esc(state.bf.dwelling) + ' only)' : '') + ' · ' + fmtN(noc) + ' without coordinates (list only, not on the map)' : 'No barangay selected.';
   $('kpis').innerHTML = ['installable', 'full', 'issue', 'stale', 'unverified'].map(function (k) {
-    return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + c[k] + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + ports + ' free ports' : '') + '</span></button>';
+    return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + fmtN(c[k]) + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + fmtN(ports) + ' free ports' : '') + '</span></button>';
   }).join('');
+  var nc = $('noCoordNote'); nc.hidden = !noc;
+  nc.textContent = noc ? fmtN(noc) + ' of ' + fmtN(vis.length) + ' boxes in ' + state.brgy + ' have no coordinates yet: they are in the lists and Aging but not on the map (the first audit sets them).' : '';
+  $('map').setAttribute('aria-label', 'Map of NAP boxes in ' + (state.brgy || 'Quezon City'));
 }
+// With a subscriber pin: the server's nearest list for the mode (any barangay). Without: the selected barangay's best candidates
+// (installable: most free ports first; needs audit: oldest check first, then never visited).
 function nearestList() {
-  var from = state.sub || { lat: 14.6645, lng: 121.0195 };
-  return C.nearest(visibleBoxes(), from, state.mode, 6);
+  if (state.sub) return state.nearest;
+  var want = state.mode === 'audit' ? ['stale', 'unverified'] : ['installable'];
+  return visibleBoxes().filter(function (b) { return want.indexOf(b.kind) >= 0; }).sort(function (a, b) {
+    if (state.mode !== 'audit') return (b.free || 0) - (a.free || 0) || String(a.stencil).localeCompare(String(b.stencil));
+    var ua = a.kind === 'unverified', ub = b.kind === 'unverified';
+    if (ua !== ub) return ua ? 1 : -1;
+    return (b.age_days || 0) - (a.age_days || 0) || String(a.stencil).localeCompare(String(b.stencil));
+  }).slice(0, 6);
 }
 function drawList() {
   var r = nearestList();
   $('list').innerHTML = r.length ? r.map(function (b, i) {
     var right = state.mode === 'install' ? '<span class="pill p-ok">' + b.free + ' free</span>' : '<span class="pill p-' + (b.kind === 'stale' ? 'stale' : 'unv') + '">' + (b.kind === 'unverified' ? 'Not yet visited' : 'Stale ' + b.age_days + 'd') + '</span>';
     var sub2 = state.mode === 'install' ? b.checked + ' ports checked · ' + (b.age_days === 0 ? 'today' : b.age_days + ' days ago') : 'Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available (not verified)';
-    return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub ? Math.round(b.distance_m) + ' m' : '') + '</span></span></button></li>';
-  }).join('') : '<li class="meta">No matches. Audit a new NAP or extend the freshness window in the Pilot tab.</li>';
+    return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub && b.distance_m != null ? Math.round(b.distance_m) + ' m' : esc(inBrgy(b) ? '' : b.barangay || '')) + '</span></span></button></li>';
+  }).join('') : '<li class="meta">' + (state.sub ? 'No matches near the pin.' : 'No matches in ' + esc(state.brgy || 'this barangay') + '.') + ' Audit a new NAP or extend the freshness window in the Pilot tab.</li>';
 }
 var detailTok = 0, portsCache = null, histCache = null;   // {box_id, ...}; refetch only on box change or explicit refresh
 async function drawDetail(refresh) {
@@ -504,11 +613,13 @@ async function showAudit(a, el, onReviewed) {
   if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Marked as reviewed.'); onReviewed(); } catch (e) { mr.disabled = false; toast('Not saved: ' + msgOf(e)); } };
 }
 // Boxes inside the subscriber radius that pass the board filters (barangay/district/dwelling and the KPI filter).
+// Boxes inside the subscriber radius (server: nap.boxes_near, any barangay), narrowed by the KPI filter and the dwelling filter.
 function computeRad() {
-  radHit = []; radIds = {};
+  radHit = []; radIds = {}; nearestIds = {};
   if (!state.sub) return;
-  radHit = C.within(visibleBoxes(), state.sub, state.radius).filter(function (b) { return !state.filter || state.filter === b.kind; });
+  radHit = state.near.filter(function (b) { return b.distance_m <= state.radius && dwellOk(b) && (!state.filter || state.filter === b.kind); });
   radHit.forEach(function (b) { radIds[b.box_id] = true; });
+  state.nearest.forEach(function (b) { nearestIds[b.box_id] = true; });
 }
 function drawRadius() {
   var on = !!state.sub;
@@ -523,10 +634,26 @@ function drawRadius() {
   }).join('') : '<li class="meta">No NAP within ' + state.radius + ' m. Increase the radius or click another location.</li>';
 }
 function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawDetail(refresh); }
-function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.boxes.find(function (x) { return x.box_id === b.dataset.id; }) || null; drawBoard(); focusSel(); }
+function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); }
 
-// Subscriber pin: set by map click, a pasted lat,lng, or an address search. Never stored or sent anywhere.
-function setPin(ll, fit) { state.sub = { lat: ll.lat, lng: ll.lng }; if (fit) fitSub = true; drawBoard(); }
+// Subscriber pin: set by map click, a pasted lat,lng, or an address search. Never stored. Its coordinates go to our own database only
+// (nap.boxes_near for the radius list, nap.nearest_installable for the "where should the team go" list).
+function setPin(ll, fit) { state.sub = { lat: ll.lat, lng: ll.lng }; state.near = []; state.nearest = []; if (fit) fitSub = true; drawBoard(); fetchNear(true); }
+var nearTok = 0;
+async function fetchNear(withRadius) {
+  var s = state.sub; if (!s) return;
+  var tok = ++nearTok;
+  $('radH').textContent = 'Looking for NAPs near the pin…';
+  try {
+    var parts = await Promise.all([
+      withRadius ? api.boxesNear({ lat: s.lat, lng: s.lng, radius: state.radius, limit: 500 }) : Promise.resolve(state.near),
+      api.nearest({ lat: s.lat, lng: s.lng, mode: state.mode, limit: 6 })]);
+    if (tok !== nearTok || state.sub !== s) return;
+    state.near = parts[0] || []; state.nearest = parts[1] || [];
+    state.near.forEach(function (b) { remember(b); }); state.nearest.forEach(function (b) { remember(b, true); });
+    markersDirty = true; drawBoard();
+  } catch (e) { if (tok === nearTok) { $('radH').textContent = 'Cannot load the NAPs near the pin: ' + msgOf(e); } }
+}
 function clampRadius(v) { var n = Math.round(Number(v)); return isFinite(n) ? Math.min(500, Math.max(50, n)) : null; }
 try { var rawR = localStorage.getItem(RADIUS_KEY), savedR = rawR === null ? null : clampRadius(rawR); if (savedR != null) state.radius = savedR; } catch (e) {}
 $('subRad').value = state.radius;
@@ -535,9 +662,9 @@ $('subRad').addEventListener('change', function () {
   if (n == null) n = state.radius;
   state.radius = n; $('subRad').value = n;
   try { localStorage.setItem(RADIUS_KEY, String(n)); } catch (e) {}
-  drawBoard();
+  drawBoard(); fetchNear(true);
 });
-$('subClear').onclick = function () { state.sub = null; fitSub = false; drawBoard(); };
+$('subClear').onclick = function () { state.sub = null; state.near = []; state.nearest = []; nearTok++; fitSub = false; markersDirty = true; drawBoard(); };
 
 // Address search through OpenStreetMap Nominatim: only on an explicit search, at most one request per 1100 ms, typed text only.
 var geo = { last: 0, busy: false, seq: 0, hits: [] };
@@ -588,7 +715,41 @@ $('subHits').addEventListener('click', function (ev) {
 $('kpis').addEventListener('click', function (ev) { var k = ev.target.closest('.kpi'); if (!k) return; state.filter = state.filter === k.dataset.k ? null : k.dataset.k; drawBoard(); });
 $('list').addEventListener('click', pickBox);
 $('inRad').addEventListener('click', pickBox);
-$('mode').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b) return; state.mode = b.dataset.m; document.querySelectorAll('#mode button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); drawBoard(); });
+$('mode').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b) return; state.mode = b.dataset.m; document.querySelectorAll('#mode button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); drawBoard(); if (state.sub) fetchNear(false); });
+
+// Find a NAP by stencil (nap.search_boxes): debounced, 3+ characters; picking a result opens its barangay and selects it.
+var find = { seq: 0, timer: null, hits: [] };
+function findMsg(t) { $('findMsg').textContent = t || ''; }
+function findHits(list) {
+  find.hits = list; var el = $('findHits'); el.hidden = !list.length;
+  el.innerHTML = list.map(function (b, i) { return '<button class="btn" type="button" data-f="' + i + '"><span class="stencil">' + esc(b.stencil) + '</span> <span class="meta">' + esc(b.barangay || 'UNASSIGNED') + ' · ' + esc(LBL[b.kind] || b.kind) + (b.lat == null ? ' · no coordinates' : '') + '</span></button>'; }).join('');
+}
+function runFind(now) {
+  var term = C.normStencil($('findQ').value), seq = ++find.seq;
+  clearTimeout(find.timer);
+  if (term.length < FIND_MIN) { findHits([]); findMsg(term ? 'Type at least ' + FIND_MIN + ' characters.' : ''); return; }
+  findMsg('Searching…');
+  find.timer = setTimeout(async function () {
+    var rows;
+    try { rows = await api.searchBoxes(term, 20); } catch (e) { if (seq === find.seq) { findHits([]); findMsg('Cannot search: ' + msgOf(e)); } return; }
+    if (seq !== find.seq) return;
+    rows.forEach(function (b) { remember(b); });
+    findHits(rows); findMsg(rows.length ? rows.length + (rows.length === 20 ? '+' : '') + ' found' : 'No NAP matches "' + term + '".');
+  }, now ? 0 : FIND_MS);
+}
+$('findQ').addEventListener('input', function () { runFind(false); });
+$('findQ').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); runFind(true); } });
+$('findHits').addEventListener('click', async function (ev) {
+  var btn = ev.target.closest('[data-f]'); if (!btn) return;
+  var b = find.hits[+btn.dataset.f]; if (!b) return;
+  findHits([]); findMsg('');
+  var brgy = String(b.barangay || '').trim() || 'UNASSIGNED';
+  if (brgy !== state.brgy && summaryRow(brgy)) {
+    if (state.bf.district && String((summaryRow(brgy) || {}).district || '') !== state.bf.district) { state.bf.district = ''; fillDistricts(); drawCity(); }
+    await loadBarangay(brgy);
+  }
+  state.sel = state.known[b.box_id] || b; drawBoard(); focusSel();
+});
 function tab(name) {
   ['board', 'audits', 'dispatch', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
@@ -688,8 +849,15 @@ $('settingsRow').addEventListener('change', async function (ev) {
   if (ok && k !== 'gate_enabled') loadAll();
 });
 
-$('exportCsv').onclick = function () {
-  if (!state.boxes.length) return toast('The board is not loaded yet.');
+// CSV of the selected barangay (all its boxes, all dwellings), fetched fresh page by page. The file name says the barangay.
+$('exportCsv').onclick = async function () {
+  var brgy = state.brgy, btn = this;
+  if (!brgy) return toast('Choose a barangay first.');
+  var row = summaryRow(brgy), rows;
+  btn.disabled = true; toast('Preparing the CSV of ' + brgy + '…');
+  try { rows = await api.boxesInBarangayAll({ barangay: brgy, expected: row ? Number(row.boxes) : null }); }
+  catch (e) { return toast('Cannot export: ' + msgOf(e)); }
+  finally { btn.disabled = false; }
   var head = ['stencil', 'barangay', 'street', 'dwelling', 'kind', 'free', 'checked', 'age_days', 'converge_available'];
   var numeric = { free: 1, checked: 1, age_days: 1, converge_available: 1 };
   function cell(h, v) {
@@ -697,18 +865,20 @@ $('exportCsv').onclick = function () {
     if (!numeric[h] && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // neutralize spreadsheet formula injection
     return '"' + t.replace(/"/g, '""') + '"';
   }
-  var csv = [head.join(',')].concat(state.boxes.map(function (b) {
+  var csv = [head.join(',')].concat(rows.map(function (b) {
     return head.map(function (h) { return cell(h, b[h]); }).join(',');
   })).join('\r\n');
-  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+  var url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }));
   var a = document.createElement('a'); a.href = url;
-  a.download = 'nap-board-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = 'nap-board-' + brgy.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  toast('Exported ' + fmtN(rows.length) + ' boxes of ' + brgy + '.');
 };
 
 // ---------- Dispatch tab ----------
-var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, agSel: {}, agShown: 50, busy: false, seq: 0, teamsErr: '' };
+var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, agSel: {}, busy: false, seq: 0, teamsErr: '' };
+var ag = { brgy: null, rows: [], offset: 0, done: false, tok: 0, busy: false, err: '' };
 var DP_REASON = { unmatched: 'not found', duplicate: 'duplicate', already_open: 'already has an open dispatch', bad_team: 'missing / wrong team' };
 var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['not found', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['already has an open dispatch', 'p-issue'] };
 var IT_CLS = { pending: 'p-issue', done: 'p-ok', blocked: 'p-full', cancelled: 'p-stale', unassigned: 'p-stale' };
@@ -733,8 +903,7 @@ async function dpOpen() {
   fillTeamSelects();
   var te = $('dpTeamsErr'); te.hidden = !dp.teamsErr; te.innerHTML = dp.teamsErr ? 'Cannot load the list of teams: ' + esc(dp.teamsErr) : '';
   ['dpTeam', 'diTeam', 'diMoveTeam', 'agTeam'].forEach(function (id) { $(id).disabled = !!dp.teamsErr; });
-  dp.agShown = 50;
-  drawPreview(); loadItems(); drawAging(); loadGeo();
+  drawPreview(); loadItems(); loadAging(ag.brgy !== state.brgy || !ag.rows.length); loadGeo();
 }
 function teamValid(t) { return !!t && dp.teams.indexOf(String(t).toUpperCase()) >= 0; }
 function dpSendable(r) { return r.status === 'ok' && teamValid(r.team); }
@@ -944,24 +1113,35 @@ $('diCancel').onclick = async function () {
   finally { btn.disabled = false; }
 };
 
-// --- Aging (Dispatch) ---
-function agingList() {
-  return visibleBoxes().filter(function (b) { return b.kind === 'stale' || b.kind === 'unverified'; }).sort(function (a, b) {
-    var ua = a.kind === 'unverified', ub = b.kind === 'unverified';
-    if (ua !== ub) return ua ? 1 : -1;
-    return (b.age_days || 0) - (a.age_days || 0) || String(a.stencil).localeCompare(String(b.stencil));
-  });
+// --- Aging (Dispatch) --- the selected barangay's stale + never-visited boxes, oldest first, from the server (kind 'aging'),
+// AG_PAGE rows per "Show more". Selections are kept by box id while the barangay stays the same.
+async function loadAging(reset) {
+  if (reset) { ag = { brgy: state.brgy, rows: [], offset: 0, done: false, tok: ag.tok + 1, busy: false, err: '' }; dp.agSel = {}; }
+  if (!ag.brgy) { ag.done = true; return drawAging(); }
+  if (ag.busy || ag.done) return drawAging();
+  var tok = ag.tok; ag.busy = true; ag.err = ''; drawAging();
+  var rows;
+  try { rows = await api.boxesInBarangay({ barangay: ag.brgy, kind: 'aging', limit: AG_PAGE, offset: ag.offset }); }
+  catch (e) { if (tok === ag.tok) { ag.busy = false; ag.err = msgOf(e); drawAging(); } return; }
+  if (tok !== ag.tok) return;
+  ag.busy = false; ag.rows = ag.rows.concat(rows); ag.offset += rows.length;
+  rows.forEach(function (b) { remember(b); });
+  var row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) : null;
+  ag.done = !rows.length || (expected != null ? ag.rows.length >= expected : rows.length < AG_PAGE);
+  drawAging();
 }
 function drawAging() {
-  var all = agingList(), shown = all.slice(0, dp.agShown);
+  var all = ag.rows, row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) : all.length;
   var valid = {}; all.forEach(function (b) { valid[b.box_id] = true; });
   Object.keys(dp.agSel).forEach(function (id) { if (!valid[id]) delete dp.agSel[id]; });
-  $('agRows').innerHTML = shown.map(function (b) {
-    return '<tr><td><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Select"' + (dp.agSel[b.box_id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
-  }).join('') || '<tr><td colspan="6" class="meta">No stale or unverified NAPs under the current filters.</td></tr>';
-  $('agCount').textContent = shown.length + ' of ' + all.length;
-  $('agMore').hidden = shown.length >= all.length;
-  $('agAll').checked = shown.length > 0 && shown.every(function (b) { return dp.agSel[b.box_id]; });
+  $('agHint').textContent = 'Stale and not-yet-visited NAPs of ' + (ag.brgy || 'the barangay selected on the Board') + ', oldest first (all dwellings). Choose another barangay on the Board.';
+  $('agRows').innerHTML = all.map(function (b) {
+    return '<tr><td><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Select"' + (dp.agSel[b.box_id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="meta">' + (ag.busy ? 'Loading…' : ag.err ? 'Cannot load: ' + esc(ag.err) : 'No stale or unverified NAPs in ' + esc(ag.brgy || 'this barangay') + '.') + '</td></tr>';
+  $('agCount').textContent = (ag.busy && all.length ? 'Loading… ' : '') + fmtN(all.length) + ' of ' + fmtN(Math.max(expected, all.length)) + (ag.err && all.length ? ' · cannot load more: ' + ag.err : '');
+  $('agMore').hidden = ag.done && !ag.err;
+  $('agMore').disabled = ag.busy;
+  $('agAll').checked = all.length > 0 && all.every(function (b) { return dp.agSel[b.box_id]; });
   var n = Object.keys(dp.agSel).length; $('agSelN').textContent = n ? n + ' selected' : '';
 }
 $('agRows').addEventListener('change', function (ev) {
@@ -972,11 +1152,11 @@ $('agRows').addEventListener('change', function (ev) {
 });
 $('agAll').addEventListener('change', function () {
   var on = this.checked, left = 500 - Object.keys(dp.agSel).length;
-  agingList().slice(0, dp.agShown).forEach(function (b) { if (!on) delete dp.agSel[b.box_id]; else if (!dp.agSel[b.box_id] && left > 0) { dp.agSel[b.box_id] = true; left--; } });
+  ag.rows.forEach(function (b) { if (!on) delete dp.agSel[b.box_id]; else if (!dp.agSel[b.box_id] && left > 0) { dp.agSel[b.box_id] = true; left--; } });
   if (on && left <= 0) toast('Up to 500 NAPs per dispatch.');
   drawAging();
 });
-$('agMore').onclick = function () { dp.agShown += 50; drawAging(); };
+$('agMore').onclick = function () { if (ag.err) { ag.err = ''; ag.done = false; } loadAging(false); };
 $('agGo').onclick = async function () {
   drawAging();   // prune hidden / no-longer-stale selections before reading them
   var ids = Object.keys(dp.agSel), t = $('agTeam').value, btn = this;
@@ -987,7 +1167,7 @@ $('agGo').onclick = async function () {
   try {
     var r = await api.dispatchFromBoxes({ box_ids: ids, team: t, due: $('agDue').value || null });
     doneToast(r); $('agResult').innerHTML = skippedHtml(r && r.skipped);
-    dp.agSel = {}; drawAging(); loadItems();
+    loadAging(true); loadItems();
   } catch (e) { toast('Not dispatched: ' + msgOf(e)); }
   finally { btn.disabled = false; }
 };
