@@ -36,6 +36,11 @@
     return {
       myRole: function () { return unwrap(nap().rpc('my_role')); },
       gateApplies: function () { return unwrap(nap().rpc('gate_applies_me')).then(Boolean); },
+      // Phase 5: true for a console user (public.dashboard_users) while viewer_scope allows it. my_role already says 'viewer' unless the
+      // account is also a pilot field team (then my_role stays 'field' for the phone); the dashboard asks this only in that case.
+      isViewer: function () { return unwrap(nap().rpc('is_viewer')).then(function (v) { return v === true; }); },
+      // Phase 5: the port grid of one ACTIVE box for the view-only Board (np, port, status, verified_at: no account numbers).
+      boxPortsView: function (boxId) { return unwrap(nap().rpc('box_ports', { p_box_id: boxId })).then(function (r) { return r || []; }); },
       // EVERY box, paged 1000 at a time. Phase 2B (whole QC, ~46k boxes = 46 requests and ~15 MB): no screen calls this any more.
       // The dashboard uses barangaySummary + boxesInBarangay, the mobile boxesNear + searchBoxes. Kept for small tools and tests only.
       boxStatus: function () { return getAll('box_status', function (q) { return q.order('stencil'); }); },

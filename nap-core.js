@@ -493,6 +493,26 @@
     return p;
   }
 
+  // ---------- dashboard access (phase 5) ----------
+  // What the NAP Dashboard shows for a nap.my_role() value. viewerFlag = nap.is_viewer(), asked only when the role is 'field' (a pilot
+  // field team that is also a console user stays 'field' for the phone). The server is the real guard; this only decides the screens.
+  //   superadmin / admin: every tab (Pilot included); dispatcher: every tab but Pilot; viewer: the Board only, read-only
+  //   (no basket / checkboxes, no CSV export, no audit history / photos / account numbers in the NAP detail); anything else: no access
+  //   ({ok: false, message: NO_ACCESS_MSG}).
+  var DASH_TABS = ['board', 'audits', 'dispatch', 'master', 'pilot'];
+  // Shown to a signed-in account that may not open the dashboard (phase 5: view-only access is the Access Control entry 'napboard',
+  // granted by the superadmin to GC console users).
+  var NO_ACCESS_MSG = 'You do not have access to NAP Board. Ask the superadmin to grant it in Access Control.';
+  function dashAccess(role, viewerFlag) {
+    var r = typeof role === 'string' ? role : 'none';
+    var full = { ok: true, viewOnly: false, canExport: true, canBasket: true, canHistory: true, canTagAcct: true };
+    if (r === 'superadmin' || r === 'admin') return Object.assign({ role: r, tabs: DASH_TABS.slice() }, full);
+    if (r === 'dispatcher') return Object.assign({ role: r, tabs: DASH_TABS.filter(function (t) { return t !== 'pilot'; }) }, full);
+    var ro = { viewOnly: true, canExport: false, canBasket: false, canHistory: false, canTagAcct: false };
+    if (r === 'viewer' || (r === 'field' && viewerFlag === true)) return Object.assign({ ok: true, role: 'viewer', tabs: ['board'] }, ro);
+    return Object.assign({ ok: false, role: r, tabs: [], message: NO_ACCESS_MSG }, ro);
+  }
+
   return { STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
     BASKET_MAX: BASKET_MAX, PLAN_MAX_TEAMS: PLAN_MAX_TEAMS, isUuid: isUuid, basketAdd: basketAdd, basketRemove: basketRemove, basketGroups: basketGroups,
     basketParse: basketParse, hilbertIndex: hilbertIndex, walkOrder: walkOrder, splitEvenly: splitEvenly, moveBoxes: moveBoxes, planSummary: planSummary, planPayload: planPayload,
@@ -502,5 +522,5 @@
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
     normStencil: normStencil, parseDueDate: parseDueDate, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
-    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox };
+    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess };
 });

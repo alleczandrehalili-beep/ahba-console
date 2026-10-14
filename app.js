@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-14.5';
+const APP_VERSION='2026-10-15.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4120,7 +4120,9 @@ function startSlrTicker(){
 // ---------- Dashboard login + role-based access ----------
 // 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
 // its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix'],['techreset','FieldOps PW Reset']];
+// 'napboard' = "NAP Board" (owner 2026-10-15): not a page — an Access Control entry. View or Edit = VIEW-ONLY access to the standalone
+// NAP Dashboard (/nap-dashboard.html, Board tab only). Enforced server-side by nap.is_viewer() (nap-14); GC organization only.
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix'],['techreset','FieldOps PW Reset'],['napboard','NAP Board']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -4255,7 +4257,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  let first=(allowed.filter(p=>p!=='photofix'&&p!=='techreset')[0]||(allowed.includes('techreset')?'access':'overview')); if(first==='dispatch')first='timeline';   // photofix/techreset are entries, not pages; techreset-only users land on the Access (reset) view
+  let first=(allowed.filter(p=>p!=='photofix'&&p!=='techreset'&&p!=='napboard')[0]||(allowed.includes('techreset')?'access':'overview')); if(first==='dispatch')first='timeline';   // photofix/techreset/napboard are entries, not pages; techreset-only users land on the Access (reset) view
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();

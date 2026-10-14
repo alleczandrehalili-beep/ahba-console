@@ -153,6 +153,8 @@ tr.inb td{background:var(--bg)}
 .bklist table td,.bklist table th{font-size:12.5px}
 .bksum{font-size:13px;margin:0 0 8px;overflow-wrap:anywhere}
 .bkres{margin-top:10px}
+.vbanner{background:var(--stalebg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.vbanner b{font-weight:600}
 .photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 </style>
 </head>
@@ -169,7 +171,7 @@ tr.inb td{background:var(--bg)}
     <div class="meta" id="liErr" style="color:var(--full)"></div>
   </div>
 
-  <div id="noAccess" class="card" hidden><h2>No access</h2><p class="meta">This account has not been granted access to the NAP Dashboard yet. Contact an admin.</p><button class="btn" id="noOut">Sign out</button></div>
+  <div id="noAccess" class="card" hidden><h2>No access</h2><p class="meta" id="noAccessMsg">You do not have access to NAP Board. Ask the superadmin to grant it in Access Control.</p><button class="btn" id="noOut">Sign out</button></div>
 
   <div id="errView" class="card login" hidden><h2>There was a problem loading</h2><p class="meta" id="errMsg" style="overflow-wrap:anywhere"></p><div class="row"><button class="btn pri" id="errRetry">Try again</button><button class="btn" id="errOut">Sign out</button></div></div>
 
@@ -188,6 +190,7 @@ tr.inb td{background:var(--bg)}
         <button class="btn sm" id="signOut">Sign out</button>
       </div>
     </header>
+    <div class="vbanner" id="viewBanner" role="note" hidden><b>View only</b> · You can look at the Board: map, NAP lists, stencil search and the subscriber pin. Dispatch, audits and exports are for NAP dispatchers.</div>
     <section id="v-board">
     <div class="board">
       <div class="card">
@@ -243,8 +246,8 @@ tr.inb td{background:var(--bg)}
     <div class="card" id="blCard" style="margin-top:14px">
       <h2 id="blH">NAPs in this barangay</h2>
       <p class="hint" id="blHint" style="margin:0 0 8px"></p>
-      <div class="row"><label class="meta"><input type="checkbox" id="blAll"> <span id="blAllT">Select all in view</span></label><button class="btn sm" id="blNone" type="button">Select none</button><span class="meta" id="blSelN" role="status" aria-live="polite"></span></div>
-      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="ck"><span class="meta">Add</span></th><th>Stencil</th><th>Street</th><th>Status</th><th>Last check</th></tr></thead><tbody id="blRows"></tbody></table></div>
+      <div class="row" id="blSelRow"><label class="meta"><input type="checkbox" id="blAll"> <span id="blAllT">Select all in view</span></label><button class="btn sm" id="blNone" type="button">Select none</button><span class="meta" id="blSelN" role="status" aria-live="polite"></span></div>
+      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th class="ck" id="blCkH"><span class="meta">Add</span></th><th>Stencil</th><th>Street</th><th>Status</th><th>Last check</th></tr></thead><tbody id="blRows"></tbody></table></div>
       <div class="row" style="margin-top:8px"><button class="btn sm" id="blMore" type="button">Show more</button><span class="meta" id="blCount"></span></div>
     </div>
     </section>
@@ -362,11 +365,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.3"></script>
-<script src="nap-api.js?v=2026-10-15.3"></script>
+<script src="nap-core.js?v=2026-10-15.4"></script>
+<script src="nap-api.js?v=2026-10-15.4"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -387,7 +390,17 @@ var tt; function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = fa
 function show(view) { ['loginView', 'noAccess', 'errView', 'app'].forEach(function (v) { $(v).hidden = v !== view; }); }
 function msgOf(e) { return String((e && e.message) || e || 'Unknown error').replace(/^NAP_[A-Z_]+:\s*/, ''); }
 function showErr(e) { $('errMsg').textContent = msgOf(e); show('errView'); }
-var ALLOWED = ['admin', 'dispatcher', 'superadmin'];
+// Who sees what: NapCore.dashAccess (phase 5). Board roles keep every screen; a console user ('viewer') gets the Board only, read-only.
+// The server is the real guard (nap-14): a viewer's other calls fail with NAP_FORBIDDEN or return no rows.
+var ACC = C.dashAccess('none');
+function applyAccess() {
+  C.DASH_TABS.forEach(function (t) { $('tb-' + t).hidden = ACC.tabs.indexOf(t) < 0; });
+  $('exportCsv').hidden = !ACC.canExport;
+  $('viewBanner').hidden = !ACC.viewOnly;
+  $('blSelRow').hidden = !ACC.canBasket; $('blCkH').hidden = !ACC.canBasket;
+  if (!ACC.canBasket) { $('bkBar').hidden = true; document.body.classList.remove('has-bk'); }
+  document.body.classList.toggle('view-only', ACC.viewOnly);
+}
 
 async function boot() {
   try {
@@ -395,11 +408,18 @@ async function boot() {
     if (!s) return show('loginView');
     state.email = s.user.email || '';
     state.role = await api.myRole();
-    if (ALLOWED.indexOf(state.role) < 0) return show('noAccess');
-    $('who').textContent = state.email + ' · ' + state.role + ' · v' + NAP_DASH_VERSION;
-    $('tb-pilot').hidden = !(state.role === 'admin' || state.role === 'superadmin');
+    // a pilot field team that is also a console user: my_role stays 'field' (for the phone); the Board is still open to it read-only
+    var viewerFlag = false;
+    if (state.role === 'field') { try { viewerFlag = await api.isViewer(); } catch (e) { viewerFlag = false; } }
+    ACC = C.dashAccess(state.role, viewerFlag);
+    if (!ACC.ok) { $('noAccessMsg').textContent = ACC.message; return show('noAccess'); }
+    state.role = ACC.role;
+    $('who').textContent = state.email + ' · ' + (ACC.viewOnly ? 'view only' : state.role) + ' · v' + NAP_DASH_VERSION;
+    applyAccess();
+    var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
+    if (ACC.tabs.indexOf(cur) < 0) tab('board');
     show('app');
-    if (!bk.restored) { bk.restored = true; bkRestore(); }
+    if (ACC.canBasket && !bk.restored) { bk.restored = true; bkRestore(); }
     await loadAll();
   } catch (e) { showErr(e); }
 }
@@ -429,7 +449,7 @@ function saveBrgy(v) { try { localStorage.setItem(BRGY_KEY, v); } catch (e) {} }
 // else the barangay with the most boxes.
 async function loadAll() {
   try {
-    state.settings = await api.getSettings();
+    state.settings = ACC.viewOnly ? {} : await api.getSettings();   // only the Pilot tab uses the settings
     state.summary = await api.barangaySummary();
   } catch (e) { return showErr(e); }
   var pick = summaryRow(state.brgy) ? state.brgy : summaryRow(savedBrgy()) ? savedBrgy() : (biggest(state.summary) || {}).barangay || '';
@@ -632,7 +652,7 @@ function drawList() {
     var right = state.mode === 'install' ? '<span class="pill p-ok">' + b.free + ' free</span>' : '<span class="pill p-' + (b.kind === 'stale' ? 'stale' : 'unv') + '">' + (b.kind === 'unverified' ? 'Not yet visited' : 'Stale ' + b.age_days + 'd') + '</span>';
     var sub2 = state.mode === 'install' ? b.checked + ' ports checked · ' + (b.age_days === 0 ? 'today' : b.age_days + ' days ago') : 'Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available (not verified)';
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub && b.distance_m != null ? Math.round(b.distance_m) + ' m' : esc(inBrgy(b) ? '' : b.barangay || '')) + '</span></span></button></li>';
-  }).join('') : '<li class="meta">' + (state.sub ? 'No matches near the pin.' : 'No matches in ' + esc(state.brgy || 'this barangay') + '.') + ' Audit a new NAP or extend the freshness window in the Pilot tab.</li>';
+  }).join('') : '<li class="meta">' + (state.sub ? 'No matches near the pin.' : 'No matches in ' + esc(state.brgy || 'this barangay') + '.') + (ACC.viewOnly ? '' : ' Audit a new NAP or extend the freshness window in the Pilot tab.') + '</li>';
 }
 var detailTok = 0, portsCache = null, histCache = null;   // {box_id, ...}; refetch only on box change or explicit refresh
 async function drawDetail(refresh) {
@@ -643,7 +663,8 @@ async function drawDetail(refresh) {
   if (!refresh && portsCache && portsCache.box_id === b.box_id) ports = portsCache.ports;
   else {
     el.innerHTML = '<div class="meta">Loading…</div>';
-    try { ports = await api.boxPorts(b.box_id); }
+    // view-only: the port grid through nap.box_ports (no account numbers); board roles read nap.ports directly (with tag_acct)
+    try { ports = ACC.canTagAcct ? await api.boxPorts(b.box_id) : await api.boxPortsView(b.box_id); }
     catch (e) { if (tok === detailTok) { portsCache = null; el.innerHTML = '<div class="meta" style="color:var(--full)">Cannot load the ports: ' + esc(msgOf(e)) + '</div>'; } return; }
     if (tok !== detailTok) return;   // a newer call superseded this one
     portsCache = { box_id: b.box_id, ports: ports };
@@ -651,15 +672,15 @@ async function drawDetail(refresh) {
   var nps = {}; ports.forEach(function (p) { (nps[p.np] = nps[p.np] || []).push(p); });
   el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></div><div class="nps">' +
     Object.keys(nps).map(function (np) {
-      var list = nps[np], tags = list.filter(function (p) { return p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
+      var list = nps[np], tags = list.filter(function (p) { return ACC.canTagAcct && p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
       var untagged = list.filter(function (p) { return p.status === S.AWO; }).map(function (p) { return 'P' + p.port; });
       var newest = list.reduce(function (m, p) { return p.verified_at && p.verified_at > m ? p.verified_at : m; }, '');
       return '<div class="np"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'no audit yet') + '</span></div><div class="ports">' +
         list.map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
         (tags ? '<div style="margin-top:6px">' + tags + '</div>' : '') +
         (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active but no label. Ask the team to tag it.</div>' : '') + '</div>';
-    }).join('') + '</div><div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>';
-  drawHistory(b, tok, refresh);
+    }).join('') + '</div>' + (ACC.canHistory ? '<div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>' : '');
+  if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
 async function drawHistory(b, tok, refresh) {
@@ -721,7 +742,7 @@ function drawRadius() {
   $('subClear').hidden = !on; $('radSec').hidden = !on;
   if (!on) { $('inRad').innerHTML = ''; $('radAdd').hidden = true; return; }
   var addN = radHit.filter(function (b) { return !inBk(b.box_id); }).length;
-  $('radAdd').hidden = !radHit.length; $('radAdd').disabled = !addN;
+  $('radAdd').hidden = !radHit.length || !ACC.canBasket; $('radAdd').disabled = !addN;
   $('radAdd').textContent = addN ? 'Add ' + fmtN(addN) + ' NAP' + (addN === 1 ? '' : 's') + ' within ' + state.radius + ' m to the basket' : 'All of these are in the basket';
   var r = radHit.slice().sort(function (a, b) { return (a.kind === 'installable' ? 0 : 1) - (b.kind === 'installable' ? 0 : 1) || a.distance_m - b.distance_m; });
   $('radH').textContent = 'Within ' + state.radius + ' m of the subscriber (' + r.length + ')';
@@ -850,6 +871,7 @@ $('findHits').addEventListener('click', async function (ev) {
   state.sel = state.known[b.box_id] || b; drawBoard(); focusSel();
 });
 function tab(name) {
+  if (ACC.tabs.indexOf(name) < 0) name = 'board';   // a view-only account never opens another tab
   ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
   if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
@@ -950,6 +972,7 @@ $('settingsRow').addEventListener('change', async function (ev) {
 
 // CSV of the selected barangay (all its boxes, all dwellings), fetched fresh page by page. The file name says the barangay.
 $('exportCsv').onclick = async function () {
+  if (!ACC.canExport) return;
   var brgy = state.brgy, btn = this;
   if (!brgy) return toast('Choose a barangay first.');
   var row = summaryRow(brgy), rows;
@@ -1510,6 +1533,7 @@ function bkInfo() { var m = {}; bk.ids.forEach(function (id) { var b = bkBox(id)
 function bkSave() { try { if (bk.ids.length) sessionStorage.setItem(BK_KEY, JSON.stringify(bk.ids)); else sessionStorage.removeItem(BK_KEY); } catch (e) { /* private mode: memory only */ } }
 function bkRestore() { var t = null; try { t = sessionStorage.getItem(BK_KEY); } catch (e) {} bk.ids = t ? C.basketParse(t) : []; bkChanged(); if (bk.ids.length) bkRefresh(true); }
 function bkAdd(ids) {
+  if (!ACC.canBasket) return { ids: bk.ids, added: 0, dup: 0, over: 0 };
   var r = C.basketAdd(bk.ids, ids, C.BASKET_MAX);
   if (r.added) { bk.ids = r.ids; bkChanged(); }
   if (r.over) toast('The basket holds up to ' + fmtN(C.BASKET_MAX) + ' NAPs: ' + fmtN(r.over) + ' not added. Dispatch or remove some first.');
@@ -1554,7 +1578,7 @@ function brgyList(groups, max) {
   return groups.slice(0, max).map(function (g) { return esc(g.barangay) + ' ' + fmtN(g.n); }).join(', ') + (groups.length > max ? ' +' + (groups.length - max) + ' more' : '');
 }
 function drawBkBar() {
-  var n = bk.ids.length;
+  var n = ACC.canBasket ? bk.ids.length : 0;
   $('bkBar').hidden = !n; document.body.classList.toggle('has-bk', !!n);
   if (!n) { disarmBkClear(); return; }
   var g = C.basketGroups(bk.ids, bkInfo());
@@ -1569,6 +1593,7 @@ $('bkBarClear').onclick = function () {
   disarmBkClear(); bk.ids = []; pl.plan = []; pl.sel = {}; pl.open = ''; bk.revSel = {}; bkChanged(); toast('Basket cleared.');
 };
 function goBasket(review) {
+  if (!ACC.canBasket) return;
   if ($('v-dispatch').hidden) tab('dispatch');
   if (review) $('bkRev').open = true;
   setTimeout(function () { (review ? $('bkCard') : $('bkAssignH')).scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
@@ -1586,19 +1611,20 @@ function drawBoardList() {
   var inN = 0; view.forEach(function (b) { if (inBk(b.box_id)) inN++; });
   var what = (state.filter ? LBL[state.filter] + ' only' : 'all statuses') + (state.bf.dwelling ? ', ' + state.bf.dwelling + ' only' : '');
   $('blH').textContent = state.brgy ? 'NAPs in ' + state.brgy + ' (' + fmtN(n) + ')' : 'NAPs';
+  var ck = ACC.canBasket;
   $('blHint').textContent = !state.brgy ? 'Choose a barangay above.' : !n ? 'No NAPs in this view (' + what + ').' :
-    'View: ' + what + '. Showing ' + fmtN(Math.min(bl.shown, n)) + ' of ' + fmtN(n) + '. "Select all" adds all ' + fmtN(n) + ' NAPs of this view to the basket, not only the rows shown' +
-    (n > C.BASKET_MAX ? ' (the basket holds up to ' + fmtN(C.BASKET_MAX) + ')' : '') + '. Narrow the view with the status boxes and the Dwelling filter above.';
+    'View: ' + what + '. Showing ' + fmtN(Math.min(bl.shown, n)) + ' of ' + fmtN(n) + '. ' + (ck ? '"Select all" adds all ' + fmtN(n) + ' NAPs of this view to the basket, not only the rows shown' +
+    (n > C.BASKET_MAX ? ' (the basket holds up to ' + fmtN(C.BASKET_MAX) + ')' : '') + '. ' : '') + 'Narrow the view with the status boxes and the Dwelling filter above.';
   $('blAllT').textContent = 'Select all ' + fmtN(n) + ' in view';
   $('blAll').checked = n > 0 && inN === n; $('blAll').indeterminate = inN > 0 && inN < n; $('blAll').disabled = !n;
   $('blNone').disabled = !inN;
   $('blSelN').textContent = inN ? fmtN(inN) + ' of this view in the basket' : '';
   $('blRows').innerHTML = view.slice(0, bl.shown).map(function (b) {
     var on = inBk(b.box_id);
-    return '<tr' + (on ? ' class="inb"' : '') + '><td class="ck"><input type="checkbox" data-bl="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (on ? ' checked' : '') + '></td>' +
+    return '<tr' + (on ? ' class="inb"' : '') + '>' + (ck ? '<td class="ck"><input type="checkbox" data-bl="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (on ? ' checked' : '') + '></td>' : '') +
       '<td><button type="button" class="linkish stencil" data-pick="' + esc(b.box_id) + '" title="Show on the map">' + esc(b.stencil) + '</button></td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') +
       '</td><td>' + kindPill(b) + '</td><td>' + esc(ageText(b)) + '</td></tr>';
-  }).join('') || '<tr><td colspan="5" class="meta">' + (state.brgy ? 'No NAPs in this view.' : 'No barangay selected.') + '</td></tr>';
+  }).join('') || '<tr><td colspan="' + (ck ? 5 : 4) + '" class="meta">' + (state.brgy ? 'No NAPs in this view.' : 'No barangay selected.') + '</td></tr>';
   $('blMore').hidden = bl.shown >= n;
   $('blCount').textContent = n > bl.shown ? fmtN(bl.shown) + ' of ' + fmtN(n) + ' shown' : '';
 }
