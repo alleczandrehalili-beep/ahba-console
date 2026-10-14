@@ -105,6 +105,9 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 .dpassign{margin:10px 0 0;gap:8px 12px}
 .dpassign label{display:flex;align-items:center;gap:6px}
 .dpbad td{color:var(--full)}
+.dppast td{background:var(--issuebg)}
+.dppast td.due{color:var(--issue);font-weight:600}
+.pastdue{color:var(--issue);font-size:11.5px;margin-top:3px;font-weight:600}
 .subbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
 .subbar input[type=search],.subbar input[type=number]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0}
 .subbar .q{flex:1 1 220px}
@@ -277,12 +280,14 @@ tr.inb td{background:var(--bg)}
         <div class="err" id="bkTeamsErr" role="alert" hidden></div>
         <div class="teamck" id="bkTeams"></div>
         <div class="row"><label class="meta">Due date (all teams) <input type="date" id="bkDue" aria-label="Due date for all teams"></label><button class="btn pri" id="bkSplit" type="button">Split evenly</button><button class="btn" id="bkClearPlan" type="button">Clear</button></div>
+        <div class="pastdue" id="bkDueWarn" role="status" hidden></div>
         <div class="tablewrap" style="margin-top:8px"><table class="bkplan"><thead><tr><th>Team</th><th>NAPs</th><th>Barangays</th><th>Due</th><th></th></tr></thead><tbody id="bkPlanRows"></tbody></table></div>
         <div id="bkListBox" hidden>
           <div class="row dpassign"><span class="meta" id="bkListH"></span><label class="meta"><input type="checkbox" id="bkListAll"> all in this list</label><select id="bkMvTo" aria-label="Move the selected NAPs to"></select><button class="btn sm" id="bkMv" type="button">Move selected</button><span class="meta" id="bkMvN"></span></div>
           <div class="bklist"><table><thead><tr><th class="ck"></th><th>Stencil</th><th>Barangay</th><th>Street</th></tr></thead><tbody id="bkListRows"></tbody></table></div>
           <div class="row" style="margin-top:6px"><button class="btn sm" id="bkListMore" type="button">Show more</button><span class="meta" id="bkListCount"></span></div>
         </div>
+        <div class="warn" id="bkPastWarn" role="status" hidden style="margin:12px 0 0"></div>
         <div class="row" style="margin-top:12px"><button class="btn pri" id="bkGo" type="button" disabled>Dispatch 0 NAPs</button><span class="meta" id="bkGoMsg" role="status" aria-live="polite"></span></div>
         <div id="bkResult" class="bkres"></div>
       </div>
@@ -297,8 +302,11 @@ tr.inb td{background:var(--bg)}
             <label class="meta">Team <select id="dpTeam" aria-label="Team"></select></label><button class="btn sm" id="dpApplyTeam">Apply to all without a team</button>
             <label class="meta">Due <input type="date" id="dpDue" aria-label="Due date"></label><button class="btn sm" id="dpApplyDue">Apply to all without a date</button>
           </div>
+          <div class="pastdue" id="dpDueWarn" role="status" hidden></div>
+          <div class="warn" id="dpPastWarn" role="status" hidden style="margin:8px 0 0"></div>
           <div class="meta" id="dpSummary" style="margin:8px 0"></div>
           <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Status</th><th>Team</th><th>Due</th></tr></thead><tbody id="dpPrevRows"></tbody></table></div>
+          <div class="pastdue" id="dpGoPast" role="status" hidden style="margin-top:10px"></div>
           <div class="row" style="margin-top:10px"><button class="btn pri" id="dpGo" disabled>Dispatch 0 valid</button><button class="btn" id="dpToBasket" type="button" disabled>Add 0 found NAPs to the basket</button><button class="btn" id="dpClear">Clear preview</button></div>
         </div>
         <div id="dpResult"></div>
@@ -309,6 +317,7 @@ tr.inb td{background:var(--bg)}
         <div class="hint" style="margin:0 0 8px">Counts the loaded rows (up to 500); depends on the selected filter.</div>
         <div class="meta" id="diBlockedNote" hidden style="margin:8px 0">Not found / not accessible: decide whether to dispatch again from Aging, or cancel.</div>
         <div class="row dpassign" style="margin-top:8px"><select id="diMoveTeam" aria-label="Move to team"></select><input type="date" id="diMoveDue" aria-label="New due date (optional)"><button class="btn sm" id="diMove">Move to team ▾</button><button class="btn sm" id="diCancel">Cancel</button><span class="meta" id="diSelN"></span></div>
+        <div class="pastdue" id="diMoveDueWarn" role="status" hidden></div>
         <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th></th><th>Stencil</th><th>Barangay</th><th>Team</th><th>Due</th><th>Status</th><th>Done</th></tr></thead><tbody id="diRows"></tbody></table></div>
       </div>
       <div class="card" style="margin-top:12px"><h2>Aging (Dispatch)</h2>
@@ -365,11 +374,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.4"></script>
-<script src="nap-api.js?v=2026-10-15.4"></script>
+<script src="nap-core.js?v=2026-10-15.5"></script>
+<script src="nap-api.js?v=2026-10-15.5"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-15.5';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -1144,6 +1153,11 @@ $('dpRead').onclick = function () {
   toast('Choose a file or paste rows.');
 };
 
+// --- past due dates (owner 2026-10-15): accepted, but warned. Manila date (NapCore.manilaToday), whatever the computer's time zone ---
+function showText(id, t) { var el = $(id); if (!el) return; el.textContent = t || ''; el.hidden = !t; }
+function pastRowsText(n) { return fmtN(n) + (n === 1 ? ' row has' : ' rows have') + ' a due date in the past; ' + (n === 1 ? 'it' : 'they') + ' will be overdue immediately.'; }
+function pastFieldText(d) { return C.isPastDue(d) ? 'This date is in the past (today is ' + C.manilaToday() + ', Manila date): the NAPs will be overdue immediately.' : ''; }
+
 // --- preview + assign ---
 function drawPreview() {
   var rows = dp.preview, ok = rows.filter(dpSendable).length;
@@ -1154,8 +1168,13 @@ function drawPreview() {
   $('dpPrevRows').innerHTML = rows.map(function (r) {
     var st = DP_ST[r.status] || [r.status, 'p-stale'], bad = r.status === 'ok' && r.team && !teamValid(r.team);
     var team = !r.team ? (r.status === 'ok' ? '<span class="meta">no team</span>' : '') : bad ? '<span class="err">' + esc(r.team) + ' (not an active field team)</span>' : esc(r.team);
-    return '<tr' + (bad ? ' class="dpbad"' : '') + '><td class="stencil">' + esc(r.stencil) + (r.box && r.box !== r.stencil ? '<div class="meta">&rarr; ' + esc(r.box) + '</div>' : '') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td>' + esc(r.due) + '</td></tr>';
+    var past = C.isPastDue(r.due), cls = [bad ? 'dpbad' : '', past ? 'dppast' : ''].filter(Boolean).join(' ');
+    return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td class="stencil">' + esc(r.stencil) + (r.box && r.box !== r.stencil ? '<div class="meta">&rarr; ' + esc(r.box) + '</div>' : '') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td class="due">' + esc(r.due) + (past ? ' <span class="pill p-issue">past</span>' : '') + '</td></tr>';
   }).join('');
+  var nPast = rows.filter(function (r) { return C.isPastDue(r.due); }).length, okPast = rows.filter(function (r) { return dpSendable(r) && C.isPastDue(r.due); }).length;
+  showText('dpPastWarn', nPast ? pastRowsText(nPast) : '');
+  showText('dpGoPast', okPast ? 'Before you dispatch: ' + fmtN(okPast) + ' of the ' + fmtN(ok) + ' valid row' + (ok === 1 ? '' : 's') + (okPast === 1 ? ' has' : ' have') + ' a due date in the past (before ' + C.manilaToday() + ', Manila date); ' + (okPast === 1 ? 'it' : 'they') + ' will be overdue immediately.' : '');
+  showText('dpDueWarn', pastFieldText($('dpDue').value));
   var b = $('dpGo'); b.textContent = 'Dispatch ' + ok + ' valid'; b.disabled = ok === 0 || dp.busy;
   var found = dpFoundIds(); $('dpToBasket').textContent = 'Add ' + fmtN(found.length) + ' found NAP' + (found.length === 1 ? '' : 's') + ' to the basket'; $('dpToBasket').disabled = !found.length || dp.busy;
   ['dpFile', 'dpPaste', 'dpRead'].forEach(function (id) { $(id).disabled = dp.busy; });
@@ -1164,6 +1183,10 @@ $('dpApplyTeam').onclick = function () {
   var t = $('dpTeam').value; if (!t) return toast('Select a team first.');
   dp.preview.forEach(function (r) { if (!r.team) r.team = t; }); drawPreview();
 };
+$('dpDue').addEventListener('input', function () { showText('dpDueWarn', pastFieldText(this.value)); });
+$('dpDue').addEventListener('change', function () { showText('dpDueWarn', pastFieldText(this.value)); });
+$('diMoveDue').addEventListener('input', function () { showText('diMoveDueWarn', pastFieldText(this.value)); });
+$('diMoveDue').addEventListener('change', function () { showText('diMoveDueWarn', pastFieldText(this.value)); });
 $('dpApplyDue').onclick = function () {
   var d = $('dpDue').value; if (!d) return toast('Select a date first.');
   dp.preview.forEach(function (r) { if (!r.due) r.due = d; }); drawPreview();
@@ -1726,7 +1749,8 @@ function drawPlan(info, ex) {
   var rows = teams.map(function (t) {
     var s = by[t] || { count: 0, excluded: 0, barangays: [], due: '' }, e = planEntry(t);
     return '<tr' + (pl.open === t ? ' class="open"' : '') + '><td><b>' + esc(t) + '</b><div class="meta">' + esc(loadLine(t)) + '</div></td><td>' + fmtN(s.count) + (s.excluded ? ' <span class="meta">(+' + fmtN(s.excluded) + ' left out)</span>' : '') +
-      '</td><td>' + (s.barangays.length ? brgyList(s.barangays, 3) : '<span class="meta">none</span>') + '</td><td><input type="date" data-due="' + esc(t) + '" aria-label="Due date for ' + esc(t) + '" value="' + esc(e ? e.due || '' : pl.due) + '"' + (pl.busy ? ' disabled' : '') + '></td>' +
+      '</td><td>' + (s.barangays.length ? brgyList(s.barangays, 3) : '<span class="meta">none</span>') + '</td><td><input type="date" data-due="' + esc(t) + '" aria-label="Due date for ' + esc(t) + '" value="' + esc(e ? e.due || '' : pl.due) + '"' + (pl.busy ? ' disabled' : '') + '>' +
+      (C.isPastDue(e ? e.due || '' : pl.due) ? '<div class="pastdue">' + esc(pastFieldText(e ? e.due || '' : pl.due)) + '</div>' : '') + '</td>' +
       '<td><button class="btn sm" type="button" data-view="' + esc(t) + '"' + (s.count + (s.excluded || 0) ? '' : ' disabled') + '>' + (pl.open === t ? 'Hide' : 'View') + '</button></td></tr>';
   });
   var pg = C.basketGroups(pool, info);
@@ -1739,6 +1763,10 @@ function drawPlan(info, ex) {
   var go = $('bkGo');
   go.textContent = pl.busy ? 'Dispatching…' : 'Dispatch ' + fmtN(total) + ' NAP' + (total === 1 ? '' : 's') + (pay.assignments.length ? ' to ' + pay.assignments.length + ' team' + (pay.assignments.length === 1 ? '' : 's') : '');
   go.disabled = pl.busy || !total;
+  var pastT = [], pastN = 0;
+  pay.assignments.forEach(function (a) { if (a.box_ids.length && C.isPastDue(a.due)) { pastT.push(a.team + ' (' + a.due + ')'); pastN += a.box_ids.length; } });
+  showText('bkPastWarn', pastN ? 'Before you dispatch: ' + fmtN(pastN) + ' of the ' + fmtN(total) + ' NAP' + (total === 1 ? '' : 's') + ' get a due date in the past (before ' + C.manilaToday() + ', Manila date) and will be overdue immediately: ' + pastT.join(', ') + '.' : '');
+  showText('bkDueWarn', pastFieldText(pl.due));
   ['bkSplit', 'bkClearPlan', 'bkDue', 'bkMv'].forEach(function (id) { $(id).disabled = pl.busy; });
   $('bkSplit').disabled = pl.busy || !teams.length || !eligibleIds(ex).length;
   $('bkGoMsg').textContent = pl.busy ? '' : pool.length && total ? fmtN(pool.length) + ' not assigned (they stay in the basket).' : !total && bk.ids.length ? 'Press Split evenly, or open Not assigned and move NAPs to a team.' : '';

@@ -116,6 +116,21 @@
     if (t.getUTCFullYear() !== y || t.getUTCMonth() !== m - 1 || t.getUTCDate() !== d) return '';
     return t.toISOString().slice(0, 10);
   }
+  // Today's date in the Philippines (Asia/Manila, UTC+8, no daylight saving) as YYYY-MM-DD, whatever the computer's time zone.
+  // The server's "overdue" uses the same day (nap.team_load: due_date < Manila today).
+  function manilaToday(now) {
+    var t = now == null ? Date.now() : now instanceof Date ? now.getTime() : Number(now);
+    if (!isFinite(t)) return '';
+    return new Date(t + 8 * 3600000).toISOString().slice(0, 10);
+  }
+  // true when dateStr (YYYY-MM-DD, as <input type=date> and parseDueDate give it) is before today in Manila: such a dispatch is
+  // accepted but is overdue immediately. Blank or invalid dates are never past due.
+  function isPastDue(dateStr, now) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr == null ? '' : dateStr).trim());
+    if (!m || iso(+m[1], +m[2], +m[3]) !== m[0]) return false;
+    var today = manilaToday(now);
+    return !!today && m[0] < today;
+  }
   function parseDueDate(v) {
     if (v == null || v === '') return '';
     if (v instanceof Date) {
@@ -244,7 +259,8 @@
     "Master columns (blue, editable, imported back): stencil, barangay, district, dwelling, street, olt, lat, lng, converge_available, active.",
     "Computed columns (grey, read-only, IGNORED when this file is imported back): geo_source (seed | audit | manual), geo_updated_at, np_numbers,",
     "  total_ports (8 per NAP number), status (installable | full | issue | stale | unverified | inactive), checked_ports, free_ports (fresh Vacant/Released only),",
-    "  bad_ports (Hi Loss/Defective), age_days (days since the newest check), last_audit_at and last_audit_team (the newest visit, a not-found visit included).",
+    "  bad_ports (Hi Loss/Defective), age_days (days since the newest check), last_audit_at and last_audit_team (the newest real audit: not-found visits",
+    "  are skipped, so both are empty for a box that was only ever reported not found).",
     "",
     "TO UPDATE BOXES: edit the blue columns, save as .xlsx or .csv, then NAP Master > Import > preview > Apply. Up to 5,000 rows per import file,",
     "  so import one barangay (or a 5,000-row part of the whole-QC file) at a time.",
@@ -521,6 +537,6 @@
     stencilNps: stencilNps, masterCell: masterCell, findMasterHeader: findMasterHeader, parseMasterGrid: parseMasterGrid, parseMasterText: parseMasterText, splitBatches: splitBatches,
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
-    normStencil: normStencil, parseDueDate: parseDueDate, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
+    normStencil: normStencil, parseDueDate: parseDueDate, manilaToday: manilaToday, isPastDue: isPastDue, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
     boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess };
 });
