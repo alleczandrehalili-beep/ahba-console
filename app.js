@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-15.3';
+const APP_VERSION='2026-10-15.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2032,7 +2032,7 @@ function initHR(){
   const el=document.getElementById('hrRoot');if(!el)return;
   if(!window.FieldOpsHR){el.textContent='Payroll module could not load. Please reload.';return;}
   if(!_hrController)_hrController=FieldOpsHR.create({api:window.HrApi,console:window.ConsoleHR});
-  return _hrController.open(el,{client:window.dashAuthClient,user:window.dashUser,toast:showToast,ensureXLSX});
+  return _hrController.open(el,{client:window.dashAuthClient,user:window.dashUser,toast:showToast,ensureXLSX,ensureXLSXStyle});
 }
 function resetHR(){if(_hrController)_hrController.reset();}
 // ===== QA AUDIT (field inspections) — module in console-qa.js; mounted lazily when the page opens =====

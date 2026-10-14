@@ -20,7 +20,7 @@
       }).then(function(){
         if(epoch!==generation)return;
         var edits=o.user.edit_pages||[];
-        mounted=modules.console.mount(el,{api:api,user:o.user,deps:{toast:o.toast,ensureXLSX:o.ensureXLSX,canEdit:!!(o.user.is_super||edits.indexOf('payroll')>=0||edits.indexOf('hrvalidate')>=0)}});
+        mounted=modules.console.mount(el,{api:api,user:o.user,deps:{toast:o.toast,ensureXLSX:o.ensureXLSX,ensureXLSXStyle:o.ensureXLSXStyle,canEdit:!!(o.user.is_super||edits.indexOf('payroll')>=0||edits.indexOf('hrvalidate')>=0)}});
         return mounted;
       }).catch(function(e){
         if(epoch!==generation)return;

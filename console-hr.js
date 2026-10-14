@@ -350,6 +350,12 @@
       var rs = (S.stale && S.stale.reasons || []).filter(Boolean);
       return rs.length ? rs.join(', ') + ' changed after the last Compute' : 'the week was reopened after its last Compute';
     }
+    // Asks before a figure that has not caught up leaves the screen: the Register's export and payslips, and the Allowances / Deductions sheets.
+    function staleGate(what) {
+      if (!staleHere()) return true;
+      return confirm('Hindi pa nakuwenta ang linggong ito (' + staleWhy() +
+        ').\n\nThe ' + what + ' will carry figures that are not final. Continue anyway?');
+    }
     function staleBanner() {
       if (!staleHere()) return '';
       return '<div class="hr-warn">' +
@@ -1003,11 +1009,6 @@
       var rb = $('#rReopen'); if (rb) rb.onclick = function () { var why = prompt('Reason for reopening ' + periodLabel(p) + ':'); if (!why) return; api.reopenPeriod(p.id, why).then(function () { toast('Reopened'); return refresh(); }).catch(fail); };
       // D2: a figure that has not caught up must not leave the screen looking final. This is where an old number
       // reaches paper, and paper is what people get paid against. Dark until hr.period_stale exists (S.stale is null).
-      function staleGate(what) {
-        if (!staleHere()) return true;
-        return confirm('Hindi pa nakuwenta ang linggong ito (' + staleWhy() +
-          ').\n\nThe ' + what + ' will carry figures that are not final. Continue anyway?');
-      }
       $('#rXlsx').onclick = function () { if (staleGate('Excel export')) exportXlsx(p, S.lines, S.logs).catch(fail); };
       $('#rSlips').onclick = function () { if (staleGate('payslips')) printPayslips(p, S.lines); };
       rootEl.querySelectorAll('td[contenteditable]').forEach(function (td) {
@@ -1088,12 +1089,13 @@
     // Per period: recorded deployment units plus separate legacy / HR daily units × allowance rate, plus a manual
     // amount / note typed here (hr.allowances, saved on Enter / blur through saveAllowance). Compute adds both into the Register's ALLOWANCE cell
     // (a hand-typed Register cell still overrides). Read-only once the period is locked.
-    TABS.allowance = function () {
+    TABS.allowance = function (pre) {
       if (!S.period) { $('#hrBody').innerHTML = '<div class="hr-card">Create a period first.</div>'; return; }
       var p = S.period, locked = p.status === 'locked', act = !ro() && !locked, rate = S.settings && S.settings.driver_daily_allowance != null ? Number(S.settings.driver_daily_allowance) : C.DEFAULT_SETTINGS.driver_daily_allowance;
       if (isNaN(rate)) rate = C.DEFAULT_SETTINGS.driver_daily_allowance;
       $('#hrBody').innerHTML = '<div class="hr-card">Loading…</div>';
-      api.listAllowances(p.id).then(function (rows) {
+      // pre = the rows an upload just patched from the server's answer: nothing is asked for again
+      (pre && pre.period_id === p.id ? Promise.resolve(pre.rows) : api.listAllowances(p.id)).then(function (rows) {
         var byEmp = {}; rows.forEach(function (r) { byEmp[r.employee_id] = r; });
         var view = driverAllowanceView(S.employees, S.logs, S.lines, rows, S.settings, p), emps = view.rows.map(function (r) { return r.employee; }), tot = view.totals;
         var reasonLabels = { three_person_crew: 'Three-person crew · no allowance', actual_event_coverage: 'Recorded departure used', not_driver: 'Crew member is not the driver', crew_discrepancy: 'Security crew discrepancy · review required', fuzzy_crew_identity: 'Similar crew name · review required', ambiguous_crew_identity: 'Ambiguous crew identity', unresolved_crew_identity: 'Unmatched crew identity', event_date_conflict: 'Departure dates disagree', dispatch_date_conflict: 'Dispatch dates disagree', conflicting_event_id: 'Conflicting copies of one departure', conflicting_event_evidence: 'Conflicting departure evidence', missing_event_id: 'Departure identity missing', invalid_event_timestamp: 'Departure time invalid', invalid_work_date: 'Departure date invalid', outside_employment_window: 'Outside employment dates', missing_driver: 'Driver identity missing', invalid_crew_count: 'Crew size needs review', excluded_event: 'Departure excluded' };
@@ -1113,13 +1115,13 @@
         }).join('');
         $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
           '<span class="mut">₱' + money(rate) + ' per qualifying two-person deployment · ' + rows.length + ' manual amount(s)</span>' +
-          (act ? '<button class="hr-btn p" id="alwCompute">⟳ Compute allowances</button><button class="hr-btn" id="alwCopy" title="Fill blank manual amounts from the previous period">⧉ Copy manual amounts from previous period</button>' : '') +
+          (act ? '<button class="hr-btn p" id="alwCompute">⟳ Compute allowances</button><button class="hr-btn" id="alwCopy" title="Fill blank manual amounts from the previous period">⧉ Copy manual amounts from previous period</button>' : '') + sheetButtons(locked) +
           (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + REREAD + '</div>' + staleBanner() +
           (view.stale ? '<div class="hr-warn">Dispatch evidence changed. Compute the draft to update Register and payslips; explicit manual overrides remain.</div>' : '') +
           '<div class="hr-scroll"><table class="hr-t"><thead><tr><th>No.</th><th>Employee</th><th class="r">Recorded deployments</th><th class="r">Legacy / HR days</th><th class="r">Automatic allowance</th><th class="r">Manual amount</th><th>Note</th><th class="r">Allowance</th><th>Deployment evidence</th></tr></thead><tbody>' + body +
           '<tr style="font-weight:800"><td></td><td>TOTAL · ' + emps.length + ' employees</td><td class="r">' + tot.deployments + '</td><td class="r">' + tot.legacy_days + '</td><td class="r">' + money(tot.automatic) + '</td><td class="r">' + money(tot.manual) + '</td><td></td><td class="r">' + money(tot.total) + '</td><td></td></tr></tbody></table></div>' +
           '<p class="mut">A two-person driver earns ₱' + money(rate) + ' for each unique recorded deployment with attendance evidence; three-person crews earn zero automatically. Several work orders on one trip count once. Older daily declarations and historical solo / HR driver decisions stay separate because they cannot establish trip multiplicity. Manual amounts add per period; an explicit Register override, including zero, remains until <b>Use automatic</b>. Compute refreshes drafts without approving attendance.</p></div>';
-        bindPeriodSelect(); bindReread();
+        bindPeriodSelect(); bindReread(); bindSheet('allowance', p, view.rows);
         var compute = $('#alwCompute'); if (compute) compute.onclick = function () { compute.disabled = true; api.computePeriod(p.id).then(refresh).catch(fail); };
         rootEl.querySelectorAll('[data-alw-auto]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.restoreAutomaticAllowance(b.dataset.alwAuto).then(refresh).catch(fail); }; });
         rootEl.querySelectorAll('td[data-alw]').forEach(function (td) {
@@ -1153,20 +1155,19 @@
     // employee's active loans under Employees → Loans) next to a one-off Cash advance / Company loan / Others / Note typed here (hr.deductions, saved on Enter / blur through
     // saveDeduction). Compute adds scheduled + typed into the Register's CASH ADVANCE / COMPANY LOAN cells and takes Others as OTHERS (a hand-typed Register OTHERS
     // cell still overrides; CASH ADVANCE / COMPANY LOAN are never typed on the Register). Read-only once the period is locked.
-    TABS.deductions = function () {
+    TABS.deductions = function (pre) {
       if (!S.period) { $('#hrBody').innerHTML = '<div class="hr-card">Create a period first.</div>'; return; }
-      var p = S.period, locked = p.status === 'locked', act = !ro() && !locked, cal = (S.settings && S.settings.deduction_calendar) || C.DEFAULT_SETTINGS.deduction_calendar;
+      var p = S.period, locked = p.status === 'locked', act = !ro() && !locked;
       $('#hrBody').innerHTML = '<div class="hr-card">Loading…</div>';
-      Promise.all([api.listDeductions(p.id), api.listLoans({ active: true })]).then(function (r) {
-        var rows = r[0], byEmp = {}, sched = {};
+      // pre = the rows an upload just patched from the server's answer (loans are unchanged by it): nothing is asked for again
+      (pre && pre.period_id === p.id ? Promise.resolve([pre.rows, pre.loans]) : Promise.all([api.listDeductions(p.id), api.listLoans({ active: true })])).then(function (r) {
+        var rows = r[0], byEmp = {}, sched = dedSched(r[1], p);
         rows.forEach(function (x) { byEmp[x.employee_id] = x; });
-        // scheduled part = HrCore.computeLine's loan pass for the two weekly kinds: active, not deleted, due this week, min(weekly, balance)
-        r[1].forEach(function (ln) { if (ln.deleted_at || !ln.active || (ln.kind !== 'cash_advance' && ln.kind !== 'company_loan') || !C.dueThisWeek(ln.kind, p.week_of_month, cal)) return; var sc = sched[ln.employee_id] || (sched[ln.employee_id] = { cash_advance: 0, company_loan: 0 }); sc[ln.kind] = C.round2(sc[ln.kind] + C.amortisation(ln)); });
-        var emps = S.employees.filter(function (e) { return (e.active && inPool(e)) || byEmp[e.id]; }), tot = { sca: 0, ca: 0, scl: 0, cl: 0, oth: 0, total: 0 };
+        // scheduled part (dedSched) = HrCore.computeLine's loan pass for the two weekly kinds; dedRows is the build the Excel sheet shares
+        var emps = dedEmps(byEmp), view = dedRows(emps, byEmp, sched), tot = { sca: 0, ca: 0, scl: 0, cl: 0, oth: 0, total: 0 };
         function cell(e, k, v) { return '<td class="r' + (act ? ' ed' : '') + (v ? '' : ' blank') + '"' + (act ? ' contenteditable data-ded="' + e.id + '" data-k="' + k + '"' : '') + '>' + (v ? money(v) : (act ? '0.00' : '')) + '</td>'; }
-        var body = emps.map(function (e) {
-          var d = byEmp[e.id] || {}, sc = sched[e.id] || { cash_advance: 0, company_loan: 0 }, ca = Number(d.cash_advance) || 0, cl = Number(d.company_loan) || 0, oth = Number(d.others) || 0;
-          var total = C.round2(sc.cash_advance + ca + sc.company_loan + cl + oth);
+        var body = view.map(function (vr) {
+          var e = vr.employee, d = byEmp[e.id] || {}, sc = vr.sched, ca = vr.cash_advance, cl = vr.company_loan, oth = vr.others, total = vr.total;
           tot.sca = C.round2(tot.sca + sc.cash_advance); tot.ca = C.round2(tot.ca + ca); tot.scl = C.round2(tot.scl + sc.company_loan); tot.cl = C.round2(tot.cl + cl); tot.oth = C.round2(tot.oth + oth); tot.total = C.round2(tot.total + total);
           return '<tr' + (e.active ? '' : ' style="opacity:.6"') + '><td>' + esc(e.emp_no || '') + '</td><td class="name"><b>' + esc(e.display_name) + '</b>' + (e.position ? ' <small style="color:#8a9894">' + esc(e.position) + '</small>' : '') + (e.active ? '' : ' <small style="color:#9a6200">inactive</small>') + '</td>' +
             '<td class="r" style="color:#4a5a55">' + money(sc.cash_advance) + '</td>' + cell(e, 'cash_advance', ca) + '<td class="r" style="color:#4a5a55">' + money(sc.company_loan) + '</td>' + cell(e, 'company_loan', cl) + cell(e, 'others', oth) +
@@ -1174,12 +1175,12 @@
         }).join('');
         $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
           '<span style="font-size:11px;color:#8a9894">week ' + p.week_of_month + ' · ' + rows.length + ' row' + (rows.length === 1 ? '' : 's') + ' typed</span>' +
-          (act ? '<button class="hr-btn" id="dedCopy" title="Fill blank rows from the previous period">⧉ Copy from previous period</button>' : '') +
+          (act ? '<button class="hr-btn" id="dedCopy" title="Fill blank rows from the previous period">⧉ Copy from previous period</button>' : '') + sheetButtons(locked) +
           (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + REREAD + '</div>' + staleBanner() +
           '<div class="hr-scroll"><table class="hr-t"><thead><tr><th>No.</th><th>Employee</th><th class="r" title="this week\'s amortisation of active cash-advance loans (Employees → Loans)">Scheduled CA</th><th class="r">Cash advance</th><th class="r" title="this week\'s amortisation of active company loans (Employees → Loans)">Scheduled company loan</th><th class="r">Company loan</th><th class="r">Others</th><th>Note</th><th class="r">Total</th></tr></thead><tbody>' + body +
           '<tr style="font-weight:800"><td></td><td>TOTAL · ' + emps.length + ' employees</td><td class="r">' + money(tot.sca) + '</td><td class="r">' + money(tot.ca) + '</td><td class="r">' + money(tot.scl) + '</td><td class="r">' + money(tot.cl) + '</td><td class="r">' + money(tot.oth) + '</td><td></td><td class="r">' + money(tot.total) + '</td></tr></tbody></table></div>' +
           '<p style="font-size:11px;color:#8a9894">Scheduled amounts come from Employees → Loans; type one-off amounts here. Yellow cells are editable (Enter / click away to save) · amounts are per period · <b>Compute</b> on the Register adds scheduled + typed into CASH ADVANCE / COMPANY LOAN and takes Others as OTHERS (a hand-typed Register OTHERS cell still overrides).</p></div>';
-        bindPeriodSelect(); bindReread();
+        bindPeriodSelect(); bindReread(); bindSheet('deduction', p, view);
         rootEl.querySelectorAll('td[data-ded]').forEach(function (td) {
           var orig = td.textContent;
           td.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); td.blur(); } if (ev.key === 'Escape') { td.textContent = orig; td.blur(); } };
@@ -1204,6 +1205,222 @@
         };
       }).catch(fail);
     };
+
+    // ---------- Allowances & Deductions: Excel download and upload ----------
+    // Owner 2026-10-15: "para pwede gawin kahit offline". The pure rules (what a sheet is, what an upload may change) are HrSheets;
+    // this is the wiring. The sheet is built from the tab's OWN view rows (driverAllowanceView / dedRows, the same ones the screen
+    // renders) so the file and the screen cannot disagree. Reading a file, parsing it and diffing it never writes; only the preview's
+    // confirm button calls the API, once, and the tab is then patched from what the server returned instead of being refetched.
+    var Sheets = root.HrSheets;
+    function sheetButtons(locked) {
+      if (!Sheets) return '';   // hr-sheets.js not loaded: no buttons rather than a button that cannot work
+      return '<button class="hr-btn" id="shExport">⬇ Excel</button>' +
+        (ro() || locked ? '' : '<label class="hr-btn" style="cursor:pointer">⬆ Upload<input type="file" id="shImport" accept=".xlsx,.xls" hidden></label>');
+    }
+    // Deductions: the scheduled amortisation (HrCore.computeLine's loan pass for the two weekly kinds: active, not deleted, due this week,
+    // min(weekly, balance)), who has a row, and the rows themselves — extracted from the tab so the screen and the sheet share one build.
+    function dedSched(loans, p) {
+      var cal = (S.settings && S.settings.deduction_calendar) || C.DEFAULT_SETTINGS.deduction_calendar, sched = {};
+      loans.forEach(function (ln) { if (ln.deleted_at || !ln.active || (ln.kind !== 'cash_advance' && ln.kind !== 'company_loan') || !C.dueThisWeek(ln.kind, p.week_of_month, cal)) return; var sc = sched[ln.employee_id] || (sched[ln.employee_id] = { cash_advance: 0, company_loan: 0 }); sc[ln.kind] = C.round2(sc[ln.kind] + C.amortisation(ln)); });
+      return sched;
+    }
+    function dedEmps(byEmp) { return S.employees.filter(function (e) { return (e.active && inPool(e)) || byEmp[e.id]; }); }
+    function dedRows(emps, byEmp, sched) {
+      return emps.map(function (e) {
+        var d = byEmp[e.id] || {}, sc = sched[e.id] || { cash_advance: 0, company_loan: 0 }, ca = Number(d.cash_advance) || 0, cl = Number(d.company_loan) || 0, oth = Number(d.others) || 0;
+        return { employee: e, sched: sc, cash_advance: ca, company_loan: cl, others: oth, note: d.note || '', total: C.round2(sc.cash_advance + ca + sc.company_loan + cl + oth) };
+      });
+    }
+    // Everything that differs between the two tabs. read() takes the server's rows NOW and builds the view rows from them; whole() is a
+    // server row's current value for every field the bulk function replaces; field() maps a sheet column to that field.
+    function sheetCfg(kind, p) {
+      if (kind === 'allowance') return {
+        tab: 'allowance', noun: 'allowance', file: 'ALLOWANCES', title: 'Allowances',
+        read: function () { return api.listAllowances(p.id).then(function (rows) { return { server: rows, view: driverAllowanceView(S.employees, S.logs, S.lines, rows, S.settings, p).rows }; }); },
+        whole: function (cur) { return { amount: Number(cur.amount) || 0, note: cur.note || null }; },
+        field: function (col) { return col === 'manual' ? 'amount' : col; },
+        save: function (rows) { return api.saveAllowancesBulk(p.id, rows); }
+      };
+      return {
+        tab: 'deductions', noun: 'deduction', file: 'DEDUCTIONS', title: 'Deductions',
+        read: function () { return Promise.all([api.listDeductions(p.id), api.listLoans({ active: true })]).then(function (r) { var byEmp = {}; r[0].forEach(function (x) { byEmp[x.employee_id] = x; }); return { server: r[0], loans: r[1], view: dedRows(dedEmps(byEmp), byEmp, dedSched(r[1], p)) }; }); },
+        whole: function (cur) { return { cash_advance: Number(cur.cash_advance) || 0, company_loan: Number(cur.company_loan) || 0, others: Number(cur.others) || 0, note: cur.note || null }; },
+        field: function (col) { return col; },
+        save: function (rows) { return api.saveDeductionsBulk(p.id, rows); }
+      };
+    }
+    // The styled writer (xlsx-js-style) arrives through deps.ensureXLSXStyle — it resolves with the library, or leaves it on root.XLSX.
+    // When it is absent or fails, the plain writer is used and the toast says so: the sheet is still correct, only the colours are missing.
+    function sheetWriter() {
+      function plain() { return (deps.ensureXLSX ? deps.ensureXLSX() : (root.XLSX ? Promise.resolve() : Promise.reject(new Error('Excel library not available')))).then(function () { return { X: root.XLSX, styled: false }; }); }
+      if (typeof deps.ensureXLSXStyle !== 'function') return plain();
+      return Promise.resolve().then(function () { return deps.ensureXLSXStyle(); }).then(function (lib) {
+        var X = lib && lib.utils ? lib : root.XLSX; if (!X || !X.utils) throw new Error('styled Excel writer did not load');
+        return { X: X, styled: true };
+      }).catch(function () { return plain(); });
+    }
+    function sheetDownload(kind, p, viewRows) {
+      var cols = Sheets.SHEETS[kind], cfg = sheetCfg(kind, p), n = viewRows.length;
+      var built = Sheets.build(kind, viewRows, { period: p, exported_at: new Date().toISOString(), exported_by: user.username || (S.me && S.me.username) || '' });
+      return sheetWriter().then(function (w) {
+        var X = w.X, A = X.utils.encode_cell, L = X.utils.encode_col, aoa = built.aoa.slice();
+        // Row 1 provenance · row 2 totals · row 3 header · rows 4.. one per employee. The totals sit ABOVE the header on purpose: parse() reads
+        // everything under the header as an employee, so a totals row below it would be refused as a row with no ID.
+        var first = 4, last = 3 + n, colIx = {}; cols.forEach(function (x, i) { colIx[x.key] = i; });
+        var totals = cols.map(function (x) { if (x.key === 'display_name') return 'TOTALS'; if (x.kind !== 'money') return ''; var s = 0; viewRows.forEach(function (r, i) { s += Number(aoa[2 + i][colIx[x.key]]) || 0; }); return C.round2(s); });
+        aoa.splice(1, 0, totals);
+        var ws = X.utils.aoa_to_sheet(aoa), FILL = { edit: 'FFF2CC', ro: 'E7E6E6', blank: 'F4B183' };
+        function put(r, c, patch) { var a = A({ r: r, c: c }), cell = ws[a] || (ws[a] = { t: 's', v: '' }); Object.keys(patch).forEach(function (k) { cell[k] = patch[k]; }); return cell; }
+        function style(fill, extra) { var s = { fill: { patternType: 'solid', fgColor: { rgb: fill } } }; Object.keys(extra || {}).forEach(function (k) { s[k] = extra[k]; }); return s; }
+        function fmt(x) { return x.key === 'deployments' ? '0' : '#,##0.00'; }
+        put(0, 0, { s: { font: { italic: true, color: { rgb: '7F7F7F' } } } });
+        cols.forEach(function (x, c) {
+          var fill = x.editable ? FILL.edit : FILL.ro, col = L(c), money = x.kind === 'money';
+          put(2, c, { s: style(fill, { font: { bold: true }, alignment: { horizontal: money ? 'right' : 'left' } }) });
+          var t = put(1, c, { s: style(FILL.ro, { font: { bold: true } }) });
+          if (money) { t.z = fmt(x); if (n) t.f = 'SUM(' + col + first + ':' + col + last + ')'; }
+          for (var i = 0; i < n; i++) {
+            var r = 3 + i, cell = ws[A({ r: r, c: c })], empty = !cell || cell.v === '' || cell.v == null;
+            // a blank that is not a note is a decision still to be made (a missing employee number, an amount left empty)
+            var patch = { s: style(empty && x.key !== 'note' ? FILL.blank : fill) }; if (money) patch.z = fmt(x);
+            put(r, c, patch);
+          }
+        });
+        // TOTAL as a real formula, so it moves while the file is edited offline. Only where it is exactly what the screen shows: an allowance
+        // under a Register override keeps its figure whatever MANUAL says, and a deduction's total also carries the scheduled loan amortisation,
+        // which is not in the sheet, so that part rides in the formula as a constant.
+        viewRows.forEach(function (row, i) {
+          var r = 3 + i, xl = r + 1, cell = ws[A({ r: r, c: colIx.total })], f = null;
+          if (kind === 'allowance') { if (!row.override && Math.abs(row.total - C.round2(row.automatic + row.manual)) < 0.005) f = L(colIx.automatic) + xl + '+' + L(colIx.manual) + xl; }
+          else f = L(colIx.cash_advance) + xl + '+' + L(colIx.company_loan) + xl + '+' + L(colIx.others) + xl + ((row.sched.cash_advance + row.sched.company_loan) ? '+' + C.round2(row.sched.cash_advance + row.sched.company_loan) : '');
+          if (f && cell) cell.f = f;
+        });
+        ws['!cols'] = cols.map(function (x) { return x.key === 'employee_id' ? { hidden: true, wch: 8 } : { wch: x.key === 'display_name' ? 30 : x.key === 'note' ? 36 : x.key === 'emp_no' ? 14 : 15 }; });
+        var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, cfg.title);
+        var fn = cfg.file + '-' + p.period_start + '_' + p.period_end + '.xlsx';
+        X.writeFile(wb, fn);
+        return 'Downloaded ' + fn + (w.styled ? '' : ' — without colours: the styled Excel writer is not available, so this is the plain sheet (it uploads the same)');
+      });
+    }
+    // Where a file row sits in Excel, by employee id — the server counts positions in the array it was sent, which a person cannot find.
+    function sheetRowsOf(aoa) {
+      var at = {}, idCol = -1;
+      for (var i = 0; i < aoa.length; i++) {
+        var cells = (aoa[i] || []).map(function (v) { return String(v == null ? '' : v).trim().toUpperCase(); });
+        if (idCol < 0) { if (cells.indexOf('ID') >= 0 && cells.indexOf('NOTE') >= 0) idCol = cells.indexOf('ID'); continue; }
+        var id = String((aoa[i] || [])[idCol] == null ? '' : aoa[i][idCol]).trim();
+        if (id && !(id in at)) at[id] = i + 1;
+      }
+      return at;
+    }
+    function stamp(iso) { var d = new Date(iso); return isFinite(d) ? d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : String(iso); }
+    // What changed between the download and now. The file is the authority (D5), so overwriting somebody else's work has to be a decision.
+    function sheetMoved(prov, server, verdict, p, noun) {
+      var t = Date.parse(prov.exported_at), why = [];
+      if (!isFinite(t)) return ['the file does not say when it was downloaded, so edits made since cannot be ruled out'];
+      var ca = (verdict && verdict.computed_at) || p.computed_at;
+      if (ca && Date.parse(ca) > t) why.push('the week was computed again at ' + stamp(ca));
+      var edited = server.filter(function (r) { return r.updated_at && Date.parse(r.updated_at) > t; }), by = [];
+      edited.forEach(function (r) { if (r.updated_by && by.indexOf(r.updated_by) < 0) by.push(r.updated_by); });
+      if (edited.length) why.push(edited.length + ' ' + noun + ' row' + (edited.length === 1 ? ' was' : 's were') + ' edited after the download' + (by.length ? ' (by ' + by.join(', ') + ')' : ''));
+      return why;
+    }
+    function bindSheet(kind, p, viewRows) {
+      var ex = $('#shExport'); if (ex) ex.onclick = function () { if (!staleGate('Excel sheet')) return; ex.disabled = true; sheetDownload(kind, p, viewRows).then(function (msg) { ex.disabled = false; toast(msg); }).catch(function (e) { ex.disabled = false; fail(e); }); };
+      var im = $('#shImport'); if (im) im.onchange = function () {
+        var f = this.files && this.files[0]; this.value = ''; if (!f) return;
+        var cfg = sheetCfg(kind, p), parsed, aoa;
+        readSheet(f).then(function (a) {
+          aoa = a; parsed = Sheets.parse(kind, a);
+          return Promise.all([cfg.read(), staleOf(api, p.id)]);
+        }).then(function (r) {
+          var d = Sheets.diff(kind, parsed, r[0].view);
+          showUploadPreview(kind, p, { parsed: parsed, d: d, aoa: aoa, cur: r[0], verdict: r[1], cfg: cfg });      // never writes — the modal's button does
+        }).catch(fail);
+      };
+    }
+    function showUploadPreview(kind, p, x) {
+      var cols = Sheets.SHEETS[kind], cfg = x.cfg, prov = x.parsed.provenance, d = x.d, label = {}, who = {}, rowOf = sheetRowsOf(x.aoa);
+      cols.forEach(function (c) { label[c.key] = c; });
+      x.cur.view.forEach(function (r) { who[r.employee.id] = (r.employee.emp_no ? r.employee.emp_no + ' · ' : '') + r.employee.display_name; });
+      // a partly-understood sheet is not a basis for writing payroll: any problem refuses the whole upload
+      var refused = x.parsed.problems.concat(d.problems);
+      var sameWeek = prov.period_id != null && String(prov.period_id) === String(p.id);
+      var sheetWeek = prov.period_start && prov.period_end ? periodLabel({ period_start: prov.period_start, period_end: prov.period_end }) : 'a week the file does not name';
+      if (!sameWeek && !x.parsed.problems.length) refused.push('This sheet was exported for ' + sheetWeek + ', not for the week on screen (' + periodLabel(p) + '). A sheet for another week is not an edit, so nothing can be applied from it. Open that week, or download this week\'s sheet.');
+      var moved = refused.length ? [] : sheetMoved(prov, x.cur.server, x.verdict, p, cfg.noun);
+      var byEmp = {}, order = []; d.changes.forEach(function (c) { if (!byEmp[c.employee_id]) { byEmp[c.employee_id] = []; order.push(c.employee_id); } byEmp[c.employee_id].push(c); });
+      function val(c, v) { return label[c.col].kind === 'money' ? (v == null || v === '' ? '—' : money(v)) : (v === '' || v == null ? '<i>(blank)</i>' : esc(v)); }
+      var rows = order.map(function (id) {
+        return byEmp[id].map(function (c, i) {
+          var m = label[c.col].kind === 'money';
+          return '<tr>' + (i ? '<td></td>' : '<td>' + esc(who[id] || id) + '</td>') + '<td>' + esc(label[c.col].label) + '</td><td class="' + (m ? 'r' : '') + '">' + val(c, c.from) + '</td><td class="' + (m ? 'r' : '') + '"><b>' + val(c, c.to) + '</b></td></tr>';
+        }).join('');
+      }).join('');
+      var canApply = !refused.length && d.changes.length > 0, ignoredCols = cols.filter(function (c) { return !c.editable && c.key !== 'employee_id'; }).map(function (c) { return c.label; }).join(', ');
+      var html = '<h3>' + esc(cfg.title) + ' upload · ' + esc(periodLabel(p)) + '</h3>' +
+        '<p class="mut">' + (prov.exported_at ? 'File downloaded ' + esc(stamp(prov.exported_at)) + (prov.exported_by ? ' by ' + esc(prov.exported_by) : '') + ' for ' + esc(sheetWeek) + '.' : 'The file does not say when it was downloaded.') + ' Nothing has been saved yet.</p>' +
+        (refused.length ? '<div class="hr-warn" style="background:#fdecea;border-color:#f0b4ac;color:#8a2f2f"><b>This sheet cannot be applied — nothing was saved.</b><ul style="margin:6px 0 0 18px">' + refused.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul></div>' : '') +
+        (moved.length ? '<div class="hr-warn" id="shMoved"><b>The week has moved since this file was downloaded:</b><ul style="margin:6px 0 0 18px">' + moved.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul><span id="shArm">Applying will overwrite those with what is in the file.</span></div>' : '') +
+        '<ul style="margin:0 0 8px 18px;font-size:12px;line-height:1.6"><li><b>' + d.changes.length + '</b> cell' + (d.changes.length === 1 ? '' : 's') + ' would change, across <b>' + order.length + '</b> employee' + (order.length === 1 ? '' : 's') + '</li>' +
+        '<li><b>' + d.ignored + '</b> cell' + (d.ignored === 1 ? '' : 's') + ' in read-only columns (' + esc(ignoredCols) + ') were edited in the file and are ignored</li>' +
+        (d.unknown.length ? '<li><b>' + d.unknown.length + '</b> row' + (d.unknown.length === 1 ? '' : 's') + ' with an ID that is not in this week — never created: ' + d.unknown.slice(0, 10).map(function (id) { return esc(id); }).join(', ') + (d.unknown.length > 10 ? ' … +' + (d.unknown.length - 10) : '') + '</li>' : '') +
+        (d.missing.length ? '<li><b>' + d.missing.length + '</b> employee' + (d.missing.length === 1 ? ' is' : 's are') + ' no longer in the file — left as they are, never deleted: ' + d.missing.slice(0, 10).map(function (id) { return esc(who[id] || id); }).join('; ') + (d.missing.length > 10 ? ' … +' + (d.missing.length - 10) : '') + '</li>' : '') + '</ul>' +
+        (order.length ? '<div class="hr-scroll" style="max-height:38vh"><table class="hr-t"><thead><tr><th>Employee</th><th>Column</th><th class="r">Now</th><th class="r">File</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : (refused.length ? '' : '<p>Nothing in this file differs from what is saved. Nothing to apply.</p>')) +
+        '<div id="shErr" class="hr-batch-error" style="margin-top:8px"></div>' +
+        '<div class="hr-bar" style="margin-top:10px">' + (canApply ? '<button class="hr-btn p" id="shApply">Apply ' + d.changes.length + ' change' + (d.changes.length === 1 ? '' : 's') + '</button>' : '') + '<button class="hr-btn" id="shCancel">' + (canApply ? 'Cancel' : 'Close') + '</button></div>';
+      openModal(html, function (box) {
+        var apply = box.querySelector('#shApply'), cancel = box.querySelector('#shCancel'), err = box.querySelector('#shErr'), armed = false;
+        cancel.onclick = closeModal;
+        if (!apply) return;
+        apply.onclick = function () {
+          if (moved.length && !armed) {      // the second, explicit confirm: the file wins over whatever moved
+            armed = true; apply.textContent = 'Yes — overwrite and apply ' + d.changes.length;
+            box.querySelector('#shArm').innerHTML = '<b>Click once more to overwrite them with what is in the file.</b>'; return;
+          }
+          apply.disabled = true; cancel.disabled = true; err.textContent = '';
+          sheetApply(kind, p, x, rowOf).then(function (msg) { closeModal(); toast(msg); }).catch(function (e) {
+            apply.disabled = false; cancel.disabled = false; err.textContent = (e && e.message) || String(e); toast('Upload not applied — nothing was saved');
+          });
+        };
+      });
+    }
+    // The only writer. One call. Each element replaces the WHOLE server row (hr.save_allowances_bulk / save_deductions_bulk), so every row
+    // carries the server's CURRENT value for each field the file did not change — read again right now, not remembered from when the tab drew.
+    function sheetApply(kind, p, x, rowOf) {
+      var cfg = x.cfg;
+      return cfg.read().then(function (now) {
+        if (!S.period || S.period.id !== p.id) throw new Error('The week on screen changed while this preview was open. Nothing was saved — upload again.');
+        var cur = {}, rows = {}, order = [], drift = [];
+        now.server.forEach(function (r) { cur[r.employee_id] = r; });
+        function name(c) { var v = x.cur.view.filter(function (r) { return r.employee.id === c.employee_id; })[0]; return (v ? v.employee.emp_no || v.employee.display_name : c.employee_id) + ' ' + c.col; }
+        x.d.changes.forEach(function (c) {
+          var sv = cur[c.employee_id] || {}, held = cfg.whole(sv)[cfg.field(c.col)];
+          // the preview said "from X"; if the server no longer holds X, someone edited it in between and the preview is no longer what would happen
+          if (c.col === 'note' ? String(c.from == null ? '' : c.from).trim() !== String(held || '').trim() : Math.round((Number(c.from) || 0) * 100) !== Math.round(held * 100)) drift.push(name(c));
+          var row = rows[c.employee_id];      // one element per employee: a repeated employee_id would apply both and the last would win
+          if (!row) { row = rows[c.employee_id] = Object.assign({ employee_id: c.employee_id }, cfg.whole(sv)); order.push(c.employee_id); }
+          if (c.col === 'note') row.note = c.to === '' || c.to == null ? null : String(c.to); else row[cfg.field(c.col)] = Number(c.to);
+        });
+        if (drift.length) throw new Error('Changed on the server since this preview was built: ' + drift.slice(0, 5).join(', ') + (drift.length > 5 ? ' … +' + (drift.length - 5) : '') + '. Nothing was saved — upload the file again to see the current picture.');
+        var send = order.map(function (id) { return rows[id]; });
+        send.forEach(function (r) {      // the shape guard would refuse these anyway; refusing here names the row in the person's file
+          Object.keys(r).forEach(function (k) { if (k !== 'employee_id' && k !== 'note' && !(typeof r[k] === 'number' && isFinite(r[k]))) throw new Error('Not a number for ' + (rowOf[r.employee_id] ? 'Excel row ' + rowOf[r.employee_id] : r.employee_id) + ' (' + k + '). Nothing was saved.'); });
+        });
+        return cfg.save(send).then(function (res) {
+          var out = now.server;
+          ((res && res.rows) || []).forEach(function (row) { out = patchRows(out, row, 'employee_id'); });
+          return staleRead(p.id).then(function () {
+            if (S.tab === cfg.tab && S.period && S.period.id === p.id) TABS[cfg.tab]({ period_id: p.id, rows: out, loans: now.loans });
+            var n = res && res.applied;
+            return n + ' row' + (n === 1 ? '' : 's') + ' saved from the Excel file' + (n !== send.length ? ' (' + send.length + ' sent)' : '');
+          });
+        }, function (e) {
+          // the server counts positions in the array it was sent; the person needs the row in their file
+          throw new Error(String((e && e.message) || e).replace(/Row (\d+) of this upload/g, function (m, i) { var id = order[Number(i) - 1]; return id && rowOf[id] ? 'Excel row ' + rowOf[id] + ' of your file' : m; }));
+        });
+      });
+    }
 
     // ---------- Employees ----------
     // Amendment 2: masterlist identity fields (middle name, name extension, team, date regularized); weekly_allowance is legacy (unused by compute) and hidden — the value is carried through untouched

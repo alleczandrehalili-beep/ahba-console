@@ -85,9 +85,11 @@
       // Amendment 2: per-period manual allowance — direct select (admin RLS), definer upsert RPC that refuses a locked period
       listAllowances: function (pid) { return ok(h().from('allowances').select('*').eq('period_id', pid)); },
       saveAllowance: function (a) { return rpc('save_allowance', { p: a }); },
+      saveAllowancesBulk: function (pid, rows) { return rpc('save_allowances_bulk', { p_period: pid, p_rows: rows }); },
       // Amendment 2 (Task 21): per-period one-off deductions (cash advance / company loan / others) — direct select (admin RLS), definer upsert RPC that refuses a locked period
       listDeductions: function (pid) { return ok(h().from('deductions').select('*').eq('period_id', pid)); },
       saveDeduction: function (d) { return rpc('save_deduction', { p: d }); },
+      saveDeductionsBulk: function (pid, rows) { return rpc('save_deductions_bulk', { p_period: pid, p_rows: rows }); },
       lockPeriod: function (id) { return rpc('lock_period', { p_period: id }); }, reopenPeriod: function (id, r) { return rpc('reopen_period', { p_period: id, p_reason: r }); },
       periodStale: function (pid) { return rpc('period_stale', { p_period: pid }); },
       contributionReport: function (ym) { return rpc('contribution_report', { p_ym: ym }); }, attendanceSummary: function (ym) { return rpc('attendance_summary', { p_ym: ym }); },
