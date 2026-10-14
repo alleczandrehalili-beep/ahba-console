@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -122,7 +122,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 <div class="wrap">
   <div id="loginView" class="login card" hidden>
     <h1>NAP Dashboard</h1>
-    <p class="sub">Mag-sign in gamit ang account mo sa AHBA console.</p>
+    <p class="sub">Sign in with your AHBA console account.</p>
     <form id="liForm" style="display:flex;flex-direction:column;gap:10px">
     <input id="liEmail" type="email" placeholder="Email" autocomplete="username">
     <input id="liPass" type="password" placeholder="Password" autocomplete="current-password">
@@ -131,9 +131,9 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
     <div class="meta" id="liErr" style="color:var(--full)"></div>
   </div>
 
-  <div id="noAccess" class="card" hidden><h2>Walang access</h2><p class="meta">Hindi pa naka-grant ang account na ito sa NAP Dashboard. Makipag-ugnayan sa admin.</p><button class="btn" id="noOut">Sign out</button></div>
+  <div id="noAccess" class="card" hidden><h2>No access</h2><p class="meta">This account has not been granted access to the NAP Dashboard yet. Contact an admin.</p><button class="btn" id="noOut">Sign out</button></div>
 
-  <div id="errView" class="card login" hidden><h2>May problema sa pag-load</h2><p class="meta" id="errMsg" style="overflow-wrap:anywhere"></p><div class="row"><button class="btn pri" id="errRetry">Subukan ulit</button><button class="btn" id="errOut">Sign out</button></div></div>
+  <div id="errView" class="card login" hidden><h2>There was a problem loading</h2><p class="meta" id="errMsg" style="overflow-wrap:anywhere"></p><div class="row"><button class="btn pri" id="errRetry">Try again</button><button class="btn" id="errOut">Sign out</button></div></div>
 
   <div id="app" hidden>
     <header>
@@ -159,33 +159,33 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         </div>
         <div class="kpis" id="kpis"></div>
         <div class="subbar">
-          <input type="search" id="subQ" class="q" maxlength="200" placeholder="Hanapin ang address ng subscriber" aria-label="Hanapin ang address ng subscriber" autocomplete="off" enterkeyhint="search">
-          <button class="btn pri" id="subGo" type="button">Hanapin</button>
-          <label class="rad">Radius (m) <input type="number" id="subRad" min="50" max="500" step="10" aria-label="Radius sa metro"></label>
-          <button class="btn" id="subClear" type="button" hidden>Alisin ang pin</button>
+          <input type="search" id="subQ" class="q" maxlength="200" placeholder="Search the subscriber address" aria-label="Search the subscriber address" autocomplete="off" enterkeyhint="search">
+          <button class="btn pri" id="subGo" type="button">Search</button>
+          <label class="rad">Radius (m) <input type="number" id="subRad" min="50" max="500" step="10" aria-label="Radius in meters"></label>
+          <button class="btn" id="subClear" type="button" hidden>Remove pin</button>
         </div>
         <div class="hits" id="subHits" hidden></div>
         <p class="subnote" id="subMsg" role="status" aria-live="polite" hidden></p>
-        <p class="subnote">Ipinapadala ang tina-type na address sa OpenStreetMap (Nominatim) para makita ang lokasyon.</p>
-        <div class="mapbox" style="margin-top:10px"><div id="map" aria-label="Mapa ng NAP boxes sa Bahay Toro"></div></div>
+        <p class="subnote">The address you type is sent to OpenStreetMap (Nominatim) to find the location.</p>
+        <div class="mapbox" style="margin-top:10px"><div id="map" aria-label="Map of NAP boxes in Bahay Toro"></div></div>
         <div class="legend">
           <span><i class="dot" style="background:var(--ok)"></i>Installable</span>
           <span><i class="dot" style="background:var(--full)"></i>Full</span>
           <span><i class="dot" style="background:var(--issue)"></i>Issue</span>
           <span><i class="dot" style="background:var(--stale)"></i>Stale</span>
-          <span><i class="dot" style="background:var(--unv)"></i>Unverified (Converge lang)</span>
+          <span><i class="dot" style="background:var(--unv)"></i>Unverified (Converge only)</span>
           <span><i class="dot" style="background:var(--pin)"></i>Subscriber</span>
         </div>
-        <p class="hint">I-click ang mapa para ilagay ang address ng subscriber.</p>
+        <p class="hint">Click the map to place the subscriber address.</p>
       </div>
 
       <div class="card">
         <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><ul class="list inrad" id="inRad"></ul></div>
-        <h2>Saan pupunta ang team?</h2>
+        <h2>Where should the team go?</h2>
         <div class="row">
           <div class="seg" id="mode">
-            <button aria-pressed="true" data-m="install">Installable ngayon</button>
-            <button aria-pressed="false" data-m="audit">Kailangan i-audit</button>
+            <button aria-pressed="true" data-m="install">Installable now</button>
+            <button aria-pressed="false" data-m="audit">Needs audit</button>
           </div>
         </div>
         <ul class="list" id="list"></ul>
@@ -194,52 +194,52 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
     </div>
     </section>
     <section id="v-audits" hidden>
-      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">Lahat</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Hindi nahanap</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button></div></div>
-      <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Petsa</th><th>NAP</th><th>NP</th><th>Team</th><th>Libre</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
+      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">All</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Not found</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button></div></div>
+      <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>NAP</th><th>NP</th><th>Team</th><th>Free</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
       <div id="auditDetail" class="detail" hidden></div></div>
     </section>
     <section id="v-pilot" hidden>
       <div class="card"><h2>Pilot access</h2>
         <div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Org</th><th>Gate</th><th>Active</th><th></th></tr></thead><tbody id="pilotRows"></tbody></table></div>
-        <div class="row" style="margin-top:10px"><input id="pnUser" placeholder="username" aria-label="Username" style="font:inherit;padding:6px"><select id="pnRole" aria-label="Role"><option>field</option><option>dispatcher</option><option>admin</option></select><select id="pnOrg" aria-label="Org"><option selected>AHBA</option><option>SUBCON</option></select><button class="btn sm pri" id="pnAdd">Idagdag</button></div>
-        <p class="hint" id="pnHint">Field: username ng team sa app (UPPERCASE, kapareho ng nasa header ng app). Dispatcher/admin: dashboard username.</p></div>
+        <div class="row" style="margin-top:10px"><input id="pnUser" placeholder="username" aria-label="Username" style="font:inherit;padding:6px"><select id="pnRole" aria-label="Role"><option>field</option><option>dispatcher</option><option>admin</option></select><select id="pnOrg" aria-label="Org"><option selected>AHBA</option><option>SUBCON</option></select><button class="btn sm pri" id="pnAdd">Add</button></div>
+        <p class="hint" id="pnHint">Field: the team username in the app (UPPERCASE, same as in the app header). Dispatcher/admin: dashboard username.</p></div>
       <div class="card" style="margin-top:12px"><h2>Settings</h2><div class="row" id="settingsRow"></div></div>
     </section>
     <section id="v-dispatch" hidden>
-      <div class="card"><h2>Mag-load ng listahan</h2>
+      <div class="card"><h2>Load a list</h2>
         <div class="err" id="dpTeamsErr" role="alert" hidden style="margin-bottom:8px"></div>
-        <div class="row"><input type="file" id="dpFile" accept=".csv,.tsv,.xlsx,.txt" aria-label="File ng listahan"></div>
-        <textarea id="dpPaste" rows="4" placeholder="I-paste dito ang rows mula sa Google Sheet: stencil, team, due" aria-label="I-paste ang rows"></textarea>
-        <div class="row" style="margin-top:8px"><button class="btn pri" id="dpRead">Basahin</button><span class="meta" id="dpReadMsg"></span></div>
+        <div class="row"><input type="file" id="dpFile" accept=".csv,.tsv,.xlsx,.txt" aria-label="List file"></div>
+        <textarea id="dpPaste" rows="4" placeholder="Paste rows from a Google Sheet here: stencil, team, due" aria-label="Paste rows"></textarea>
+        <div class="row" style="margin-top:8px"><button class="btn pri" id="dpRead">Read</button><span class="meta" id="dpReadMsg"></span></div>
         <div id="dpWarn"></div>
         <div id="dpPrev" hidden>
           <div class="row dpassign">
-            <label class="meta">Team <select id="dpTeam" aria-label="Team"></select></label><button class="btn sm" id="dpApplyTeam">Ilapat sa lahat ng walang team</button>
-            <label class="meta">Due <input type="date" id="dpDue" aria-label="Due date"></label><button class="btn sm" id="dpApplyDue">Ilapat sa lahat ng walang petsa</button>
+            <label class="meta">Team <select id="dpTeam" aria-label="Team"></select></label><button class="btn sm" id="dpApplyTeam">Apply to all without a team</button>
+            <label class="meta">Due <input type="date" id="dpDue" aria-label="Due date"></label><button class="btn sm" id="dpApplyDue">Apply to all without a date</button>
           </div>
           <div class="meta" id="dpSummary" style="margin:8px 0"></div>
           <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Status</th><th>Team</th><th>Due</th></tr></thead><tbody id="dpPrevRows"></tbody></table></div>
-          <div class="row" style="margin-top:10px"><button class="btn pri" id="dpGo" disabled>I-dispatch ang 0 na tama</button><button class="btn" id="dpClear">Burahin ang preview</button></div>
+          <div class="row" style="margin-top:10px"><button class="btn pri" id="dpGo" disabled>Dispatch 0 valid</button><button class="btn" id="dpClear">Clear preview</button></div>
         </div>
         <div id="dpResult"></div>
       </div>
-      <div class="card" style="margin-top:12px"><h2>Mga dispatch</h2>
-        <div class="filters"><label>Status<select id="diStatus"><option value="">Lahat</option><option>pending</option><option>done</option><option>blocked</option><option>cancelled</option></select></label><label>Team<select id="diTeam"></select></label></div>
-        <div class="tablewrap"><table><thead><tr><th>Team</th><th>Pending</th><th>Done ngayon</th><th>Blocked</th></tr></thead><tbody id="diKpi"></tbody></table></div>
-        <div class="hint" style="margin:0 0 8px">Binibilang ang mga naka-load na row (hanggang 500); nakadepende sa napiling filter.</div>
-        <div class="meta" id="diBlockedNote" hidden style="margin:8px 0">Hindi nahanap / hindi ma-access: magpasya (i-dispatch ulit sa Aging, o kanselahin).</div>
-        <div class="row dpassign" style="margin-top:8px"><select id="diMoveTeam" aria-label="Ilipat sa team"></select><input type="date" id="diMoveDue" aria-label="Bagong due (opsyonal)"><button class="btn sm" id="diMove">Ilipat sa team ▾</button><button class="btn sm" id="diCancel">Kanselahin</button><span class="meta" id="diSelN"></span></div>
+      <div class="card" style="margin-top:12px"><h2>Dispatches</h2>
+        <div class="filters"><label>Status<select id="diStatus"><option value="">All</option><option>pending</option><option>done</option><option>blocked</option><option>cancelled</option></select></label><label>Team<select id="diTeam"></select></label></div>
+        <div class="tablewrap"><table><thead><tr><th>Team</th><th>Pending</th><th>Done today</th><th>Blocked</th></tr></thead><tbody id="diKpi"></tbody></table></div>
+        <div class="hint" style="margin:0 0 8px">Counts the loaded rows (up to 500); depends on the selected filter.</div>
+        <div class="meta" id="diBlockedNote" hidden style="margin:8px 0">Not found / not accessible: decide whether to dispatch again from Aging, or cancel.</div>
+        <div class="row dpassign" style="margin-top:8px"><select id="diMoveTeam" aria-label="Move to team"></select><input type="date" id="diMoveDue" aria-label="New due date (optional)"><button class="btn sm" id="diMove">Move to team ▾</button><button class="btn sm" id="diCancel">Cancel</button><span class="meta" id="diSelN"></span></div>
         <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th></th><th>Stencil</th><th>Barangay</th><th>Team</th><th>Due</th><th>Status</th><th>Done</th></tr></thead><tbody id="diRows"></tbody></table></div>
       </div>
-      <div class="card" style="margin-top:12px"><h2>Aging (I-dispatch)</h2>
-        <p class="hint" style="margin:0 0 8px">Stale at hindi pa napupuntahang NAP, ayon sa filters ng Board (barangay, district, dwelling).</p>
-        <div class="row dpassign"><select id="agTeam" aria-label="Ilagay sa team"></select><input type="date" id="agDue" aria-label="Due date"><button class="btn sm pri" id="agGo">I-dispatch ang napili</button><span class="meta" id="agSelN"></span></div>
-        <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th><input type="checkbox" id="agAll" aria-label="Piliin ang lahat ng nakikita"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th><th>Edad</th></tr></thead><tbody id="agRows"></tbody></table></div>
-        <div class="row" style="margin-top:8px"><button class="btn sm" id="agMore">Dagdagan</button><span class="meta" id="agCount"></span></div>
+      <div class="card" style="margin-top:12px"><h2>Aging (Dispatch)</h2>
+        <p class="hint" style="margin:0 0 8px">Stale and not-yet-visited NAPs, based on the Board filters (barangay, district, dwelling).</p>
+        <div class="row dpassign"><select id="agTeam" aria-label="Assign to team"></select><input type="date" id="agDue" aria-label="Due date"><button class="btn sm pri" id="agGo">Dispatch selected</button><span class="meta" id="agSelN"></span></div>
+        <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th><input type="checkbox" id="agAll" aria-label="Select all visible"></th><th>Stencil</th><th>Barangay</th><th>Street</th><th>Status</th><th>Age</th></tr></thead><tbody id="agRows"></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="agMore">Show more</button><span class="meta" id="agCount"></span></div>
         <div id="agResult"></div>
       </div>
-      <div class="card" style="margin-top:12px"><h2>Pagbabago ng lokasyon ng NAP</h2>
-        <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Dati &rarr; Bago</th><th>Layo</th><th>Accuracy</th><th>Result</th><th>Petsa</th><th></th></tr></thead><tbody id="geoRows"></tbody></table></div>
+      <div class="card" style="margin-top:12px"><h2>NAP location changes</h2>
+        <div class="tablewrap"><table><thead><tr><th>Stencil</th><th>Before &rarr; After</th><th>Distance</th><th>Accuracy</th><th>Result</th><th>Date</th><th></th></tr></thead><tbody id="geoRows"></tbody></table></div>
       </div>
     </section>
   </div>
@@ -249,11 +249,11 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-14.7"></script>
-<script src="nap-api.js?v=2026-10-14.7"></script>
+<script src="nap-core.js?v=2026-10-14.8"></script>
+<script src="nap-api.js?v=2026-10-14.8"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-14.7';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-14.8';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -289,8 +289,8 @@ $('liForm').addEventListener('submit', async function (ev) {
   $('liErr').textContent = '';
   try {
     var r = await sb.auth.signInWithPassword({ email: $('liEmail').value.trim().toLowerCase(), password: $('liPass').value });
-    if (r.error) { $('liErr').textContent = 'Hindi ma-sign in: ' + r.error.message; return; }
-  } catch (e) { $('liErr').textContent = 'Hindi ma-sign in: ' + msgOf(e); return; }
+    if (r.error) { $('liErr').textContent = 'Cannot sign in: ' + r.error.message; return; }
+  } catch (e) { $('liErr').textContent = 'Cannot sign in: ' + msgOf(e); return; }
   boot();
 });
 // scope:'local' so signing out here does not revoke the user's console/mobile sessions.
@@ -316,7 +316,7 @@ function fillFilters() {
     var vals = {}; state.boxes.forEach(function (b) { if (b[f[0]]) vals[b[f[0]]] = true; });
     var cur = state.bf[f[0]], list = Object.keys(vals).sort();
     if (cur && !vals[cur]) cur = state.bf[f[0]] = '';
-    $(f[1]).innerHTML = '<option value="">Lahat</option>' + list.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + ' value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
+    $(f[1]).innerHTML = '<option value="">All</option>' + list.map(function (v) { return '<option' + (v === cur ? ' selected' : '') + ' value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('');
   });
 }
 function inFilter(b) { return BF.every(function (f) { return !state.bf[f[0]] || b[f[0]] === state.bf[f[0]]; }); }
@@ -326,7 +326,7 @@ $('boardFilters').addEventListener('change', function (ev) {
   state.bf[f[0]] = ev.target.value; fitPending = true; drawBoard();
 });
 // Same rule everywhere: when a session expires, send the user back to sign-in.
-window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Mag-sign in ulit.'); setTimeout(out, 1200); } });
+window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Please sign in again.'); setTimeout(out, 1200); } });
 
 var COL = { installable: 'var(--ok)', full: 'var(--full)', issue: 'var(--issue)', stale: 'var(--stale)', unverified: 'var(--unv)' };
 var LBL = { installable: 'Installable', full: 'Full', issue: 'Issue', stale: 'Stale', unverified: 'Unverified' };
@@ -345,26 +345,26 @@ function mapNote(msg) {
 }
 function initMap() {
   if (LMAP || mapFailed) return !!LMAP;
-  if (typeof L === 'undefined') { mapFailed = true; mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); return false; }
+  if (typeof L === 'undefined') { mapFailed = true; mapNote('Cannot load the map. The list still works.'); return false; }
   try {
     var rend = L.canvas({ padding: 0.5 });
     LMAP = L.map('map', { preferCanvas: true, renderer: rend, zoomControl: true, attributionControl: true }).setView([14.6645, 121.0195], 15);
     var tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(LMAP);
     tl.on('tileload', function () { tileOk++; });
-    tl.on('tileerror', function () { tileBad++; if (!tileOk && tileBad >= 3) mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); });
+    tl.on('tileerror', function () { tileBad++; if (!tileOk && tileBad >= 3) mapNote('Cannot load the map. The list still works.'); });
     boxLayer = L.layerGroup().addTo(LMAP); lineLayer = L.layerGroup().addTo(LMAP); pinLayer = L.layerGroup().addTo(LMAP);
     mapTip = L.tooltip({ direction: 'top', offset: [0, -6] });
     if (window.ResizeObserver) new ResizeObserver(function () { if (LMAP) LMAP.invalidateSize(); }).observe($('map'));
     LMAP.on('click', function (e) { setPin({ lat: e.latlng.lat, lng: e.latlng.lng }, !state.sub); });
     return true;
-  } catch (e) { LMAP = null; mapFailed = true; mapNote('Hindi ma-load ang mapa. Gumagana pa rin ang listahan.'); return false; }
+  } catch (e) { LMAP = null; mapFailed = true; mapNote('Cannot load the map. The list still works.'); return false; }
 }
 function markerStyle(b) {
   var sel = isSel(b), dim = !!(state.filter && state.filter !== b.kind), unv = b.kind === 'unverified';
   var hl = !!radIds[b.box_id], out = !!state.sub && !hl;   // inside / outside the subscriber radius
   return { radius: sel || hl ? 9 : unv ? 3 : 5, fillColor: KCOL[b.kind], color: sel ? '#111' : hl ? '#7a2fbf' : '#fff', weight: sel || hl ? 3 : 1, fillOpacity: dim ? .12 : out ? .35 : unv ? .55 : .95, opacity: dim ? .3 : 1, interactive: !dim };
 }
-function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' libre' : ''); }
+function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' free' : ''); }
 function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
 function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
 function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); }
@@ -415,7 +415,7 @@ function drawKpis() {
   var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0;
   visibleBoxes().forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; });
   $('kpis').innerHTML = ['installable', 'full', 'issue', 'stale', 'unverified'].map(function (k) {
-    return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + c[k] + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + ports + ' libreng port' : '') + '</span></button>';
+    return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + c[k] + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + ports + ' free ports' : '') + '</span></button>';
   }).join('');
 }
 function nearestList() {
@@ -425,10 +425,10 @@ function nearestList() {
 function drawList() {
   var r = nearestList();
   $('list').innerHTML = r.length ? r.map(function (b, i) {
-    var right = state.mode === 'install' ? '<span class="pill p-ok">' + b.free + ' libre</span>' : '<span class="pill p-' + (b.kind === 'stale' ? 'stale' : 'unv') + '">' + (b.kind === 'unverified' ? 'Di pa napupuntahan' : 'Stale ' + b.age_days + 'd') + '</span>';
-    var sub2 = state.mode === 'install' ? b.checked + ' port na-check · ' + (b.age_days === 0 ? 'ngayon' : b.age_days + ' araw na') : 'Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available (hindi verified)';
+    var right = state.mode === 'install' ? '<span class="pill p-ok">' + b.free + ' free</span>' : '<span class="pill p-' + (b.kind === 'stale' ? 'stale' : 'unv') + '">' + (b.kind === 'unverified' ? 'Not yet visited' : 'Stale ' + b.age_days + 'd') + '</span>';
+    var sub2 = state.mode === 'install' ? b.checked + ' ports checked · ' + (b.age_days === 0 ? 'today' : b.age_days + ' days ago') : 'Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available (not verified)';
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub ? Math.round(b.distance_m) + ' m' : '') + '</span></span></button></li>';
-  }).join('') : '<li class="meta">Walang tugma. Mag-audit ng bagong NAP o habaan ang freshness window sa Pilot tab.</li>';
+  }).join('') : '<li class="meta">No matches. Audit a new NAP or extend the freshness window in the Pilot tab.</li>';
 }
 var detailTok = 0, portsCache = null, histCache = null;   // {box_id, ...}; refetch only on box change or explicit refresh
 async function drawDetail(refresh) {
@@ -438,23 +438,23 @@ async function drawDetail(refresh) {
   var ports;
   if (!refresh && portsCache && portsCache.box_id === b.box_id) ports = portsCache.ports;
   else {
-    el.innerHTML = '<div class="meta">Naglo-load…</div>';
+    el.innerHTML = '<div class="meta">Loading…</div>';
     try { ports = await api.boxPorts(b.box_id); }
-    catch (e) { if (tok === detailTok) { portsCache = null; el.innerHTML = '<div class="meta" style="color:var(--full)">Hindi ma-load ang mga port: ' + esc(msgOf(e)) + '</div>'; } return; }
+    catch (e) { if (tok === detailTok) { portsCache = null; el.innerHTML = '<div class="meta" style="color:var(--full)">Cannot load the ports: ' + esc(msgOf(e)) + '</div>'; } return; }
     if (tok !== detailTok) return;   // a newer call superseded this one
     portsCache = { box_id: b.box_id, ports: ports };
   }
   var nps = {}; ports.forEach(function (p) { (nps[p.np] = nps[p.np] || []).push(p); });
   el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></div><div class="nps">' +
     Object.keys(nps).map(function (np) {
-      var list = nps[np], tags = list.filter(function (p) { return p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' may label na acct <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
+      var list = nps[np], tags = list.filter(function (p) { return p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
       var untagged = list.filter(function (p) { return p.status === S.AWO; }).map(function (p) { return 'P' + p.port; });
       var newest = list.reduce(function (m, p) { return p.verified_at && p.verified_at > m ? p.verified_at : m; }, '');
-      return '<div class="np"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'wala pang audit') + '</span></div><div class="ports">' +
+      return '<div class="np"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'no audit yet') + '</span></div><div class="ports">' +
         list.map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
         (tags ? '<div style="margin-top:6px">' + tags + '</div>' : '') +
-        (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active pero walang label. Ipa-tag sa team.</div>' : '') + '</div>';
-    }).join('') + '</div><div class="hist" id="hist"><h2>Huling 5 audit</h2><div class="meta">Naglo-load…</div></div>';
+        (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active but no label. Ask the team to tag it.</div>' : '') + '</div>';
+    }).join('') + '</div><div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>';
   drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -463,20 +463,20 @@ async function drawHistory(b, tok, refresh) {
   if (!refresh && histCache && histCache.box_id === b.box_id) rows = histCache.rows;
   else {
     try { rows = await api.listAudits({ boxId: b.box_id, limit: 5 }); }
-    catch (e) { if (tok === detailTok && $('hist')) $('hist').innerHTML = '<h2>Huling 5 audit</h2><div class="meta err">Hindi ma-load ang history: ' + esc(msgOf(e)) + '</div>'; return; }
+    catch (e) { if (tok === detailTok && $('hist')) $('hist').innerHTML = '<h2>Last 5 audits</h2><div class="meta err">Cannot load the history: ' + esc(msgOf(e)) + '</div>'; return; }
     if (tok !== detailTok) return;
     histCache = { box_id: b.box_id, rows: rows };
   }
   var el = $('hist'); if (!el) return;
-  el.innerHTML = '<h2>Huling 5 audit</h2>' + (rows.length ? '<div class="tablewrap"><table><thead><tr><th>Petsa</th><th>NP</th><th>Team</th><th>Libre</th><th>Status</th><th>Photo</th><th></th></tr></thead><tbody>' +
+  el.innerHTML = '<h2>Last 5 audits</h2>' + (rows.length ? '<div class="tablewrap"><table><thead><tr><th>Date</th><th>NP</th><th>Team</th><th>Free</th><th>Status</th><th>Photo</th><th></th></tr></thead><tbody>' +
     rows.map(function (a, i) {
-      return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td>' + (a.audit_photos || []).length + '</td><td><button class="btn sm" data-hi="' + i + '">Tingnan</button></td></tr>' +
+      return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td>' + (a.audit_photos || []).length + '</td><td><button class="btn sm" data-hi="' + i + '">View</button></td></tr>' +
         '<tr class="exp" hidden data-hx="' + i + '"><td colspan="7"><div class="detail" style="margin:0;border:0;padding:0"></div></td></tr>';
-    }).join('') + '</tbody></table></div>' : '<div class="meta">Wala pang audit sa NAP na ito.</div>');
+    }).join('') + '</tbody></table></div>' : '<div class="meta">No audits for this NAP yet.</div>');
   el.onclick = function (ev) {
     var btn = ev.target.closest('[data-hi]'); if (!btn) return;
     var tr = el.querySelector('[data-hx="' + btn.dataset.hi + '"]'), open = tr.hidden;
-    tr.hidden = !open; btn.textContent = open ? 'Isara' : 'Tingnan';
+    tr.hidden = !open; btn.textContent = open ? 'Close' : 'View';
     if (open) showAudit(rows[+btn.dataset.hi], tr.querySelector('.detail'), function () { histCache = null; drawDetail(true); });
   };
 }
@@ -484,24 +484,24 @@ function freeCell(a) { return a.review_status === 'not_found' ? '-' : String((a.
 function statusPills(a) {
   var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
   return '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
-    (a.gps_lat == null && a.review_status === 'flagged' ? ' <span class="pill p-issue">Walang GPS</span>' : '');
+    (a.gps_lat == null && a.review_status === 'flagged' ? ' <span class="pill p-issue">No GPS</span>' : '');
 }
-// Renders one audit (ports, photos, review button) into el. Photos that cannot be signed show "Hindi ma-load" instead of vanishing.
+// Renders one audit (ports, photos, review button) into el. Photos that cannot be signed show "Cannot load" instead of vanishing.
 async function showAudit(a, el, onReviewed) {
   var tok = el._tok = (el._tok || 0) + 1;
-  el.hidden = false; el.innerHTML = '<div class="meta">Naglo-load…</div>';
+  el.hidden = false; el.innerHTML = '<div class="meta">Loading…</div>';
   var urls = [], photoErr = false;
   try { urls = (a.audit_photos || []).length ? await api.signedPhotoUrls(a.audit_photos.map(function (p) { return p.path; })) : []; } catch (e) { photoErr = true; }
   if (tok !== el._tok) return;
-  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Hindi nahanap: ' + esc(a.not_found_reason) : '') + (a.gps_lat == null ? ' · Walang GPS' : '') + '</div>' +
+  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Not found: ' + esc(a.not_found_reason) : '') + (a.gps_lat == null ? ' · No GPS' : '') + '</div>' +
     '<div class="ports" style="margin:8px 0">' + (a.audit_ports || []).slice().sort(function (x, y) { return x.port - y.port; }).map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
-    (photoErr ? '<div class="meta err">Hindi ma-load ang photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) {
+    (photoErr ? '<div class="meta err">Cannot load the photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) {
       return u.url ? '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="NAP reading"></a>'
-        : '<span class="photo-missing" title="' + esc(u.path + (u.error ? ': ' + u.error : '')) + '">Hindi ma-load</span>';
+        : '<span class="photo-missing" title="' + esc(u.path + (u.error ? ': ' + u.error : '')) + '">Cannot load</span>';
     }).join('') + '</div>' +
-    ((state.role === 'admin' || state.role === 'superadmin') && a.review_status !== 'ok' && a.review_status !== 'reviewed' ? '<div class="actions"><button class="btn sm pri js-review">Markahan na-review</button></div>' : '');
+    ((state.role === 'admin' || state.role === 'superadmin') && a.review_status !== 'ok' && a.review_status !== 'reviewed' ? '<div class="actions"><button class="btn sm pri js-review">Mark as reviewed</button></div>' : '');
   var mr = el.querySelector('.js-review');
-  if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Na-review na.'); onReviewed(); } catch (e) { mr.disabled = false; toast('Hindi na-save: ' + msgOf(e)); } };
+  if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Marked as reviewed.'); onReviewed(); } catch (e) { mr.disabled = false; toast('Not saved: ' + msgOf(e)); } };
 }
 // Boxes inside the subscriber radius that pass the board filters (barangay/district/dwelling and the KPI filter).
 function computeRad() {
@@ -515,12 +515,12 @@ function drawRadius() {
   $('subClear').hidden = !on; $('radSec').hidden = !on;
   if (!on) { $('inRad').innerHTML = ''; return; }
   var r = radHit.slice().sort(function (a, b) { return (a.kind === 'installable' ? 0 : 1) - (b.kind === 'installable' ? 0 : 1) || a.distance_m - b.distance_m; });
-  $('radH').textContent = 'Sa loob ng ' + state.radius + ' m ng subscriber (' + r.length + ')';
+  $('radH').textContent = 'Within ' + state.radius + ' m of the subscriber (' + r.length + ')';
   $('inRad').innerHTML = r.length ? r.map(function (b, i) {
-    var pill = '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + esc(LBL[b.kind] || b.kind) + (b.kind === 'installable' ? ' · ' + esc(b.free) + ' libre' : '') + '</span>';
-    var age = b.age_days == null ? 'di pa napupuntahan' : b.age_days === 0 ? 'ngayon' : b.age_days + ' araw na';
+    var pill = '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + esc(LBL[b.kind] || b.kind) + (b.kind === 'installable' ? ' · ' + esc(b.free) + ' free' : '') + '</span>';
+    var age = b.age_days == null ? 'not yet visited' : b.age_days === 0 ? 'today' : b.age_days + ' days ago';
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + age + '</span></span><span style="text-align:right">' + pill + '<br><span class="meta">' + Math.round(b.distance_m) + ' m</span></span></button></li>';
-  }).join('') : '<li class="meta">Walang NAP sa loob ng ' + state.radius + ' m. Palakihin ang radius o i-click ang ibang lokasyon.</li>';
+  }).join('') : '<li class="meta">No NAP within ' + state.radius + ' m. Increase the radius or click another location.</li>';
 }
 function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawDetail(refresh); }
 function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.boxes.find(function (x) { return x.box_id === b.dataset.id; }) || null; drawBoard(); focusSel(); }
@@ -541,7 +541,7 @@ $('subClear').onclick = function () { state.sub = null; fitSub = false; drawBoar
 
 // Address search through OpenStreetMap Nominatim: only on an explicit search, at most one request per 1100 ms, typed text only.
 var geo = { last: 0, busy: false, seq: 0, hits: [] };
-var GEO_FAIL = 'Hindi ma-search ang address ngayon. I-click na lang ang mapa o i-paste ang coordinates.';
+var GEO_FAIL = 'Cannot search the address right now. Click the map or paste the coordinates instead.';
 function subMsg(t) { var m = $('subMsg'); m.textContent = t || ''; m.hidden = !t; }
 function subHits(list) {
   geo.hits = list; var el = $('subHits'); el.hidden = !list.length;
@@ -553,7 +553,7 @@ async function subSearch() {
   var ll = C.parseLatLng(q);
   if (ll) { geo.seq++; subHits([]); subMsg(''); setPin(ll, true); return; }   // coordinates: handled locally, no network
   if (geo.busy) return;
-  geo.busy = true; var tok = ++geo.seq; $('subGo').disabled = true; subHits([]); subMsg('Hinahanap…');
+  geo.busy = true; var tok = ++geo.seq; $('subGo').disabled = true; subHits([]); subMsg('Searching…');
   try {
     var wait = geo.last + 1100 - Date.now();
     if (wait > 0) await new Promise(function (r) { setTimeout(r, wait); });
@@ -572,7 +572,7 @@ async function subSearch() {
     if (tok !== geo.seq) return;
     var hits = data.map(function (d) { return { lat: parseFloat(d && d.lat), lng: parseFloat(d && d.lon), label: String((d && d.display_name) || '').split(',').slice(0, 3).map(function (x) { return x.trim(); }).join(', ') }; })
       .filter(function (h) { return isFinite(h.lat) && isFinite(h.lng); }).slice(0, 5);
-    if (!hits.length) { subMsg('Walang nahanap. Subukan ang ibang spelling, i-type ang street at barangay, o i-click ang mapa.'); return; }
+    if (!hits.length) { subMsg('Nothing found. Try a different spelling, type the street and barangay, or click the map.'); return; }
     subMsg(''); subHits(hits);
   } catch (e) { if (tok === geo.seq) { subHits([]); subMsg(GEO_FAIL); } }
   finally { geo.busy = false; $('subGo').disabled = false; }
@@ -599,12 +599,12 @@ async function loadAudits() {
   var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
   var rows;
   // 'awo' (Active w/o tagging) is filtered here over the loaded audits; the others are review_status filters on the server
-  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo') ? f : undefined, limit: 200 }); } catch (e) { return toast('Hindi ma-load ang audits: ' + msgOf(e)); }
+  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo') ? f : undefined, limit: 200 }); } catch (e) { return toast('Cannot load the audits: ' + msgOf(e)); }
   if (f === 'awo') rows = rows.filter(function (a) { return (a.audit_ports || []).some(function (p) { return p.status === S.AWO; }); });
   state.audits = rows;
   $('auditRows').innerHTML = rows.map(function (a, i) {
-    return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td><button class="btn sm" data-ai="' + i + '">Tingnan</button></td></tr>';
-  }).join('') || '<tr><td colspan="7" class="meta">' + (f ? 'Walang tugma.' : 'Wala pang audit.') + '</td></tr>';
+    return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td><button class="btn sm" data-ai="' + i + '">View</button></td></tr>';
+  }).join('') || '<tr><td colspan="7" class="meta">' + (f ? 'No matches.' : 'No audits yet.') + '</td></tr>';
 }
 $('auditFilter').addEventListener('click', function (ev) {
   var b = ev.target.closest('button'); if (!b) return;
@@ -617,22 +617,22 @@ $('auditRows').addEventListener('click', function (ev) {
 });
 async function loadPilot(quiet) {
   var rows;
-  try { rows = await api.listPilot(); } catch (e) { if (!quiet) toast('Hindi ma-load ang pilot list: ' + msgOf(e)); return; }
+  try { rows = await api.listPilot(); } catch (e) { if (!quiet) toast('Cannot load the pilot list: ' + msgOf(e)); return; }
   pendingDel = null;
   $('pilotRows').innerHTML = rows.map(function (r) {
-    return '<tr><td>' + esc(r.username) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.org) + '</td><td>' + (r.role === 'field' ? '<input type="checkbox" data-gate="' + esc(r.username) + '" ' + (r.gate ? 'checked' : '') + '>' : '') + '</td><td><input type="checkbox" data-act="' + esc(r.username) + '" ' + (r.active ? 'checked' : '') + '></td><td><button class="btn sm" data-del="' + esc(r.username) + '">Alisin</button></td></tr>';
+    return '<tr><td>' + esc(r.username) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.org) + '</td><td>' + (r.role === 'field' ? '<input type="checkbox" data-gate="' + esc(r.username) + '" ' + (r.gate ? 'checked' : '') + '>' : '') + '</td><td><input type="checkbox" data-act="' + esc(r.username) + '" ' + (r.active ? 'checked' : '') + '></td><td><button class="btn sm" data-del="' + esc(r.username) + '">Remove</button></td></tr>';
   }).join('');
   state.pilot = rows;
   var s = state.settings;
-  $('settingsRow').innerHTML = [['freshness_days', 'Freshness (araw)'], ['full_multiplier', 'Full multiplier'], ['gps_flag_m', 'GPS flag (m)']].map(function (x) {
+  $('settingsRow').innerHTML = [['freshness_days', 'Freshness (days)'], ['full_multiplier', 'Full multiplier'], ['gps_flag_m', 'GPS flag (m)']].map(function (x) {
     return '<label class="meta">' + x[1] + ' <input data-set="' + x[0] + '" value="' + esc(s[x[0]]) + '" size="4" style="font:inherit;padding:4px"></label>';
   }).join('') + '<label class="meta"><input type="checkbox" data-set="gate_enabled" ' + (s.gate_enabled === 'true' ? 'checked' : '') + '> Full NAP gate ON (kill switch)</label>';
 }
 // Run a write with its controls disabled; on failure toast and let revert() restore what the server really has.
 async function guarded(ctrls, write, revert) {
   ctrls.forEach(function (c) { c.disabled = true; });
-  try { await write(); toast('Na-save.'); return true; }
-  catch (e) { toast('Hindi na-save: ' + msgOf(e)); try { await revert(); } catch (e2) {} return false; }
+  try { await write(); toast('Saved.'); return true; }
+  catch (e) { toast('Not saved: ' + msgOf(e)); try { await revert(); } catch (e2) {} return false; }
   finally { ctrls.forEach(function (c) { c.disabled = false; }); }
 }
 var pendingDel = null;
@@ -647,12 +647,12 @@ $('pilotRows').addEventListener('click', async function (ev) {
   var d = ev.target.closest('[data-del]'); if (!d) return;
   var u = d.dataset.del;
   var me = (state.email || '').split('@')[0].toLowerCase();
-  if (me && u.toLowerCase() === me) return toast('Hindi mo puwedeng alisin ang sarili mong account.');
+  if (me && u.toLowerCase() === me) return toast('You cannot remove your own account.');
   if (!pendingDel || pendingDel.u !== u) {   // first click: ask to confirm for 4 seconds
-    if (pendingDel) { clearTimeout(pendingDel.timer); pendingDel.btn.textContent = 'Alisin'; }
+    if (pendingDel) { clearTimeout(pendingDel.timer); pendingDel.btn.textContent = 'Remove'; }
     var p = pendingDel = { u: u, btn: d };
-    d.textContent = 'Sigurado ka?';
-    p.timer = setTimeout(function () { d.textContent = 'Alisin'; if (pendingDel === p) pendingDel = null; }, 4000);
+    d.textContent = 'Are you sure?';
+    p.timer = setTimeout(function () { d.textContent = 'Remove'; if (pendingDel === p) pendingDel = null; }, 4000);
     return;
   }
   clearTimeout(pendingDel.timer); pendingDel = null;
@@ -660,13 +660,13 @@ $('pilotRows').addEventListener('click', async function (ev) {
 });
 $('pnAdd').onclick = async function () {
   // field usernames are the app's team name = public.my_team() (UPPERCASE of the email local part); dashboard usernames stay as typed
-  var btn = $('pnAdd'), role = $('pnRole').value, org = $('pnOrg').value, u = $('pnUser').value.trim(); if (!u) return toast('Ilagay ang username.');
+  var btn = $('pnAdd'), role = $('pnRole').value, org = $('pnOrg').value, u = $('pnUser').value.trim(); if (!u) return toast('Enter the username.');
   if (role === 'field') u = u.toUpperCase();
   btn.disabled = true;
   try {
     var rows = await api.listPilot(); state.pilot = rows;
-    if (rows.some(function (r) { return String(r.username).toLowerCase() === u.toLowerCase(); })) { toast('Nandoon na ang username.'); return; }
-  } catch (e) { toast('Hindi na-save: ' + msgOf(e)); return; }
+    if (rows.some(function (r) { return String(r.username).toLowerCase() === u.toLowerCase(); })) { toast('That username already exists.'); return; }
+  } catch (e) { toast('Not saved: ' + msgOf(e)); return; }
   finally { btn.disabled = false; }
   if (await guarded([btn, $('pnUser'), $('pnRole'), $('pnOrg')], async function () { await api.savePilot({ username: u, role: role, org: org, gate: false, active: true }); }, loadPilot)) { $('pnUser').value = ''; loadPilot(); }
 };
@@ -676,10 +676,10 @@ $('settingsRow').addEventListener('change', async function (ev) {
   if (t.type === 'checkbox') v = String(t.checked);
   else {
     var n = Number(t.value.trim());
-    if (t.value.trim() === '' || !isFinite(n)) bad = 'Dapat ay numero.';
-    else if (k === 'freshness_days' && !(Number.isInteger(n) && n >= 1 && n <= 365)) bad = 'Freshness: buong numero, 1 hanggang 365.';
-    else if (k === 'full_multiplier' && !(Number.isInteger(n) && n >= 1 && n <= 10)) bad = 'Full multiplier: buong numero, 1 hanggang 10.';
-    else if (k === 'gps_flag_m' && !(n > 0 && n <= 5000)) bad = 'GPS flag: mas mataas sa 0 at hindi lalampas ng 5000 m.';
+    if (t.value.trim() === '' || !isFinite(n)) bad = 'Must be a number.';
+    else if (k === 'freshness_days' && !(Number.isInteger(n) && n >= 1 && n <= 365)) bad = 'Freshness: whole number, 1 to 365.';
+    else if (k === 'full_multiplier' && !(Number.isInteger(n) && n >= 1 && n <= 10)) bad = 'Full multiplier: whole number, 1 to 10.';
+    else if (k === 'gps_flag_m' && !(n > 0 && n <= 5000)) bad = 'GPS flag: greater than 0 and at most 5000 m.';
     v = String(n);
   }
   if (bad) { toast(bad); t.value = prev == null ? '' : prev; return; }
@@ -689,7 +689,7 @@ $('settingsRow').addEventListener('change', async function (ev) {
 });
 
 $('exportCsv').onclick = function () {
-  if (!state.boxes.length) return toast('Hindi pa naka-load ang board.');
+  if (!state.boxes.length) return toast('The board is not loaded yet.');
   var head = ['stencil', 'barangay', 'street', 'dwelling', 'kind', 'free', 'checked', 'age_days', 'converge_available'];
   var numeric = { free: 1, checked: 1, age_days: 1, converge_available: 1 };
   function cell(h, v) {
@@ -709,8 +709,8 @@ $('exportCsv').onclick = function () {
 
 // ---------- Dispatch tab ----------
 var dp = { teams: [], preview: [], source: 'paste', fileName: '', items: [], sel: {}, agSel: {}, agShown: 50, busy: false, seq: 0, teamsErr: '' };
-var DP_REASON = { unmatched: 'hindi nahanap', duplicate: 'duplicate', already_open: 'may open na dispatch', bad_team: 'walang / maling team' };
-var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['hindi nahanap', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['may open na dispatch', 'p-issue'] };
+var DP_REASON = { unmatched: 'not found', duplicate: 'duplicate', already_open: 'already has an open dispatch', bad_team: 'missing / wrong team' };
+var DP_ST = { ok: ['ok', 'p-ok'], unmatched: ['not found', 'p-full'], duplicate: ['duplicate', 'p-issue'], already_open: ['already has an open dispatch', 'p-issue'] };
 var IT_CLS = { pending: 'p-issue', done: 'p-ok', blocked: 'p-full', cancelled: 'p-stale', unassigned: 'p-stale' };
 function ymdLocal(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function isAdminRole() { return state.role === 'admin' || state.role === 'superadmin'; }
@@ -719,19 +719,19 @@ function teamOpts(first, cur) {
 }
 function fillTeamSelects() {
   var cur = { dpTeam: $('dpTeam').value, diTeam: $('diTeam').value, diMoveTeam: $('diMoveTeam').value, agTeam: $('agTeam').value };
-  $('dpTeam').innerHTML = teamOpts('Pumili ng team', cur.dpTeam);
-  $('diTeam').innerHTML = teamOpts('Lahat', cur.diTeam);
-  $('diMoveTeam').innerHTML = teamOpts('Ilipat sa team…', cur.diMoveTeam);
-  $('agTeam').innerHTML = teamOpts('Ilagay sa team…', cur.agTeam);
+  $('dpTeam').innerHTML = teamOpts('Select a team', cur.dpTeam);
+  $('diTeam').innerHTML = teamOpts('All', cur.diTeam);
+  $('diMoveTeam').innerHTML = teamOpts('Move to team…', cur.diMoveTeam);
+  $('agTeam').innerHTML = teamOpts('Assign to team…', cur.agTeam);
 }
 async function dpOpen() {
   dp.teamsErr = '';
   try {
     var rows = await api.listPilot();
     dp.teams = rows.filter(function (r) { return r.role === 'field' && r.active; }).map(function (r) { return String(r.username).toUpperCase(); });
-  } catch (e) { dp.teams = []; dp.teamsErr = msgOf(e); toast('Hindi ma-load ang mga team: ' + dp.teamsErr); }
+  } catch (e) { dp.teams = []; dp.teamsErr = msgOf(e); toast('Cannot load the teams: ' + dp.teamsErr); }
   fillTeamSelects();
-  var te = $('dpTeamsErr'); te.hidden = !dp.teamsErr; te.innerHTML = dp.teamsErr ? 'Hindi ma-load ang listahan ng teams: ' + esc(dp.teamsErr) : '';
+  var te = $('dpTeamsErr'); te.hidden = !dp.teamsErr; te.innerHTML = dp.teamsErr ? 'Cannot load the list of teams: ' + esc(dp.teamsErr) : '';
   ['dpTeam', 'diTeam', 'diMoveTeam', 'agTeam'].forEach(function (id) { $(id).disabled = !!dp.teamsErr; });
   dp.agShown = 50;
   drawPreview(); loadItems(); drawAging(); loadGeo();
@@ -741,8 +741,8 @@ function dpSendable(r) { return r.status === 'ok' && teamValid(r.team); }
 
 // --- read a list (file / paste) ---
 function dpWarnShow(res, extra) {
-  var w = (res.warnings || []).slice(0, 10).map(function (x) { return '<div>' + esc(x) + '</div>'; }).join('') + ((res.warnings || []).length > 10 ? '<div>… at ' + ((res.warnings || []).length - 10) + ' pa</div>' : '');
-  if (res.skipped) w += '<div>' + res.skipped + ' hilera na walang stencil ang nilaktawan.</div>';
+  var w = (res.warnings || []).slice(0, 10).map(function (x) { return '<div>' + esc(x) + '</div>'; }).join('') + ((res.warnings || []).length > 10 ? '<div>… and ' + ((res.warnings || []).length - 10) + ' more</div>' : '');
+  if (res.skipped) w += '<div>' + res.skipped + ' rows without a stencil were skipped.</div>';
   if (extra) w += '<div>' + esc(extra) + '</div>';
   $('dpWarn').innerHTML = w ? '<div class="warn" style="margin-top:10px">' + w + '</div>' : '';
 }
@@ -755,12 +755,12 @@ async function dpIngest(res, source, fileName, tok) {
   dp.preview = []; dp.source = 'paste'; dp.fileName = ''; drawPreview();
   dpWarnShow(res);
   $('dpResult').innerHTML = '';
-  if (!res.rows.length) return toast('Walang nabasang stencil.');
-  if (res.rows.length > 2000) return toast('Hanggang 2000 hilera kada import. Hatiin ang listahan.');
-  $('dpReadMsg').textContent = 'Naghahanap…';
+  if (!res.rows.length) return toast('No stencils were read.');
+  if (res.rows.length > 2000) return toast('Up to 2000 rows per import. Split the list.');
+  $('dpReadMsg').textContent = 'Matching…';
   var m;
   try { m = await api.dispatchMatch(res.rows); }
-  catch (e) { if (tok === dp.seq) { $('dpReadMsg').textContent = ''; toast('Hindi ma-match: ' + msgOf(e)); } return; }
+  catch (e) { if (tok === dp.seq) { $('dpReadMsg').textContent = ''; toast('Cannot match: ' + msgOf(e)); } return; }
   if (tok !== dp.seq) return;
   $('dpReadMsg').textContent = '';
   dp.source = source; dp.fileName = fileName || '';   // set only together with the preview they describe
@@ -788,22 +788,22 @@ function dpRejectFile(msg) { $('dpFile').value = ''; toast(msg); }
 function dpFromFile(file) {
   var tok = ++dp.seq;
   var name = file.name || '', ext = (name.indexOf('.') >= 0 ? name.split('.').pop() : '').toLowerCase();
-  if (DP_EXT.indexOf(ext) < 0) return dpRejectFile('Hindi suportadong uri ng file; gamitin ang .xlsx, .csv o i-paste');
-  if (file.size > DP_MAX_BYTES) return dpRejectFile('Masyadong malaki ang file (hanggang 5 MB)');
+  if (DP_EXT.indexOf(ext) < 0) return dpRejectFile('Unsupported file type; use .xlsx, .csv or paste');
+  if (file.size > DP_MAX_BYTES) return dpRejectFile('The file is too large (up to 5 MB)');
   var rd = new FileReader();
-  rd.onerror = function () { if (tok === dp.seq) toast('Hindi mabasa ang file.'); };
+  rd.onerror = function () { if (tok === dp.seq) toast('Cannot read the file.'); };
   if (ext === 'xlsx') {
     rd.onload = async function () {
       if (tok !== dp.seq) return;
       var res;
-      try { await loadXlsx(); } catch (e) { if (tok === dp.seq) { dpRejectFile('Hindi ma-load ang Excel reader; gamitin ang CSV o i-paste'); } return; }
+      try { await loadXlsx(); } catch (e) { if (tok === dp.seq) { dpRejectFile('Cannot load the Excel reader; use CSV or paste'); } return; }
       if (tok !== dp.seq) return;
       try {
         var wb = XLSX.read(rd.result, { type: 'array' });   // no cellDates: dates arrive as Excel serials (timezone-proof)
         var ws = wb.Sheets[wb.SheetNames[0]];
-        if (ws && ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).e.r + 1 > DP_MAX_LINES) return dpRejectFile('Masyadong maraming hilera sa file (hanggang 20,000)');
+        if (ws && ws['!ref'] && XLSX.utils.decode_range(ws['!ref']).e.r + 1 > DP_MAX_LINES) return dpRejectFile('Too many rows in the file (up to 20,000)');
         res = C.parseDispatchRows(XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }));
-      } catch (e) { return toast('Hindi mabasa ang Excel file: ' + msgOf(e)); }
+      } catch (e) { return toast('Cannot read the Excel file: ' + msgOf(e)); }
       dpIngest(res, 'upload', name, tok);
     };
     rd.readAsArrayBuffer(file);
@@ -811,7 +811,7 @@ function dpFromFile(file) {
     rd.onload = function () {
       if (tok !== dp.seq) return;
       var txt = String(rd.result), lines = 1, k = -1;
-      while ((k = txt.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return dpRejectFile('Masyadong maraming linya sa file (hanggang 20,000)'); }
+      while ((k = txt.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return dpRejectFile('Too many lines in the file (up to 20,000)'); }
       dpIngest(C.parseDispatchText(txt), 'upload', name, tok);
     };
     rd.readAsText(file);
@@ -830,11 +830,11 @@ $('dpRead').onclick = function () {
     $('dpFile').value = '';
     var tok = ++dp.seq;
     var lines = 1, k = -1;
-    while ((k = t.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return toast('Masyadong maraming linya (hanggang 20,000)'); }
+    while ((k = t.indexOf('\n', k + 1)) >= 0) { if (++lines > DP_MAX_LINES) return toast('Too many lines (up to 20,000)'); }
     return dpIngest(C.parseDispatchText(t), 'paste', '', tok);
   }
   if (f) return dpFromFile(f);
-  toast('Mag-pili ng file o mag-paste ng rows.');
+  toast('Choose a file or paste rows.');
 };
 
 // --- preview + assign ---
@@ -843,29 +843,29 @@ function drawPreview() {
   $('dpPrev').hidden = !rows.length;
   var c = {}; rows.forEach(function (r) { c[r.status] = (c[r.status] || 0) + 1; });
   var noTeam = rows.filter(function (r) { return r.status === 'ok' && !r.team; }).length, badTeam = rows.filter(function (r) { return r.status === 'ok' && r.team && !teamValid(r.team); }).length;
-  $('dpSummary').textContent = rows.length + ' hilera · ' + (c.ok || 0) + ' ok · ' + (c.unmatched || 0) + ' hindi nahanap · ' + (c.duplicate || 0) + ' duplicate · ' + (c.already_open || 0) + ' may open na dispatch' + (noTeam ? ' · ' + noTeam + ' walang team' : '') + (badTeam ? ' · ' + badTeam + ' maling team' : '');
+  $('dpSummary').textContent = rows.length + ' rows · ' + (c.ok || 0) + ' ok · ' + (c.unmatched || 0) + ' not found · ' + (c.duplicate || 0) + ' duplicate · ' + (c.already_open || 0) + ' already have an open dispatch' + (noTeam ? ' · ' + noTeam + ' no team' : '') + (badTeam ? ' · ' + badTeam + ' wrong team' : '');
   $('dpPrevRows').innerHTML = rows.map(function (r) {
     var st = DP_ST[r.status] || [r.status, 'p-stale'], bad = r.status === 'ok' && r.team && !teamValid(r.team);
-    var team = !r.team ? (r.status === 'ok' ? '<span class="meta">walang team</span>' : '') : bad ? '<span class="err">' + esc(r.team) + ' (hindi aktibong field team)</span>' : esc(r.team);
+    var team = !r.team ? (r.status === 'ok' ? '<span class="meta">no team</span>' : '') : bad ? '<span class="err">' + esc(r.team) + ' (not an active field team)</span>' : esc(r.team);
     return '<tr' + (bad ? ' class="dpbad"' : '') + '><td class="stencil">' + esc(r.stencil) + (r.box && r.box !== r.stencil ? '<div class="meta">&rarr; ' + esc(r.box) + '</div>' : '') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td>' + esc(r.due) + '</td></tr>';
   }).join('');
-  var b = $('dpGo'); b.textContent = 'I-dispatch ang ' + ok + ' na tama'; b.disabled = ok === 0 || dp.busy;
+  var b = $('dpGo'); b.textContent = 'Dispatch ' + ok + ' valid'; b.disabled = ok === 0 || dp.busy;
   ['dpFile', 'dpPaste', 'dpRead'].forEach(function (id) { $(id).disabled = dp.busy; });
 }
 $('dpApplyTeam').onclick = function () {
-  var t = $('dpTeam').value; if (!t) return toast('Pumili muna ng team.');
+  var t = $('dpTeam').value; if (!t) return toast('Select a team first.');
   dp.preview.forEach(function (r) { if (!r.team) r.team = t; }); drawPreview();
 };
 $('dpApplyDue').onclick = function () {
-  var d = $('dpDue').value; if (!d) return toast('Pumili muna ng petsa.');
+  var d = $('dpDue').value; if (!d) return toast('Select a date first.');
   dp.preview.forEach(function (r) { if (!r.due) r.due = d; }); drawPreview();
 };
 $('dpClear').onclick = function () { $('dpPaste').value = ''; $('dpFile').value = ''; dpClearPreview(); };
 function skippedHtml(sk) {
   if (!sk || !sk.length) return '';
-  return '<div class="warn" style="margin-top:10px"><b>Nilaktawan (' + sk.length + '):</b>' + sk.slice(0, 50).map(function (x) { return '<div><span class="stencil">' + esc(x.stencil) + '</span>: ' + esc(DP_REASON[x.reason] || x.reason) + '</div>'; }).join('') + (sk.length > 50 ? '<div>… at ' + (sk.length - 50) + ' pa</div>' : '') + '</div>';
+  return '<div class="warn" style="margin-top:10px"><b>Skipped (' + sk.length + '):</b>' + sk.slice(0, 50).map(function (x) { return '<div><span class="stencil">' + esc(x.stencil) + '</span>: ' + esc(DP_REASON[x.reason] || x.reason) + '</div>'; }).join('') + (sk.length > 50 ? '<div>… and ' + (sk.length - 50) + ' more</div>' : '') + '</div>';
 }
-function doneToast(r) { toast('Na-dispatch ang ' + (r && r.created || 0) + '; ' + ((r && r.skipped || []).length) + ' ang nilaktawan'); }
+function doneToast(r) { toast('Dispatched ' + (r && r.created || 0) + '; ' + ((r && r.skipped || []).length) + ' skipped'); }
 $('dpGo').onclick = async function () {
   if (dp.busy) return;
   var ok = dp.preview.filter(dpSendable); if (!ok.length) return;
@@ -876,15 +876,15 @@ $('dpGo').onclick = async function () {
     dpClearPreview(); $('dpPaste').value = ''; $('dpFile').value = '';
     $('dpResult').innerHTML = skippedHtml(r && r.skipped);
     loadItems();
-  } catch (e) { toast('Hindi na-dispatch: ' + msgOf(e)); }
+  } catch (e) { toast('Not dispatched: ' + msgOf(e)); }
   finally { dp.busy = false; drawPreview(); }
 };
 
-// --- Mga dispatch ---
+// --- Dispatches ---
 async function loadItems() {
   var rows;
   try { rows = await api.listDispatchItems({ status: $('diStatus').value || undefined, team: $('diTeam').value || undefined, limit: 500 }); }
-  catch (e) { return toast('Hindi ma-load ang mga dispatch: ' + msgOf(e)); }
+  catch (e) { return toast('Cannot load the dispatches: ' + msgOf(e)); }
   var rank = { blocked: 0 };
   rows = rows.slice().sort(function (a, b) { return (rank[a.status] === 0 ? 0 : 1) - (rank[b.status] === 0 ? 0 : 1); });
   dp.items = rows; dp.sel = {}; resetCancel();
@@ -893,58 +893,58 @@ async function loadItems() {
 function drawItems() {
   var rows = dp.items, today = ymdLocal(new Date()), k = {};
   rows.forEach(function (r) {
-    var t = r.team || '(walang team)', o = k[t] || (k[t] = { p: 0, d: 0, b: 0 });
+    var t = r.team || '(no team)', o = k[t] || (k[t] = { p: 0, d: 0, b: 0 });
     if (r.status === 'pending') o.p++;
     if (r.status === 'blocked') o.b++;
     if (r.status === 'done' && r.done_at && ymdLocal(new Date(r.done_at)) === today) o.d++;
   });
   var teams = Object.keys(k).sort();
-  $('diKpi').innerHTML = teams.length ? teams.map(function (t) { return '<tr><td>' + esc(t) + '</td><td>' + k[t].p + '</td><td>' + k[t].d + '</td><td' + (k[t].b ? ' class="err"' : '') + '>' + k[t].b + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="meta">Walang dispatch.</td></tr>';
+  $('diKpi').innerHTML = teams.length ? teams.map(function (t) { return '<tr><td>' + esc(t) + '</td><td>' + k[t].p + '</td><td>' + k[t].d + '</td><td' + (k[t].b ? ' class="err"' : '') + '>' + k[t].b + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="meta">No dispatches.</td></tr>';
   $('diBlockedNote').hidden = !rows.some(function (r) { return r.status === 'blocked'; });
   $('diRows').innerHTML = rows.map(function (r) {
     var b = r.boxes || {};
-    return '<tr><td><input type="checkbox" data-it="' + esc(r.id) + '" aria-label="Piliin"' + (dp.sel[r.id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil || r.stencil_raw) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(r.team || '') + '</td><td>' + esc(r.due_date || '') + '</td><td><span class="pill ' + (IT_CLS[r.status] || 'p-stale') + '">' + esc(r.status) + '</span>' + (r.status === 'done' && r.audit && r.audit.review_status ? ' <span class="pill ' + (r.audit.review_status === 'ok' ? 'p-ok' : 'p-issue') + '">audit: ' + esc(r.audit.review_status) + '</span>' : '') + (r.note ? '<div class="meta">' + esc(r.note) + '</div>' : '') + '</td><td>' + (r.done_at ? esc(new Date(r.done_at).toLocaleString()) : '') + '</td></tr>';
-  }).join('') || '<tr><td colspan="7" class="meta">Walang dispatch.</td></tr>';
-  var n = Object.keys(dp.sel).length; $('diSelN').textContent = n ? n + ' napili' : '';
+    return '<tr><td><input type="checkbox" data-it="' + esc(r.id) + '" aria-label="Select"' + (dp.sel[r.id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil || r.stencil_raw) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(r.team || '') + '</td><td>' + esc(r.due_date || '') + '</td><td><span class="pill ' + (IT_CLS[r.status] || 'p-stale') + '">' + esc(r.status) + '</span>' + (r.status === 'done' && r.audit && r.audit.review_status ? ' <span class="pill ' + (r.audit.review_status === 'ok' ? 'p-ok' : 'p-issue') + '">audit: ' + esc(r.audit.review_status) + '</span>' : '') + (r.note ? '<div class="meta">' + esc(r.note) + '</div>' : '') + '</td><td>' + (r.done_at ? esc(new Date(r.done_at).toLocaleString()) : '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="meta">No dispatches.</td></tr>';
+  var n = Object.keys(dp.sel).length; $('diSelN').textContent = n ? n + ' selected' : '';
 }
 $('diStatus').onchange = loadItems; $('diTeam').onchange = loadItems;
 $('diRows').addEventListener('change', function (ev) {
   var id = ev.target.dataset.it; if (!id) return;
   if (ev.target.checked) dp.sel[id] = true; else delete dp.sel[id];
   resetCancel();
-  var n = Object.keys(dp.sel).length; $('diSelN').textContent = n ? n + ' napili' : '';
+  var n = Object.keys(dp.sel).length; $('diSelN').textContent = n ? n + ' selected' : '';
 });
 function selIds() { return Object.keys(dp.sel); }
 $('diMove').onclick = async function () {
   var ids = selIds(), t = $('diMoveTeam').value, btn = this;
-  if (!ids.length) return toast('Pumili muna ng dispatch.');
-  if (!t) return toast('Pumili ng team.');
+  if (!ids.length) return toast('Select a dispatch first.');
+  if (!t) return toast('Select a team.');
   btn.disabled = true;
-  try { var r = await api.dispatchAssign({ item_ids: ids, team: t, due: $('diMoveDue').value || null }); toast('Nailipat ang ' + (r && r.updated || 0) + ' (pending lang ang nalilipat)'); loadItems(); }
-  catch (e) { toast('Hindi nailipat: ' + msgOf(e)); }
+  try { var r = await api.dispatchAssign({ item_ids: ids, team: t, due: $('diMoveDue').value || null }); toast('Moved ' + (r && r.updated || 0) + ' (only pending can be moved)'); loadItems(); }
+  catch (e) { toast('Not moved: ' + msgOf(e)); }
   finally { btn.disabled = false; }
 };
 var pendingCancel = null;
 function resetCancel() {
   if (pendingCancel) { clearTimeout(pendingCancel.timer); pendingCancel = null; }
-  $('diCancel').textContent = 'Kanselahin';
+  $('diCancel').textContent = 'Cancel';
 }
 $('diCancel').onclick = async function () {
   var ids = selIds(), btn = this;
-  if (!ids.length) return toast('Pumili muna ng dispatch.');
+  if (!ids.length) return toast('Select a dispatch first.');
   if (!pendingCancel) {   // first click asks to confirm for 4 seconds (no confirm() dialog)
     var p = pendingCancel = { btn: btn };
-    btn.textContent = 'Sigurado ka? (' + ids.length + ')';
+    btn.textContent = 'Are you sure? (' + ids.length + ')';
     p.timer = setTimeout(function () { if (pendingCancel === p) resetCancel(); }, 4000);
     return;
   }
   resetCancel(); btn.disabled = true;
-  try { var r = await api.dispatchCancel({ item_ids: ids }); toast('Nakansela ang ' + (r && r.updated || 0)); loadItems(); }
-  catch (e) { toast('Hindi nakansela: ' + msgOf(e)); }
+  try { var r = await api.dispatchCancel({ item_ids: ids }); toast('Cancelled ' + (r && r.updated || 0)); loadItems(); }
+  catch (e) { toast('Not cancelled: ' + msgOf(e)); }
   finally { btn.disabled = false; }
 };
 
-// --- Aging (I-dispatch) ---
+// --- Aging (Dispatch) ---
 function agingList() {
   return visibleBoxes().filter(function (b) { return b.kind === 'stale' || b.kind === 'unverified'; }).sort(function (a, b) {
     var ua = a.kind === 'unverified', ub = b.kind === 'unverified';
@@ -957,70 +957,70 @@ function drawAging() {
   var valid = {}; all.forEach(function (b) { valid[b.box_id] = true; });
   Object.keys(dp.agSel).forEach(function (id) { if (!valid[id]) delete dp.agSel[id]; });
   $('agRows').innerHTML = shown.map(function (b) {
-    return '<tr><td><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Piliin"' + (dp.agSel[b.box_id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' araw' : 'Di pa napupuntahan') + '</td></tr>';
-  }).join('') || '<tr><td colspan="6" class="meta">Walang stale o unverified na NAP sa kasalukuyang filters.</td></tr>';
-  $('agCount').textContent = shown.length + ' sa ' + all.length;
+    return '<tr><td><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Select"' + (dp.agSel[b.box_id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="meta">No stale or unverified NAPs under the current filters.</td></tr>';
+  $('agCount').textContent = shown.length + ' of ' + all.length;
   $('agMore').hidden = shown.length >= all.length;
   $('agAll').checked = shown.length > 0 && shown.every(function (b) { return dp.agSel[b.box_id]; });
-  var n = Object.keys(dp.agSel).length; $('agSelN').textContent = n ? n + ' napili' : '';
+  var n = Object.keys(dp.agSel).length; $('agSelN').textContent = n ? n + ' selected' : '';
 }
 $('agRows').addEventListener('change', function (ev) {
   var id = ev.target.dataset.ag; if (!id) return;
-  if (ev.target.checked) { if (Object.keys(dp.agSel).length >= 500) { ev.target.checked = false; return toast('Hanggang 500 na NAP kada dispatch.'); } dp.agSel[id] = true; }
+  if (ev.target.checked) { if (Object.keys(dp.agSel).length >= 500) { ev.target.checked = false; return toast('Up to 500 NAPs per dispatch.'); } dp.agSel[id] = true; }
   else delete dp.agSel[id];
   drawAging();
 });
 $('agAll').addEventListener('change', function () {
   var on = this.checked, left = 500 - Object.keys(dp.agSel).length;
   agingList().slice(0, dp.agShown).forEach(function (b) { if (!on) delete dp.agSel[b.box_id]; else if (!dp.agSel[b.box_id] && left > 0) { dp.agSel[b.box_id] = true; left--; } });
-  if (on && left <= 0) toast('Hanggang 500 na NAP kada dispatch.');
+  if (on && left <= 0) toast('Up to 500 NAPs per dispatch.');
   drawAging();
 });
 $('agMore').onclick = function () { dp.agShown += 50; drawAging(); };
 $('agGo').onclick = async function () {
   drawAging();   // prune hidden / no-longer-stale selections before reading them
   var ids = Object.keys(dp.agSel), t = $('agTeam').value, btn = this;
-  if (!ids.length) return toast('Pumili muna ng NAP.');
-  if (ids.length > 500) return toast('Hanggang 500 na NAP kada dispatch.');
-  if (!t) return toast('Pumili ng team.');
+  if (!ids.length) return toast('Select a NAP first.');
+  if (ids.length > 500) return toast('Up to 500 NAPs per dispatch.');
+  if (!t) return toast('Select a team.');
   btn.disabled = true;
   try {
     var r = await api.dispatchFromBoxes({ box_ids: ids, team: t, due: $('agDue').value || null });
     doneToast(r); $('agResult').innerHTML = skippedHtml(r && r.skipped);
     dp.agSel = {}; drawAging(); loadItems();
-  } catch (e) { toast('Hindi na-dispatch: ' + msgOf(e)); }
+  } catch (e) { toast('Not dispatched: ' + msgOf(e)); }
   finally { btn.disabled = false; }
 };
 
 // --- Pagbabago ng lokasyon (admin/superadmin act; dispatcher reads) ---
 var GEO_CLS = { proposed: 'p-issue', moved: 'p-issue', applied: 'p-ok', accepted: 'p-ok', rejected: 'p-stale', reverted: 'p-stale' };
-function coord(la, ln) { return la == null || ln == null ? 'wala' : Number(la).toFixed(6) + ', ' + Number(ln).toFixed(6); }
+function coord(la, ln) { return la == null || ln == null ? 'none' : Number(la).toFixed(6) + ', ' + Number(ln).toFixed(6); }
 async function loadGeo() {
   var rows;
   try { rows = await api.listGeoHistory({ limit: 100 }); }
-  catch (e) { return toast('Hindi ma-load ang pagbabago ng lokasyon: ' + msgOf(e)); }
+  catch (e) { return toast('Cannot load the location changes: ' + msgOf(e)); }
   var adm = isAdminRole();
   $('geoRows').innerHTML = rows.map(function (h) {
     var acts = '';
-    if (adm && h.result === 'proposed') acts = '<button class="btn sm pri" data-geo="accept" data-h="' + esc(h.id) + '">Tanggapin</button> <button class="btn sm" data-geo="reject" data-h="' + esc(h.id) + '">Tanggihan</button>';
-    else if (adm && (h.result === 'applied' || h.result === 'moved' || h.result === 'accepted')) acts = '<button class="btn sm" data-geo="revert" data-h="' + esc(h.id) + '">I-revert</button>';
+    if (adm && h.result === 'proposed') acts = '<button class="btn sm pri" data-geo="accept" data-h="' + esc(h.id) + '">Accept</button> <button class="btn sm" data-geo="reject" data-h="' + esc(h.id) + '">Reject</button>';
+    else if (adm && (h.result === 'applied' || h.result === 'moved' || h.result === 'accepted')) acts = '<button class="btn sm" data-geo="revert" data-h="' + esc(h.id) + '">Revert</button>';
     return '<tr><td class="stencil">' + esc(h.boxes && h.boxes.stencil) + '</td><td>' + esc(coord(h.old_lat, h.old_lng)) + ' &rarr; ' + esc(coord(h.new_lat, h.new_lng)) + '</td><td>' + (h.distance_m == null ? '' : esc(Math.round(h.distance_m)) + ' m') + '</td><td>' + (h.accuracy_m == null ? '' : esc(Math.round(h.accuracy_m)) + ' m') + '</td><td><span class="pill ' + (GEO_CLS[h.result] || 'p-stale') + '">' + esc(h.result) + '</span></td><td>' + esc(new Date(h.created_at).toLocaleString()) + '</td><td>' + acts + '</td></tr>';
-  }).join('') || '<tr><td colspan="7" class="meta">Wala pang pagbabago ng lokasyon.</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="meta">No location changes yet.</td></tr>';
 }
 $('geoRows').addEventListener('click', async function (ev) {
   var b = ev.target.closest('[data-geo]'); if (!b || !isAdminRole()) return;
   var act = b.dataset.geo;
   if (act === 'revert' || act === 'reject') {   // inline double-click confirm (4 s window), no confirm() dialog
     if (b.dataset.armed !== '1') {
-      b.dataset.armed = '1'; b.dataset.label = b.textContent; b.textContent = 'Sigurado ka?';
+      b.dataset.armed = '1'; b.dataset.label = b.textContent; b.textContent = 'Are you sure?';
       b._armTimer = setTimeout(function () { if (b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = b.dataset.label; } }, 4000);
       return;
     }
     clearTimeout(b._armTimer); b.dataset.armed = '';
   }
   b.disabled = true;
-  try { await api.geoReview({ history_id: b.dataset.h, action: b.dataset.geo }); toast('Na-save.'); await loadGeo(); loadAll(); }
-  catch (e) { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; toast('Hindi na-save: ' + msgOf(e)); }
+  try { await api.geoReview({ history_id: b.dataset.h, action: b.dataset.geo }); toast('Saved.'); await loadGeo(); loadAll(); }
+  catch (e) { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; toast('Not saved: ' + msgOf(e)); }
 });
 
 boot();
