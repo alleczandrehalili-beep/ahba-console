@@ -89,6 +89,7 @@
       listDeductions: function (pid) { return ok(h().from('deductions').select('*').eq('period_id', pid)); },
       saveDeduction: function (d) { return rpc('save_deduction', { p: d }); },
       lockPeriod: function (id) { return rpc('lock_period', { p_period: id }); }, reopenPeriod: function (id, r) { return rpc('reopen_period', { p_period: id, p_reason: r }); },
+      periodStale: function (pid) { return rpc('period_stale', { p_period: pid }); },
       contributionReport: function (ym) { return rpc('contribution_report', { p_ym: ym }); }, attendanceSummary: function (ym) { return rpc('attendance_summary', { p_ym: ym }); },
       // Amendment 4: manual monthly basis (Group B / no locked lines) → definer RPC that upserts the ledger row (basis_source 'manual') and refuses a deducted month
       setLedgerBasis: function (eid, ym, basis) { return rpc('set_ledger_basis', { p_emp: eid, p_ym: ym, p_basis: basis }); },

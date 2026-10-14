@@ -249,10 +249,33 @@
     var patch = {}; patch[key] = key === 'remarks' ? raw : Number(raw.replace(/,/g, '')) || 0;
     return api.setLine(id, patch);
   }
+  // The server hands back the row it just recomputed — hr.set_ledger_basis returns the whole
+  // contribution_ledger row, hr.set_line the whole payroll line with gross/total_deductions/net redone.
+  // Patching that one row into the cache is therefore not an optimisation, it is using the answer we
+  // already have instead of asking for all 106 again. Returns a new array: the tabs render from the
+  // cache, and a mutated cache would make a stale render indistinguishable from a fresh one.
+  function patchRows(rows, row, key, removeKey) {
+    var out = (rows || []).slice();
+    if (row == null) { return out.filter(function (x) { return x[key] !== removeKey; }); }
+    var i = out.findIndex(function (x) { return x[key] === row[key]; });
+    if (i < 0) { out.push(row); return out; }
+    out[i] = Object.assign({}, out[i], row);
+    return out;
+  }
+  // The verdict is informational: it decides whether a banner appears, never whether a write worked.
+  // Until the migration lands hr.period_stale does not exist and this rejects (PGRST202), so a failure
+  // here resolves to null — no banner — instead of making a save that SUCCEEDED look like it failed.
+  // It can neither reject nor throw: a synchronous throw or a non-thenable return from periodStale is
+  // caught by the same chain, so it cannot reach a save's .catch(fail) either.
+  function staleOf(api, pid) {
+    if (typeof api.periodStale !== 'function') return Promise.resolve(null);
+    return Promise.resolve().then(function () { return api.periodStale(pid); })
+      .then(function (st) { return st; }, function () { return null; });
+  }
   function mount(rootEl, o) {
     var api = o.api, user = o.user || {}, deps = o.deps || {}, canEdit = deps.canEdit !== false;
     var toast = deps.toast || function (m) { console.log('[hr]', m); };
-    var S = { tab: 'periods', me: null, periods: [], period: null, employees: [], holidays: [], settings: null, logs: [], unmatched: [], lines: [], loans: [], filter: { q: '', dept: '', flags: false }, sel: {}, val: { date: yesterdayManila(), unv: false }, valLogs: [] };
+    var S = { tab: 'periods', me: null, periods: [], period: null, employees: [], holidays: [], settings: null, logs: [], unmatched: [], lines: [], loans: [], repRows: null, stale: null, staleTok: 0, filter: { q: '', dept: '', flags: false }, sel: {}, val: { date: yesterdayManila(), unv: false }, valLogs: [] };
     if (!document.getElementById('hrCss')) { var st = document.createElement('style'); st.id = 'hrCss'; st.textContent = CSS; document.head.appendChild(st); }
     rootEl.innerHTML = '<div class="hr"><div class="hr-tabs" id="hrTabs"></div><div id="hrBody"></div></div>';
     var $ = function (s) { return rootEl.querySelector(s); };
@@ -289,6 +312,50 @@
     // this (hr.can_edit_rates, HR Manager by default); the console only reflects it.
     function rateEditOK() { return !!(S.me && S.me.can_edit_rates) && !ro(); }
     var TABS = {};
+    // D2: when an input moved after the last Compute, say so where the money is read. The verdict is
+    // hr.period_stale's — the same one hr.lock_period refuses on — so it is true for every viewer and
+    // survives a reload. It stays dark until that migration is applied (staleOf resolves to null).
+    // refresh() RE-READS it rather than clearing it (a freshly computed week answers stale:false), and it is
+    // ignored when it belongs to another week.
+    // One predicate for "the week on screen has not caught up": the banner and the export/print gate both use it,
+    // so a week that shows the warning is exactly the week whose paper is gated, and another week's verdict gates nothing.
+    // Verdicts can outrun one another: a ↻ read issued before a cell save commits can land after it, and
+    // switching the week can pair a verdict with another week's rows. So every request takes a ticket, and
+    // only the latest ticket, still asking about the week on screen, may write S.stale — the shape of guard
+    // the Reports month race already uses. A result that loses is dropped, never applied: going dark is what
+    // disarms the export gate, and that must not happen by accident.
+    function staleRead(pid) {
+      var tok = ++S.staleTok;
+      if (!pid) { S.stale = null; return Promise.resolve(null); }
+      return staleOf(api, pid).then(function (st) {
+        if (tok !== S.staleTok || !S.period || S.period.id !== pid) return S.stale;
+        S.stale = st; return st;
+      });
+    }
+    function staleHere() {
+      if (!S.stale || !S.period || S.stale.period_id !== S.period.id) return false;
+      // hr.invalidate_ledger_periods reopens a computed week and NULLS its computed_at whenever a monthly
+      // basis is encoded (eighty of them in one sitting), and it leaves hr.payroll_lines untouched — so the
+      // week answers never_computed while the Register still shows, exports and prints a full gross and net.
+      // "computed_at cleared under a week that has money" is therefore a warning state. A week that was
+      // never computed and has no lines shows no money at all, so it stays silent. The lines are already in
+      // hand: asking the server per encode is exactly the refetch this slice removed.
+      if (S.stale.never_computed) return S.lines.length > 0;
+      return !!S.stale.stale;
+    }
+    // Why the week is behind, in one place, so the banner and the export gate cannot word it differently.
+    // An invalidated week names no input at all (reasons is empty), where " changed after the last Compute"
+    // would have read as a bug rather than as a warning.
+    function staleWhy() {
+      var rs = (S.stale && S.stale.reasons || []).filter(Boolean);
+      return rs.length ? rs.join(', ') + ' changed after the last Compute' : 'the week was reopened after its last Compute';
+    }
+    function staleBanner() {
+      if (!staleHere()) return '';
+      return '<div class="hr-warn">' +
+        '<b>Hindi pa nakuwenta ang linggong ito.</b> ' + esc(staleWhy()) +
+        ' — press Compute (on the Register or Allowance tab) to update the pay.</div>';
+    }
 
     function loadMe() { return api.me().then(function (m) { S.me = m; if (valOnly()) S.tab = 'validate';
       return typeof api.integrationCapabilities === 'function' ? api.integrationCapabilities() : null;
@@ -312,7 +379,14 @@
         if (r.recomputed) return api.listPeriods().then(function (periods) { S.periods = periods; S.period = periods.find(function (p) { return p.id === S.period.id; }) || S.period; });
       });
     }
-    function refresh() { return loadMe().then(loadBase).then(loadPeriodData).then(render).catch(fail); }
+    // refresh() is the whole-page reload, and it is where roughly twenty-eight writes end — including
+    // api.setLog, markPresent, moveLog, buildLogs, verifyLogs, resolveUnmatched, saveEmployee (a daily rate),
+    // saveSettings (the minimum wage) and the employee delete / restore, every one of which makes the week
+    // MORE stale. It used to clear S.stale, so one of those writes took the banner down and DISARMED the
+    // export gate at the moment the week fell further behind. It reads the verdict instead: the four Compute
+    // call sites that also end here get their banner cleared because a computed week answers stale:false,
+    // not because this function assumed it. One RPC on a function that already does several reads.
+    function refresh() { return loadMe().then(loadBase).then(loadPeriodData).then(function () { return staleRead(S.period && S.period.id); }).then(render).catch(fail); }
     function render() { renderTabs(); (TABS[S.tab] || TABS[valOnly() ? 'validate' : 'periods'])(); if (o.onBadge && !valOnly()) o.onBadge(S.unmatched.length); }
     function renderTabs() {
       var MONEY_TABS = { register: 1, allowance: 1, deductions: 1, newpay: 1 };
@@ -330,6 +404,27 @@
     function computedGroup() { return S.settings && S.settings.computed_group ? String(S.settings.computed_group) : C.DEFAULT_SETTINGS.computed_group; }
     function periodSelect() { return '<select id="hrPer">' + S.periods.map(function (p) { return '<option value="' + p.id + '"' + (S.period && S.period.id === p.id ? ' selected' : '') + '>' + esc(periodLabel(p)) + ' · ' + esc(p.status) + '</option>'; }).join('') + '</select>'; }
     function bindPeriodSelect() { var s = $('#hrPer'); if (s) s.onchange = function () { S.period = S.periods.find(function (p) { return p.id === s.value; }); loadPeriodData().then(render).catch(fail); }; }
+    // The one trigger for re-reading (owner 2026-10-14: nothing refreshes by itself, the user asks). Register, Allowance, Deductions and
+    // Reports each put this button in their bar; only one tab is on screen at a time, so one id cannot collide. On the three period tabs the
+    // week's rows and the staleness verdict are read together, or the banner would keep showing a verdict from minutes ago. These tabs stay
+    // on screen while the read runs, so a failed read re-enables the button: a dead button would leave no way to retry.
+    // It reads the BASE too (periods, employees, settings, unmatched, locked ranges), not only the week's lines
+    // and logs — "it re-reads everything", as the trigger's own title promises. The period's STATUS decides the
+    // chip, the Lock button and whether the yellow cells are editable at all; S.employees decides which roster
+    // members are listed as awaiting Compute (Register) and who has a row (Allowance / Deductions); S.settings
+    // carries the computed group and the per-deployment allowance rate the Allowance tab prints. Without the base
+    // read, a week someone else had LOCKED kept its computed chip, its Lock button and its editable cells however
+    // many times this was pressed — until the whole page was reloaded.
+    var REREAD = '<button class="hr-btn" id="hrReread" title="Read every value again from the server — for when someone else has edited, or after a Compute">↻ Update values</button>';
+    function bindReread() {
+      var rr = $('#hrReread'); if (!rr) return;
+      rr.onclick = function () {
+        rr.disabled = true;
+        loadBase().then(loadPeriodData).then(function () { return staleRead(S.period && S.period.id); })
+          .then(function () { render(); })
+          .catch(function (e) { rr.disabled = false; fail(e); });
+      };
+    }
 
     // ---------- Periods ----------
     TABS.periods = function () {
@@ -884,7 +979,7 @@
       $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span><span style="font-size:11px;color:#8a9894">week ' + p.week_of_month + ' · contributions for ' + esc(C.contributionMonth(p.pay_date)) + '</span>' +
         (unv.length && !locked ? '<button class="hr-btn" id="rUnv" title="Open the Validate tab on the first unverified date' + (S.settings && S.settings.lock_requires_verified ? ' — Lock is refused until every log is verified' : '') + '"><span class="hr-chip computed">' + unv.length + ' unverified</span></button>' : '') +
         (ro() ? '' : (locked ? '<button class="hr-btn d" id="rReopen">Reopen…</button>' : '<button class="hr-btn p" id="rCompute">⟳ Compute</button>' + (p.status === 'computed' ? '<button class="hr-btn d" id="rLock">🔒 Lock</button><span style="font-size:11px;color:#8a9894">Lock is refused if anything changed since the last Compute.</span>' : ''))) +
-        '<button class="hr-btn" id="rXlsx" title="Export every computed line in the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>⬇ Excel · full register' + (locked ? '' : ' (DRAFT)') + '</button><button class="hr-btn" id="rSlips" title="Print eligible payslips from the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>🖨 Payslips · full register</button></div>' +
+        '<button class="hr-btn" id="rXlsx" title="Export every computed line in the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>⬇ Excel · full register' + (locked ? '' : ' (DRAFT)') + '</button><button class="hr-btn" id="rSlips" title="Print eligible payslips from the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>🖨 Payslips · full register</button>' + REREAD + '</div>' +
         (S.unmatched.length && !locked ? '<div class="hr-warn">⚑ ' + S.unmatched.length + ' unmatched crew names — their days are NOT in this register yet.</div>' : '') +
         '<h3>Full-register totals <span class="mut">· ' + S.lines.length + ' computed line(s)</span></h3>' + summary(view.full_totals) +
         (view.awaiting_compute ? '<p class="mut">' + view.awaiting_compute + ' active roster member(s) awaiting Compute. Their amounts are blank until a payroll line is computed.</p>' : '') +
@@ -896,7 +991,7 @@
           totalRow('Visible-section subtotal', view.visible_totals) + totalRow('Full-register totals · all computed lines', view.full_totals) + '</tbody></table></div>' : '<p>' + (S.regQ.trim() ? 'No search matches in this section. Check the other section’s match count.' : 'No employees in this section. Check the other section for the rest of the roster.') + '</p>') +
         '</div><p class="mut">Excel and payslips use the full register across both sections. Payslips retain the usual eligibility rules.</p>' +
         (S.lines.length ? '<p style="font-size:11px;color:#8a9894">Yellow cells are editable (Enter / click away to save); an orange bar marks a manually edited cell that recompute will keep. Loan columns are computed from Employees → Loans (add / stop / change amortisation there), never typed here.</p>' : '<p>No computed lines yet — click <b>Compute</b>.</p>') + '</div>';
-      bindPeriodSelect();
+      bindPeriodSelect(); bindReread();
       rootEl.querySelectorAll('[data-reg-view]').forEach(function (b) { b.onclick = function () { S.regView = b.dataset.regView; TABS.register(); }; });
       $('#rQ').oninput = function () {
         S.regQ = this.value; var start = this.selectionStart, end = this.selectionEnd;
@@ -906,8 +1001,15 @@
       var cb = $('#rCompute'); if (cb) cb.onclick = function () { cb.disabled = true; api.computePeriod(p.id).then(function (r) { toast(r.lines + ' lines computed' + (r.ignored_out_of_window ? ' · ' + r.ignored_out_of_window + ' log(s) ignored — outside the employment window' : '')); return refresh(); }).catch(fail); };
       var lb = $('#rLock'); if (lb) lb.onclick = function () { if (!confirm('Lock ' + periodLabel(p) + '?\nLoan balances will be reduced and payslips finalised. Reopen needs a reason.')) return; api.lockPeriod(p.id).then(function () { toast('Locked'); return refresh(); }).catch(fail); };
       var rb = $('#rReopen'); if (rb) rb.onclick = function () { var why = prompt('Reason for reopening ' + periodLabel(p) + ':'); if (!why) return; api.reopenPeriod(p.id, why).then(function () { toast('Reopened'); return refresh(); }).catch(fail); };
-      $('#rXlsx').onclick = function () { exportXlsx(p, S.lines, S.logs).catch(fail); };
-      $('#rSlips').onclick = function () { printPayslips(p, S.lines); };
+      // D2: a figure that has not caught up must not leave the screen looking final. This is where an old number
+      // reaches paper, and paper is what people get paid against. Dark until hr.period_stale exists (S.stale is null).
+      function staleGate(what) {
+        if (!staleHere()) return true;
+        return confirm('Hindi pa nakuwenta ang linggong ito (' + staleWhy() +
+          ').\n\nThe ' + what + ' will carry figures that are not final. Continue anyway?');
+      }
+      $('#rXlsx').onclick = function () { if (staleGate('Excel export')) exportXlsx(p, S.lines, S.logs).catch(fail); };
+      $('#rSlips').onclick = function () { if (staleGate('payslips')) printPayslips(p, S.lines); };
       rootEl.querySelectorAll('td[contenteditable]').forEach(function (td) {
         var orig = td.textContent;
         td.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); td.blur(); } if (e.key === 'Escape') { td.textContent = orig; td.blur(); } };
@@ -925,7 +1027,17 @@
             }).then(refresh).catch(function (e) { fail(e); });
             return;
           }
-          request.then(function () { return loadPeriodData(); }).then(render).catch(function (e) { td.textContent = orig; fail(e); });
+          // hr.set_line recomputes gross, total_deductions and net for THIS line and returns the whole
+          // row, so the register redraws from it instead of refetching the week's lines AND logs and
+          // re-rendering every tab for one typed cell.
+          // A restore is different and must not be patched: hr.restore_automatic_allowance also returns
+          // a payroll line, but it runs compute_week for the WHOLE period, so every line may have moved —
+          // redrawing only this one would leave the rest of the week showing pre-recompute figures.
+          var isRestore = (k === 'allowance' && registerAllowanceEdit(raw).restore);
+          request.then(function (line) {
+            if (!isRestore && line && line.id) { S.lines = patchRows(S.lines, line, 'id'); TABS.register(); }
+            else { return loadPeriodData().then(render); }
+          }).catch(function (e) { td.textContent = orig; fail(e); });
         };
       });
     };
@@ -1002,12 +1114,12 @@
         $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
           '<span class="mut">₱' + money(rate) + ' per qualifying two-person deployment · ' + rows.length + ' manual amount(s)</span>' +
           (act ? '<button class="hr-btn p" id="alwCompute">⟳ Compute allowances</button><button class="hr-btn" id="alwCopy" title="Fill blank manual amounts from the previous period">⧉ Copy manual amounts from previous period</button>' : '') +
-          (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + '</div>' +
+          (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + REREAD + '</div>' + staleBanner() +
           (view.stale ? '<div class="hr-warn">Dispatch evidence changed. Compute the draft to update Register and payslips; explicit manual overrides remain.</div>' : '') +
           '<div class="hr-scroll"><table class="hr-t"><thead><tr><th>No.</th><th>Employee</th><th class="r">Recorded deployments</th><th class="r">Legacy / HR days</th><th class="r">Automatic allowance</th><th class="r">Manual amount</th><th>Note</th><th class="r">Allowance</th><th>Deployment evidence</th></tr></thead><tbody>' + body +
           '<tr style="font-weight:800"><td></td><td>TOTAL · ' + emps.length + ' employees</td><td class="r">' + tot.deployments + '</td><td class="r">' + tot.legacy_days + '</td><td class="r">' + money(tot.automatic) + '</td><td class="r">' + money(tot.manual) + '</td><td></td><td class="r">' + money(tot.total) + '</td><td></td></tr></tbody></table></div>' +
           '<p class="mut">A two-person driver earns ₱' + money(rate) + ' for each unique recorded deployment with attendance evidence; three-person crews earn zero automatically. Several work orders on one trip count once. Older daily declarations and historical solo / HR driver decisions stay separate because they cannot establish trip multiplicity. Manual amounts add per period; an explicit Register override, including zero, remains until <b>Use automatic</b>. Compute refreshes drafts without approving attendance.</p></div>';
-        bindPeriodSelect();
+        bindPeriodSelect(); bindReread();
         var compute = $('#alwCompute'); if (compute) compute.onclick = function () { compute.disabled = true; api.computePeriod(p.id).then(refresh).catch(fail); };
         rootEl.querySelectorAll('[data-alw-auto]').forEach(function (b) { b.onclick = function () { b.disabled = true; api.restoreAutomaticAllowance(b.dataset.alwAuto).then(refresh).catch(fail); }; });
         rootEl.querySelectorAll('td[data-alw]').forEach(function (td) {
@@ -1017,7 +1129,11 @@
             var raw = td.textContent.trim(); if (raw === orig) return;
             var cur = byEmp[td.dataset.alw] || {}, patch = { period_id: p.id, employee_id: td.dataset.alw, amount: Number(cur.amount) || 0, note: cur.note || null };
             if (td.dataset.k === 'amount') patch.amount = Number(raw.replace(/,/g, '')) || 0; else patch.note = raw || null;
-            api.saveAllowance(patch).then(function () { return loadPeriodData(); }).then(function () { TABS.allowance(); }).catch(fail);
+            // hr.save_allowance writes an allowances row; only compute_week folds it into the line, so
+            // the week becomes "not computed yet" rather than being recomputed behind one typed cell.
+            api.saveAllowance(patch).then(function () {
+              return staleRead(p.id);
+            }).then(function () { TABS.allowance(); }).catch(fail);
           };
         });
         var cp = $('#alwCopy'); if (cp) cp.onclick = function () {
@@ -1027,7 +1143,7 @@
           api.listAllowances(prev.id).then(function (old) {
             var todo = old.filter(function (r) { return Number(r.amount) > 0 && !(Number((byEmp[r.employee_id] || {}).amount) > 0) && emps.some(function (e) { return e.id === r.employee_id; }); });   // blanks only, active employees only
             return Promise.all(todo.map(function (r) { return api.saveAllowance({ period_id: p.id, employee_id: r.employee_id, amount: Number(r.amount), note: (byEmp[r.employee_id] || {}).note || r.note || null }); })).then(function () { return todo.length; });
-          }).then(function (n) { toast(n ? n + ' manual amount' + (n === 1 ? '' : 's') + ' copied from ' + periodLabel(prev) : 'Nothing to copy — previous period has no manual amounts for blank rows'); return loadPeriodData(); }).then(function () { TABS.allowance(); }).catch(fail);
+          }).then(function (n) { toast(n ? n + ' manual amount' + (n === 1 ? '' : 's') + ' copied from ' + periodLabel(prev) : 'Nothing to copy — previous period has no manual amounts for blank rows'); return n ? staleRead(p.id) : null; }).then(function () { TABS.allowance(); }).catch(fail);
         };
       }).catch(fail);
     };
@@ -1059,11 +1175,11 @@
         $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
           '<span style="font-size:11px;color:#8a9894">week ' + p.week_of_month + ' · ' + rows.length + ' row' + (rows.length === 1 ? '' : 's') + ' typed</span>' +
           (act ? '<button class="hr-btn" id="dedCopy" title="Fill blank rows from the previous period">⧉ Copy from previous period</button>' : '') +
-          (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + '</div>' +
+          (locked ? '<span class="hr-chip locked">🔒 locked — read only</span>' : '') + REREAD + '</div>' + staleBanner() +
           '<div class="hr-scroll"><table class="hr-t"><thead><tr><th>No.</th><th>Employee</th><th class="r" title="this week\'s amortisation of active cash-advance loans (Employees → Loans)">Scheduled CA</th><th class="r">Cash advance</th><th class="r" title="this week\'s amortisation of active company loans (Employees → Loans)">Scheduled company loan</th><th class="r">Company loan</th><th class="r">Others</th><th>Note</th><th class="r">Total</th></tr></thead><tbody>' + body +
           '<tr style="font-weight:800"><td></td><td>TOTAL · ' + emps.length + ' employees</td><td class="r">' + money(tot.sca) + '</td><td class="r">' + money(tot.ca) + '</td><td class="r">' + money(tot.scl) + '</td><td class="r">' + money(tot.cl) + '</td><td class="r">' + money(tot.oth) + '</td><td></td><td class="r">' + money(tot.total) + '</td></tr></tbody></table></div>' +
           '<p style="font-size:11px;color:#8a9894">Scheduled amounts come from Employees → Loans; type one-off amounts here. Yellow cells are editable (Enter / click away to save) · amounts are per period · <b>Compute</b> on the Register adds scheduled + typed into CASH ADVANCE / COMPANY LOAN and takes Others as OTHERS (a hand-typed Register OTHERS cell still overrides).</p></div>';
-        bindPeriodSelect();
+        bindPeriodSelect(); bindReread();
         rootEl.querySelectorAll('td[data-ded]').forEach(function (td) {
           var orig = td.textContent;
           td.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); td.blur(); } if (ev.key === 'Escape') { td.textContent = orig; td.blur(); } };
@@ -1071,7 +1187,9 @@
             var raw = td.textContent.trim(); if (raw === orig) return;
             var cur = byEmp[td.dataset.ded] || {}, patch = { period_id: p.id, employee_id: td.dataset.ded, cash_advance: Number(cur.cash_advance) || 0, company_loan: Number(cur.company_loan) || 0, others: Number(cur.others) || 0, note: cur.note || null };
             if (td.dataset.k === 'note') patch.note = raw || null; else patch[td.dataset.k] = Number(raw.replace(/,/g, '')) || 0;
-            api.saveDeduction(patch).then(function () { return loadPeriodData(); }).then(function () { TABS.deductions(); }).catch(fail);
+            api.saveDeduction(patch).then(function () {
+              return staleRead(p.id);
+            }).then(function () { TABS.deductions(); }).catch(fail);
           };
         });
         var cp = $('#dedCopy'); if (cp) cp.onclick = function () {
@@ -1082,7 +1200,7 @@
           api.listDeductions(prev.id).then(function (old) {
             var todo = old.filter(function (x) { return any(x) && !(byEmp[x.employee_id] && any(byEmp[x.employee_id])) && emps.some(function (e) { return e.id === x.employee_id && e.active; }); });   // blanks only, active employees only
             return Promise.all(todo.map(function (x) { return api.saveDeduction({ period_id: p.id, employee_id: x.employee_id, cash_advance: Number(x.cash_advance) || 0, company_loan: Number(x.company_loan) || 0, others: Number(x.others) || 0, note: (byEmp[x.employee_id] || {}).note || x.note || null }); })).then(function () { return todo.length; });
-          }).then(function (n) { toast(n ? n + ' row' + (n === 1 ? '' : 's') + ' copied from ' + periodLabel(prev) : 'Nothing to copy — previous period has no amounts for blank rows'); return loadPeriodData(); }).then(function () { TABS.deductions(); }).catch(fail);
+          }).then(function (n) { toast(n ? n + ' row' + (n === 1 ? '' : 's') + ' copied from ' + periodLabel(prev) : 'Nothing to copy — previous period has no amounts for blank rows'); return n ? staleRead(p.id) : null; }).then(function () { TABS.deductions(); }).catch(fail);
         };
       }).catch(fail);
     };
@@ -1234,14 +1352,36 @@
       }).catch(fail);
     }
     // ---------- Reports ----------
-    TABS.reports = function () {
+    // The month the Reports tab is showing right now. One rule, read by TABS.reports to pick its month and by
+    // the in-flight save handlers to ask whether that month has moved since they started.
+    function repMonthNow() { return S.repMonth || (S.period ? C.contributionMonth(S.period.pay_date) : new Date().toISOString().slice(0, 7)); }
+    // `cached` lets an edit re-draw from rows we already hold. No caller passes an event (checked: every
+    // call site is `TABS.reports()`), so the extra parameter is safe.
+    TABS.reports = function (cached) {
       var MONEY_REPS = { contrib: 1, m13: 1, loans: 1, set: 1 };   // rates gate: Mandatory summary / 13th month / Loan balances / Settings (multipliers, rate viewers) are money
       S.rep = S.rep || (ratesOK() ? 'contrib' : 'att'); if (!ratesOK() && MONEY_REPS[S.rep]) S.rep = 'att';
-      var ym = S.repMonth || (S.period ? C.contributionMonth(S.period.pay_date) : new Date().toISOString().slice(0, 7));
+      var ym = repMonthNow();
       $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + [['contrib', 'Mandatory summary (SSS · PHIC · Pag-IBIG)'], ['m13', '13th month'], ['loans', 'Loan balances'], ['att', 'Attendance summary'], ['hol', 'Holiday calendar'], ['set', 'Settings'], ['audit', 'Audit log']].filter(function (r) { return ratesOK() || !MONEY_REPS[r[0]]; }).map(function (r) { return '<button class="hr-btn' + (S.rep === r[0] ? ' p' : '') + '" data-rep="' + r[0] + '">' + r[1] + '</button>'; }).join('') + '<input type="month" id="repM" value="' + esc(ym) + '"' + (S.rep === 'contrib' || S.rep === 'att' ? '' : ' hidden') + '>' +
-        (S.rep === 'm13' ? '<input type="number" id="repY" min="2020" max="2099" style="width:80px" value="' + esc(S.repYear || ym.slice(0, 4)) + '"><label title="Also count computed-but-unlocked weeks (marked d)"><input type="checkbox" id="repDraft"' + (S.repDraft ? ' checked' : '') + '> include unlocked weeks</label>' : '') + '</div><div id="repBody">Loading…</div></div>';
-      rootEl.querySelectorAll('[data-rep]').forEach(function (b) { b.onclick = function () { S.rep = b.dataset.rep; TABS.reports(); }; });
+        REREAD + (S.rep === 'm13' ? '<input type="number" id="repY" min="2020" max="2099" style="width:80px" value="' + esc(S.repYear || ym.slice(0, 4)) + '"><label title="Also count computed-but-unlocked weeks (marked d)"><input type="checkbox" id="repDraft"' + (S.repDraft ? ' checked' : '') + '> include unlocked weeks</label>' : '') + '</div><div id="repBody">Loading…</div></div>';
+      // Coming back to the Mandatory summary is not a request to re-read it (owner 2026-10-14: only ↻ re-reads),
+      // and S.repRows is this month's rows — asking for all ~106 again would undo the point of the cache.
+      rootEl.querySelectorAll('[data-rep]').forEach(function (b) { b.onclick = function () { S.rep = b.dataset.rep; TABS.reports(S.rep === 'contrib' ? S.repRows : null); }; });
       $('#repM').onchange = function () { S.repMonth = this.value; TABS.reports(); };
+      // A real read: no cache is passed, so TABS.reports asks the server. S.repRows is left alone on purpose —
+      // not as a safety argument (either order is possible: a save still in flight can patch the cache and this
+      // read then lands over it, and a read issued first can land after the patch and redraw the pre-save basis
+      // under a "Basic pay saved" toast), but because clearing it would make an in-flight save's patchRows(null, …)
+      // draw a one-row report. Both orders end with the server's own figures once this read lands.
+      // `this.disabled = true` guarded nothing: TABS.reports() replaces #hrBody synchronously, so the button being
+      // clicked is thrown away and a fresh ENABLED one drawn in its place — two quick clicks meant two
+      // contribution_report reads racing into the same table. The flag outlives the redraw; the read clears it,
+      // on success and on failure alike, so the "Could not load" card's Try again still works.
+      $('#hrReread').onclick = function () {
+        if (S.repBusy) return;
+        if (S.rep === 'contrib') S.repBusy = true;   // the only report kind with a read heavy enough to collide with
+        TABS.reports();
+        var fresh = $('#hrReread'); if (fresh) fresh.disabled = S.repBusy;
+      };
       var ry = $('#repY'); if (ry) ry.onchange = function () { S.repYear = this.value; TABS.reports(); }; var rd = $('#repDraft'); if (rd) rd.onchange = function () { S.repDraft = this.checked; TABS.reports(); };
       var body = $('#repBody');
       function xlsx(name, aoa) { var ensure = deps.ensureXLSX ? deps.ensureXLSX() : Promise.resolve(); ensure.then(function () { var X = root.XLSX, wb = X.utils.book_new(); X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(aoa), 'Sheet1'); X.writeFile(wb, name + '.xlsx'); }).catch(fail); }
@@ -1257,7 +1397,10 @@
       //   removed); clearing the cell = the same reset. SSS EE / PHIC EE / Pag-IBIG EE cells → a fixed contribution override for that employee & kind (employee_amount fixed,
       //   employer_amount null = auto, or the existing fixed ER pair kept) saved through saveOverride (update the effective row the report carries in r.overrides[kind], else insert) + recomputeLedger; clearing
       //   soft-deletes the override and recomputes. Overridden cells: yellow + orange bar like the Register. Once deducted_in_period_id is set the row is read-only (🔒).
-      if (S.rep === 'contrib') api.contributionReport(ym).then(function (rows) {
+      if (S.rep === 'contrib') (cached ? Promise.resolve(cached) : api.contributionReport(ym)).then(function (rows) {
+        S.repRows = rows;
+        // the ↻ trigger disabled the button it drew for the duration of this read; the read has landed
+        S.repBusy = false; if (S.tab === 'reports') { var rrBtn = $('#hrReread'); if (rrBtn) rrBtn.disabled = false; }
         var MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
         var monthLabel = MONTHS[+ym.slice(5, 7) - 1] + '-' + ym.slice(0, 4), cg = computedGroup(), act = !ro();
         function nameOf(r) { var n = r.last_name && r.first_name ? r.last_name + ', ' + r.first_name : (r.display_name || ''); return r.status_tag ? n + ' [' + r.status_tag + ']' : n; }
@@ -1311,7 +1454,8 @@
           sections +
           '<tr style="font-weight:800"><td></td><td>TOTAL' + (grp ? ' · ' + esc(grp) : '') + '</td>' + KEYS.map(function (k) { return cell(t[k]); }).join('') + '<td></td></tr>' +
           '<tr style="font-weight:800"><td></td><td colspan="12">SSS ₱' + money(t.sss) + ' · PHIC ₱' + money(t.phic) + ' · Pag-IBIG ₱' + money(t.hdmf) + '</td></tr></tbody></table></div>';
-        $('#repG').onchange = function () { S.repGroup = this.value; TABS.reports(); };
+        // a group filter is a view of rows already in hand, not a reason to read all ~106 again
+        $('#repG').onchange = function () { S.repGroup = this.value; TABS.reports(S.repRows); };
         rootEl.querySelectorAll('td[data-basis]').forEach(function (td) {
           var orig = td.textContent;
           td.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); td.blur(); } if (ev.key === 'Escape') { td.textContent = orig; td.blur(); } };
@@ -1319,12 +1463,28 @@
             var raw = td.textContent.trim(); if (raw === orig) return;
             if (raw === '') { var row = rows.find(function (x) { return x.employee_id === td.dataset.basis; }); if (!row || row.id == null) { td.textContent = orig; return; } return reset(td.dataset.basis, function () { td.textContent = orig; }); }   // cleared → back to auto (Task 24); nothing to reset without a ledger row
             var n = Number(raw.replace(/,/g, '')); if (isNaN(n) || n < 0) { td.textContent = orig; return toast('Basic pay must be a number ≥ 0'); }
-            api.setLedgerBasis(td.dataset.basis, ym, C.round2(n)).then(function () { toast('Basic pay saved · contributions recomputed'); TABS.reports(); }).catch(function (e) { td.textContent = orig; fail(e); });
+            api.setLedgerBasis(td.dataset.basis, ym, C.round2(n)).then(function (led) {
+              toast('Basic pay saved · contributions recomputed');
+              // hr.set_ledger_basis returns the recomputed ledger row, so the table is redrawn from it
+              // rather than asking for the whole report again.
+              // `ym` is the month this edit was made in. If the month input moved while the save was in flight, S.repRows
+              // now belongs to another month and merging this row into it would print it under the wrong heading: re-read.
+              if (ym !== repMonthNow()) return TABS.reports();
+              TABS.reports(patchRows(S.repRows, led, 'employee_id'));
+            }).catch(function (e) { td.textContent = orig; fail(e); });
           };
         });
         // Task 24: "↺ auto" / cleared Basic pay → resetLedgerBasis (recomputed from the month's locked lines, or the row removed = "no basis" / "not computed")
         function reset(eid, undo) {
-          api.resetLedgerBasis(eid, ym).then(function (r) { toast(r ? 'Back to auto · recomputed from the month\'s locked payroll lines' : 'Manual basis removed · no basis for this month'); TABS.reports(); }).catch(function (e) { if (undo) undo(); fail(e); });
+          api.resetLedgerBasis(eid, ym).then(function (r) {
+            toast(r ? 'Back to auto · recomputed from the month\'s locked payroll lines' : 'Manual basis removed · no basis for this month');
+            if (ym !== repMonthNow()) return TABS.reports();   // the month moved while this was in flight: S.repRows is another month's
+            // null = the ledger row is gone. The employee STAYS on the report with no basis (the report
+            // left-joins the ledger to every active employee), so blank the amounts, do not drop the row.
+            TABS.reports(patchRows(S.repRows, r || { employee_id: eid, id: null, basis_amount: null,
+              basis_source: null, sss_ee: null, sss_er: null, sss_ec: null, phic_ee: null, phic_er: null,
+              hdmf_ee: null, hdmf_er: null, sss_msc: null, phic_basis: null }, 'employee_id'));
+          }).catch(function (e) { if (undo) undo(); fail(e); });
         }
         rootEl.querySelectorAll('a[data-reset]').forEach(function (a) { a.onclick = function (ev) { ev.preventDefault(); reset(a.dataset.reset); }; });
         // Task 24: inline EE override — a number → fixed employee share for that kind (employer share auto: employer_amount null) through saveOverride (the report row carries the
@@ -1339,7 +1499,15 @@
             var save;
             if (raw === '') { if (!cur) { td.textContent = orig; return; } save = api.saveOverride(Object.assign(base, { employee_amount: cur.employee_amount, employer_amount: cur.employer_amount == null ? null : cur.employer_amount, deleted_at: new Date().toISOString() })); }
             else { var n = Number(raw.replace(/,/g, '')); if (isNaN(n) || n < 0) { td.textContent = orig; return toast('Employee share must be a number ≥ 0'); } save = api.saveOverride(Object.assign(base, { employee_amount: C.round2(n), employer_amount: cur && cur.employer_amount != null ? cur.employer_amount : null, deleted_at: null })); }   // a fixed ER pair typed in the profile is kept; otherwise ER stays auto
-            save.then(function () { return api.recomputeLedger(eid, ym); }).then(function () { toast(raw === '' ? 'Override removed · back to the table' : cur && cur.employer_amount != null ? 'Employee share fixed · fixed employer share kept' : 'Employee share fixed · employer share auto'); TABS.reports(); }).catch(function (e) { td.textContent = orig; fail(e); });
+            save.then(function () { return api.recomputeLedger(eid, ym); }).then(function () { toast(raw === '' ? 'Override removed · back to the table' : cur && cur.employer_amount != null ? 'Employee share fixed · fixed employer share kept' : 'Employee share fixed · employer share auto');
+              // The ONE path that still re-reads for real, and it must: the override cells read
+              // r.overrides[kind] to decide insert-versus-update, and recompute_ledger does not return
+              // that list. Patching the amounts while leaving a stale overrides list would make the next
+              // edit of the same cell see cur == null and INSERT A DUPLICATE override — a second fixed
+              // employee share for the same kind — and would make clearing the cell silently revert.
+              // An override edit is rare; the 80-row monthly encode is what had to stop refetching.
+              TABS.reports();
+            }).catch(function (e) { td.textContent = orig; fail(e); });
           };
         });
         // Excel: the owner's template, column for column — A # · B NAME · C blank · D BASIC PAY · E PHILHEALTH (basis) · F SSS (MSC) · G–H blank · I SSS ER · J EE · K EC ·
@@ -1361,7 +1529,7 @@
             X.utils.book_append_sheet(wb, ws, 'Sheet1'); X.writeFile(wb, monthLabel + '-MANDATORY-SUMMARY.xlsx');
           }).catch(fail);
         };
-      }).catch(fail);
+      }).catch(function (e) { S.repBusy = false; fail(e); });   // a refused read must leave the trigger pressable (fail draws its own Try again)
       // Amendment 5: 13th month pay — Σ basic salary of the calendar year ÷ 12 per employee (HrCore.thirteenthMonthRows / hr.thirteenth_month). Months as columns; a
       // month from a hand-encoded ledger basis (FERROTECH / manual) carries ᵐ, an unlocked week ᵈ (only with "include unlocked weeks"). Sectioned per payroll group with
       // subtotals, grand total, Excel 13TH-MONTH-<YYYY>.xlsx. Pro-rated by construction: a new hire simply has fewer months.
@@ -1453,5 +1621,5 @@
     if (!document.getElementById('hrCss')) { var s = document.createElement('style'); s.id = 'hrCss'; s.textContent = CSS; document.head.appendChild(s); }
     refresh(); return { refresh: refresh };
   }
-  root.ConsoleHR = { _integrationActionAllowed: integrationActionAllowed, _saveRegisterEdit: saveRegisterEdit, mount: mount, punchWidget: punchWidget, _esc: esc, _money: money, _periodLabel: periodLabel, _incompleteBatchSummary: incompleteBatchSummary, _attendanceDeductionPatch: attendanceDeductionPatch, _registerView: registerView, _validationGroupView: validationGroupView, _validationGroupChange: validationGroupChange, _validationBatchScope: validationBatchScope, _validationBatchPayload: validationBatchPayload, _validationEmployeePool: validationEmployeePool, _validationWizardRows: validationWizardRows, _driverAllowanceView: driverAllowanceView, _registerAllowanceEdit: registerAllowanceEdit, _loadPayrollPeriod: loadPayrollPeriod, _fieldOpsSnapshot: fieldOpsSnapshot };
+  root.ConsoleHR = { _integrationActionAllowed: integrationActionAllowed, _saveRegisterEdit: saveRegisterEdit, _patchRows: patchRows, _staleOf: staleOf, mount: mount, punchWidget: punchWidget, _esc: esc, _money: money, _periodLabel: periodLabel, _incompleteBatchSummary: incompleteBatchSummary, _attendanceDeductionPatch: attendanceDeductionPatch, _registerView: registerView, _validationGroupView: validationGroupView, _validationGroupChange: validationGroupChange, _validationBatchScope: validationBatchScope, _validationBatchPayload: validationBatchPayload, _validationEmployeePool: validationEmployeePool, _validationWizardRows: validationWizardRows, _driverAllowanceView: driverAllowanceView, _registerAllowanceEdit: registerAllowanceEdit, _loadPayrollPeriod: loadPayrollPeriod, _fieldOpsSnapshot: fieldOpsSnapshot };
 })(typeof self !== 'undefined' ? self : this);
