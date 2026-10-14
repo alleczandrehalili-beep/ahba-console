@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-14.3';
+const APP_VERSION='2026-10-14.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2469,7 +2469,10 @@ async function renderAccounts(){
     rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null,role:'technician'}));
   }
   const lim=accessIsDispatcherOnly();
-  if(lim) rows=rows.filter(r=>(r.role||'technician')==='technician');   // dispatchers: technicians only
+  // dispatchers: technician role lang (dating gawi); ang 'techreset' grant = LAHAT ng
+  // FieldOps/mobile accounts (tech, sales, security, QA inspector) — console users ay
+  // hinding-hindi lalabas dito (dashboard_users ang mga iyon, hindi technicians).
+  if(lim && !hasTechResetGrant(window.dashUser)) rows=rows.filter(r=>(r.role||'technician')==='technician');
   $('#accountTotal').textContent=rows.length;
   $('#accountActive').textContent=rows.filter(r=>!r.must_change).length;
   $('#accountPending').textContent=rows.filter(r=>r.must_change).length;
@@ -4032,7 +4035,7 @@ function startSlrTicker(){
 // ---------- Dashboard login + role-based access ----------
 // 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
 // its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix']];
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix'],['techreset','FieldOps PW Reset']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -4151,7 +4154,7 @@ function applyAccess(u){
   allowed=allowed.filter(p=>p!=='hrvalidate'&&(p!=='payroll'||(window.FieldOpsHR&&FieldOpsHR.canOpen(u))));
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='hr'){ n.style.display=(u.is_super||allowed.includes('attendance')||allowed.includes('payroll'))?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u)||allowed.includes('techreset'))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='hr'){ n.style.display=(u.is_super||allowed.includes('attendance')||allowed.includes('payroll'))?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   // Nav groups: itago ang header + wrapper kapag WALANG kahit isang kita na sub-tab
   // (hal. dispatcher na walang QA access, o subcon console na walang Field Ops Access).
   $$('.nav-group').forEach(g=>{ const any=[...g.querySelectorAll('.nav-item')].some(n=>n.style.display!=='none');
@@ -4167,7 +4170,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  let first=(allowed.filter(p=>p!=='photofix')[0]||'overview'); if(first==='dispatch')first='timeline';   // photofix is an entry, not a page
+  let first=(allowed.filter(p=>p!=='photofix'&&p!=='techreset')[0]||(allowed.includes('techreset')?'access':'overview')); if(first==='dispatch')first='timeline';   // photofix/techreset are entries, not pages; techreset-only users land on the Access (reset) view
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();
@@ -4196,7 +4199,14 @@ function dashLogout(){ resetHR(); if(dashAuth) dashAuth.auth.signOut().catch(()=
 // Access Control page (superadmin)
 let accessUsers=[];
 // Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
-function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && hasDispatchAccess(u)); }
+// 'techreset' grant (owner 2026-10-14): hiwalay na Access Control entry — "FieldOps PW
+// Reset". Ang may hawak (hal. AHBA_QASHEAD) ay nakakakita ng LIMITED Access view na
+// nagre-reset ng password ng LAHAT ng FieldOps/mobile accounts (technicians table —
+// tech/sales/security/QA inspector), HINDI KAILANMAN ng console users. Ang server
+// (admin-reset Edge Function) ay matagal nang super-only ang dash-user reset, kaya
+// kahit pilitin ang UI ay 403 ang console-reset ng hindi-super.
+function hasTechResetGrant(u){ return !!(u && Array.isArray(u.allowed_pages) && u.allowed_pages.includes('techreset')); }
+function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && (hasDispatchAccess(u)||hasTechResetGrant(u))); }
 
 // ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
 // Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
@@ -4365,7 +4375,7 @@ function applyAccessScope(){
   const isSuper=!!(window.dashUser&&window.dashUser.is_super);
   const al=document.getElementById('acAuditLog'); if(al) al.style.display=isSuper?'':'none';   // reset history: superadmin only
   const sub=document.querySelector('#accessPage .page-toolbar p');
-  if(sub) sub.textContent=lim?'Reset technician passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
+  if(sub) sub.textContent=lim?'Reset FieldOps (mobile) account passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
 }
 async function renderAccess(){
   applyAccessScope();
