@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="tl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AHBA NAP Dashboard</title>
+<style>
+:root{
+  --bg:#eef1f3; --panel:#ffffff; --ink:#15212b; --muted:#5b6b78; --line:#d6dde2; --accent:#0f5f8c; --accent-ink:#ffffff;
+  --ok:#1c8a4a; --okbg:#dff3e6; --full:#c23b3b; --fullbg:#f8e0e0; --issue:#d98518; --issuebg:#fbeacd; --stale:#8794a0; --stalebg:#e6eaee; --unv:#b7c1c9;
+  --pin:#7a2fbf;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1419; --panel:#161e25; --ink:#e4ebf0; --muted:#94a3af; --line:#28343e; --accent:#5db4e6; --accent-ink:#06202f;
+  --ok:#4cc37f; --okbg:#173626; --full:#ee7676; --fullbg:#3b1d1d; --issue:#f0a94a; --issuebg:#3b2b12; --stale:#7d8a96; --stalebg:#232d35; --unv:#4a5863; --pin:#b98af0; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1419; --panel:#161e25; --ink:#e4ebf0; --muted:#94a3af; --line:#28343e; --accent:#5db4e6; --accent-ink:#06202f;
+  --ok:#4cc37f; --okbg:#173626; --full:#ee7676; --fullbg:#3b1d1d; --issue:#f0a94a; --issuebg:#3b2b12; --stale:#7d8a96; --stalebg:#232d35; --unv:#4a5863; --pin:#b98af0; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;padding-inline:16px;padding-block:14px 40px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline;justify-content:space-between}
+h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.tabs{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+.tab{border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:7px 14px;border-radius:6px;cursor:pointer}
+.tab[aria-selected=true]{background:var(--accent);color:var(--accent-ink)}
+.tab:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.board{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:900px){.board{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:12px}
+@media(max-width:560px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpi{border-radius:8px;padding:8px 10px;border:1px solid transparent;text-align:left;font:inherit;cursor:pointer;color:var(--ink)}
+.kpi b{display:block;font-size:20px;font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
+.kpi span{font-size:11.5px;color:var(--muted)}
+.kpi[aria-pressed=true]{border-color:var(--ink)}
+.k-ok{background:var(--okbg)}.k-full{background:var(--fullbg)}.k-issue{background:var(--issuebg)}.k-stale{background:var(--stalebg)}.k-unv{background:var(--stalebg)}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
+svg#map{display:block;width:100%;height:auto;cursor:crosshair;touch-action:manipulation}
+.hint{color:var(--muted);font-size:12px;margin:8px 0 0}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:8px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+h2{font-size:14px;margin:0 0 8px;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;padding:6px 10px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.list{list-style:none;padding:0;margin:10px 0 0;display:flex;flex-direction:column;gap:6px}
+.item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--panel);text-align:left;font:inherit;color:var(--ink);width:100%}
+.item:hover,.item.sel{border-color:var(--accent)}
+.rank{font-family:var(--mono);color:var(--muted);width:18px}
+.stencil{font-family:var(--mono);font-size:13px;font-weight:500;overflow-wrap:anywhere}
+.meta{font-size:12px;color:var(--muted)}
+.pill{font-size:11.5px;font-weight:500;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.p-ok{background:var(--okbg);color:var(--ok)}.p-full{background:var(--fullbg);color:var(--full)}.p-issue{background:var(--issuebg);color:var(--issue)}.p-stale,.p-unv{background:var(--stalebg);color:var(--muted)}
+.detail{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.nps{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.np{border:1px solid var(--line);border-radius:8px;padding:8px}
+.np-h{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted);margin-bottom:6px;flex-wrap:wrap}
+.np-h b{color:var(--ink);font-family:var(--mono);font-weight:500}
+.ports{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.port{border-radius:5px;text-align:center;font-family:var(--mono);font-size:11px;padding:5px 0;border:1px solid transparent;font-variant-numeric:tabular-nums}
+.port small{display:block;font-size:9.5px;opacity:.85;font-family:var(--sans)}
+.s-ActT{background:var(--fullbg);color:var(--full);box-shadow:inset 0 -3px 0 var(--full)}
+.s-ActN{background:var(--fullbg);color:var(--full);border:1px dashed var(--full)}
+.s-Vacant{background:var(--okbg);color:var(--ok)}
+.s-AvailN{background:var(--okbg);color:var(--ok)}
+.s-AvailT{background:var(--okbg);color:var(--ok);border-color:var(--accent);box-shadow:inset 0 -3px 0 var(--accent)}
+.s-Release{background:var(--okbg);color:var(--ok);border-color:var(--ok)}
+.s-Hi{background:var(--issuebg);color:var(--issue)}
+.s-Defective{background:var(--issuebg);color:var(--issue);border-style:dashed;border-color:var(--issue)}
+.s-Unverified{background:var(--stalebg);color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.warn{background:var(--issuebg);border:1px solid var(--issue);border-radius:7px;padding:7px 9px;font-size:12px;margin-bottom:10px}
+.okmsg{background:var(--okbg);border:1px solid var(--ok);border-radius:7px;padding:7px 9px;font-size:12px;margin-bottom:10px}
+.photos{display:flex;flex-wrap:wrap;gap:6px}
+.photos img{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:8px;font-size:13px;max-width:calc(100vw - 32px);z-index:9}
+.toast[hidden]{display:none}
+[hidden]{display:none!important}
+.login{max-width:360px;margin:12vh auto;display:flex;flex-direction:column;gap:10px}
+.login input{font:inherit;padding:9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tablewrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="loginView" class="login card" hidden>
+    <h1>NAP Dashboard</h1>
+    <p class="sub">Mag-sign in gamit ang account mo sa AHBA console.</p>
+    <form id="liForm" style="display:flex;flex-direction:column;gap:10px">
+    <input id="liEmail" type="email" placeholder="Email" autocomplete="username">
+    <input id="liPass" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn pri" id="liGo" type="submit">Sign in</button>
+    </form>
+    <div class="meta" id="liErr" style="color:var(--full)"></div>
+  </div>
+
+  <div id="noAccess" class="card" hidden><h2>Walang access</h2><p class="meta">Hindi pa naka-grant ang account na ito sa NAP Dashboard. Makipag-ugnayan sa admin.</p><button class="btn" id="noOut">Sign out</button></div>
+
+  <div id="errView" class="card login" hidden><h2>May problema sa pag-load</h2><p class="meta" id="errMsg" style="overflow-wrap:anywhere"></p><div class="row"><button class="btn pri" id="errRetry">Subukan ulit</button><button class="btn" id="errOut">Sign out</button></div></div>
+
+  <div id="app" hidden>
+    <header>
+      <div><h1>NAP Dashboard</h1><p class="sub" id="who"></p></div>
+      <div class="row">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" id="tb-board" aria-selected="true">Board</button>
+          <button class="tab" role="tab" id="tb-audits" aria-selected="false">Audits</button>
+          <button class="tab" role="tab" id="tb-pilot" aria-selected="false" hidden>Pilot</button>
+        </div>
+        <button class="btn sm" id="exportCsv">Export CSV</button>
+        <button class="btn sm" id="signOut">Sign out</button>
+      </div>
+    </header>
+    <section id="v-board">
+    <div class="board">
+      <div class="card">
+        <div class="kpis" id="kpis"></div>
+        <div class="mapbox"><svg id="map" role="img" aria-label="Mapa ng NAP boxes sa Bahay Toro"></svg></div>
+        <div class="legend">
+          <span><i class="dot" style="background:var(--ok)"></i>Installable</span>
+          <span><i class="dot" style="background:var(--full)"></i>Full</span>
+          <span><i class="dot" style="background:var(--issue)"></i>Issue</span>
+          <span><i class="dot" style="background:var(--stale)"></i>Stale</span>
+          <span><i class="dot" style="background:var(--unv)"></i>Unverified (Converge lang)</span>
+          <span><i class="dot" style="background:var(--pin)"></i>Subscriber</span>
+        </div>
+        <p class="hint">I-click ang mapa para ilagay ang address ng subscriber.</p>
+      </div>
+
+      <div class="card">
+        <h2>Saan pupunta ang team?</h2>
+        <div class="row">
+          <div class="seg" id="mode">
+            <button aria-pressed="true" data-m="install">Installable ngayon</button>
+            <button aria-pressed="false" data-m="audit">Kailangan i-audit</button>
+          </div>
+        </div>
+        <ul class="list" id="list"></ul>
+        <div class="detail" id="detail" hidden></div>
+      </div>
+    </div>
+    </section>
+    <section id="v-audits" hidden>
+      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">Lahat</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Hindi nahanap</button></div></div>
+      <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Petsa</th><th>NAP</th><th>NP</th><th>Team</th><th>Libre</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
+      <div id="auditDetail" class="detail" hidden></div></div>
+    </section>
+    <section id="v-pilot" hidden>
+      <div class="card"><h2>Pilot access</h2>
+        <div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Org</th><th>Gate</th><th>Active</th><th></th></tr></thead><tbody id="pilotRows"></tbody></table></div>
+        <div class="row" style="margin-top:10px"><input id="pnUser" placeholder="username" style="font:inherit;padding:6px"><select id="pnRole"><option>field</option><option>dispatcher</option><option>admin</option></select><button class="btn sm pri" id="pnAdd">Idagdag</button></div></div>
+      <div class="card" style="margin-top:12px"><h2>Settings</h2><div class="row" id="settingsRow"></div></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="nap-core.js?v=2026-10-14.1"></script>
+<script src="nap-api.js?v=2026-10-14.1"></script>
+<script>
+'use strict';
+var NAP_DASH_VERSION = '2026-10-14.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+// Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
+var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
+var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
+var $ = function (id) { return document.getElementById(id); };
+var C = NapCore, S = C.STATUS;
+var sb = supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, storageKey: 'ahba-nap-dashboard' } });
+var api = NapApi.create(sb);
+var state = { role: 'none', boxes: [], sel: null, sub: null, mode: 'install', filter: null, settings: {} };
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+var tt; function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 3200); }
+function show(view) { ['loginView', 'noAccess', 'errView', 'app'].forEach(function (v) { $(v).hidden = v !== view; }); }
+function msgOf(e) { return String((e && e.message) || e || 'Unknown error'); }
+function showErr(e) { $('errMsg').textContent = msgOf(e); show('errView'); }
+var ALLOWED = ['admin', 'dispatcher', 'superadmin'];
+
+async function boot() {
+  try {
+    var s = (await sb.auth.getSession()).data.session;
+    if (!s) return show('loginView');
+    state.email = s.user.email || '';
+    state.role = await api.myRole();
+    if (ALLOWED.indexOf(state.role) < 0) return show('noAccess');
+    $('who').textContent = state.email + ' · ' + state.role + ' · v' + NAP_DASH_VERSION;
+    $('tb-pilot').hidden = !(state.role === 'admin' || state.role === 'superadmin');
+    show('app');
+    await loadAll();
+  } catch (e) { showErr(e); }
+}
+$('liForm').addEventListener('submit', async function (ev) {
+  ev.preventDefault();
+  $('liErr').textContent = '';
+  try {
+    var r = await sb.auth.signInWithPassword({ email: $('liEmail').value.trim().toLowerCase(), password: $('liPass').value });
+    if (r.error) { $('liErr').textContent = 'Hindi ma-sign in: ' + r.error.message; return; }
+  } catch (e) { $('liErr').textContent = 'Hindi ma-sign in: ' + msgOf(e); return; }
+  boot();
+});
+// scope:'local' so signing out here does not revoke the user's console/mobile sessions.
+function out() { Promise.resolve(sb.auth.signOut({ scope: 'local' })).catch(function () {}).then(function () { location.reload(); }); }
+$('signOut').onclick = out; $('noOut').onclick = out; $('errOut').onclick = out;
+$('errRetry').onclick = function () { boot(); };
+
+async function loadAll() {
+  try {
+    state.settings = await api.getSettings();
+    state.boxes = await api.boxStatus();
+  } catch (e) { return showErr(e); }
+  var id = state.sel && state.sel.box_id;
+  state.sel = id ? (state.boxes.find(function (b) { return b.box_id === id; }) || null) : null;
+  drawBoard(true);
+}
+// Same rule everywhere: when a session expires, send the user back to sign-in.
+window.addEventListener('unhandledrejection', function (e) { if (/JWT expired|invalid JWT|jwt.*expired|status 401|\b401\b.*unauthor/i.test(msgOf(e.reason))) { toast('Session expired. Mag-sign in ulit.'); setTimeout(out, 1200); } });
+
+var COL = { installable: 'var(--ok)', full: 'var(--full)', issue: 'var(--issue)', stale: 'var(--stale)', unverified: 'var(--unv)' };
+var LBL = { installable: 'Installable', full: 'Full', issue: 'Issue', stale: 'Stale', unverified: 'Unverified' };
+var PCLS = {}; PCLS[S.AWT] = 'ActT'; PCLS[S.AWO] = 'ActN'; PCLS[S.VACANT] = 'Vacant'; PCLS[S.RELEASED] = 'Release'; PCLS[S.HILOSS] = 'Hi'; PCLS[S.DEFECTIVE] = 'Defective'; PCLS[S.UNVERIFIED] = 'Unverified';
+var PSHORT = {}; PSHORT[S.AWT] = 'Act+T'; PSHORT[S.AWO] = 'Act'; PSHORT[S.VACANT] = 'Vac'; PSHORT[S.RELEASED] = 'Rel'; PSHORT[S.HILOSS] = 'Hi'; PSHORT[S.DEFECTIVE] = 'Def'; PSHORT[S.UNVERIFIED] = '?';
+
+function geo() {
+  var bs = state.boxes.filter(function (b) { return b.lat != null; });
+  var la = bs.map(function (b) { return b.lat; }), lo = bs.map(function (b) { return b.lng; });
+  var g = la.length ? { lat0: Math.min.apply(null, la), lat1: Math.max.apply(null, la), lng0: Math.min.apply(null, lo), lng1: Math.max.apply(null, lo) } : { lat0: 14.6645, lat1: 14.6645, lng0: 121.0195, lng1: 121.0195 };
+  if (g.lat1 - g.lat0 < 1e-6) { g.lat0 -= 0.005; g.lat1 += 0.005; }   // 0 or 1 located boxes: default 0.01 degree span
+  if (g.lng1 - g.lng0 < 1e-6) { g.lng0 -= 0.005; g.lng1 += 0.005; }
+  g.W = 900; g.H = Math.round(g.W * ((g.lat1 - g.lat0) / ((g.lng1 - g.lng0) * Math.cos(14.66 * Math.PI / 180))));
+  g.X = function (x) { return 20 + (x - g.lng0) / (g.lng1 - g.lng0) * (g.W - 40); };
+  g.Y = function (y) { return 20 + (g.lat1 - y) / (g.lat1 - g.lat0) * (g.H - 40); };
+  g.ix = function (x) { return g.lng0 + (x - 20) / (g.W - 40) * (g.lng1 - g.lng0); };
+  g.iy = function (y) { return g.lat1 - (y - 20) / (g.H - 40) * (g.lat1 - g.lat0); };
+  return g;
+}
+function isSel(b) { return !!(state.sel && b && b.box_id === state.sel.box_id); }
+function drawMap() {
+  var g = state.g = geo(), svg = $('map'); svg.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H);
+  var s = '';
+  state.boxes.forEach(function (b, i) {
+    if (b.lat == null) return;
+    var dim = state.filter && state.filter !== b.kind;
+    s += '<circle data-i="' + i + '" cx="' + g.X(b.lng).toFixed(1) + '" cy="' + g.Y(b.lat).toFixed(1) + '" r="' + (isSel(b) ? 8 : b.kind === 'unverified' ? 3 : 4.5) +
+      '" fill="' + COL[b.kind] + '" opacity="' + (dim ? .12 : b.kind === 'unverified' ? .55 : .95) + '" stroke="' + (isSel(b) ? 'var(--ink)' : 'none') + '" stroke-width="2"/>';
+  });
+  if (state.sub) {
+    nearestList().slice(0, 5).forEach(function (n) { s += '<line x1="' + g.X(state.sub.lng) + '" y1="' + g.Y(state.sub.lat) + '" x2="' + g.X(n.lng) + '" y2="' + g.Y(n.lat) + '" stroke="var(--pin)" stroke-width="1.2" stroke-dasharray="4 3" opacity=".7"/>'; });
+    s += '<circle cx="' + g.X(state.sub.lng) + '" cy="' + g.Y(state.sub.lat) + '" r="9" fill="var(--pin)" stroke="var(--panel)" stroke-width="3"/>';
+  }
+  svg.innerHTML = s;
+}
+function drawKpis() {
+  var c = { installable: 0, full: 0, issue: 0, stale: 0, unverified: 0 }, ports = 0;
+  state.boxes.forEach(function (b) { c[b.kind]++; if (b.kind === 'installable') ports += b.free; });
+  $('kpis').innerHTML = ['installable', 'full', 'issue', 'stale', 'unverified'].map(function (k) {
+    return '<button class="kpi k-' + (k === 'installable' ? 'ok' : k === 'unverified' ? 'unv' : k) + '" data-k="' + k + '" aria-pressed="' + (state.filter === k) + '"><b>' + c[k] + '</b><span>' + LBL[k] + (k === 'installable' ? ' · ' + ports + ' libreng port' : '') + '</span></button>';
+  }).join('');
+}
+function nearestList() {
+  var from = state.sub || { lat: 14.6645, lng: 121.0195 };
+  return C.nearest(state.boxes, from, state.mode, 6);
+}
+function drawList() {
+  var r = nearestList();
+  $('list').innerHTML = r.length ? r.map(function (b, i) {
+    var right = state.mode === 'install' ? '<span class="pill p-ok">' + b.free + ' libre</span>' : '<span class="pill p-' + (b.kind === 'stale' ? 'stale' : 'unv') + '">' + (b.kind === 'unverified' ? 'Di pa napupuntahan' : 'Stale ' + b.age_days + 'd') + '</span>';
+    var sub2 = state.mode === 'install' ? b.checked + ' port na-check · ' + (b.age_days === 0 ? 'ngayon' : b.age_days + ' araw na') : 'Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available (hindi verified)';
+    return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + sub2 + '</span></span><span style="text-align:right">' + right + '<br><span class="meta">' + (state.sub ? Math.round(b.distance_m) + ' m' : '') + '</span></span></button></li>';
+  }).join('') : '<li class="meta">Walang tugma. Mag-audit ng bagong NAP o habaan ang freshness window sa Pilot tab.</li>';
+}
+var detailTok = 0, portsCache = null;   // portsCache = {box_id, ports}; refetch only on box change or explicit refresh
+async function drawDetail(refresh) {
+  var el = $('detail'), b = state.sel, tok = ++detailTok;
+  if (!b) { el.hidden = true; return; }
+  el.hidden = false;
+  var ports;
+  if (!refresh && portsCache && portsCache.box_id === b.box_id) ports = portsCache.ports;
+  else {
+    el.innerHTML = '<div class="meta">Naglo-load…</div>';
+    try { ports = await api.boxPorts(b.box_id); }
+    catch (e) { if (tok === detailTok) { portsCache = null; el.innerHTML = '<div class="meta" style="color:var(--full)">Hindi ma-load ang mga port: ' + esc(msgOf(e)) + '</div>'; } return; }
+    if (tok !== detailTok) return;   // a newer call superseded this one
+    portsCache = { box_id: b.box_id, ports: ports };
+  }
+  var nps = {}; ports.forEach(function (p) { (nps[p.np] = nps[p.np] || []).push(p); });
+  el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></div><div class="nps">' +
+    Object.keys(nps).map(function (np) {
+      var list = nps[np], tags = list.filter(function (p) { return p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' may label na acct <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
+      var untagged = list.filter(function (p) { return p.status === S.AWO; }).map(function (p) { return 'P' + p.port; });
+      var newest = list.reduce(function (m, p) { return p.verified_at && p.verified_at > m ? p.verified_at : m; }, '');
+      return '<div class="np"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'wala pang audit') + '</span></div><div class="ports">' +
+        list.map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
+        (tags ? '<div style="margin-top:6px">' + tags + '</div>' : '') +
+        (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active pero walang label. Ipa-tag sa team.</div>' : '') + '</div>';
+    }).join('') + '</div>';
+}
+function drawBoard(refresh) { drawMap(); drawKpis(); drawList(); drawDetail(refresh); }
+
+$('map').addEventListener('click', function (ev) {
+  var svg = $('map'), p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY; var q = p.matrixTransform(svg.getScreenCTM().inverse());
+  var c = ev.target.closest('circle[data-i]');
+  if (c && Math.hypot(+c.getAttribute('cx') - q.x, +c.getAttribute('cy') - q.y) < 10) state.sel = state.boxes[+c.dataset.i];
+  else state.sub = { lat: state.g.iy(q.y), lng: state.g.ix(q.x) };
+  drawBoard();
+});
+$('kpis').addEventListener('click', function (ev) { var k = ev.target.closest('.kpi'); if (!k) return; state.filter = state.filter === k.dataset.k ? null : k.dataset.k; drawBoard(); });
+$('list').addEventListener('click', function (ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.boxes.find(function (x) { return x.box_id === b.dataset.id; }); drawBoard(); });
+$('mode').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (!b) return; state.mode = b.dataset.m; document.querySelectorAll('#mode button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); drawBoard(); });
+function tab(name) {
+  ['board', 'audits', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
+  if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot();
+}
+['board', 'audits', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
+async function loadAudits() {
+  var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
+  var rows;
+  try { rows = await api.listAudits({ reviewStatus: f || undefined, limit: 200 }); } catch (e) { return toast('Hindi ma-load ang audits: ' + msgOf(e)); }
+  state.audits = rows;
+  $('auditRows').innerHTML = rows.map(function (a, i) {
+    var free = a.audit_ports.filter(function (p) { return C.isUsable(p.status); }).length;
+    var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
+    return '<tr><td>' + new Date(a.created_at).toLocaleString() + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + a.np + '</td><td>' + esc(a.team) + '</td><td>' + (a.review_status === 'not_found' ? '-' : free) + '</td><td><span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span></td><td><button class="btn sm" data-ai="' + i + '">Tingnan</button></td></tr>';
+  }).join('') || '<tr><td colspan="7" class="meta">Wala pang audit.</td></tr>';
+}
+$('auditFilter').addEventListener('click', function (ev) {
+  var b = ev.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#auditFilter button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); loadAudits();
+});
+$('auditRows').addEventListener('click', async function (ev) {
+  var b = ev.target.closest('[data-ai]'); if (!b) return;
+  var a = state.audits[+b.dataset.ai], el = $('auditDetail'); el.hidden = false;
+  var urls = [], photoErr = false;
+  try { urls = a.audit_photos.length ? await api.signedPhotoUrls(a.audit_photos.map(function (p) { return p.path; })) : []; } catch (e) { photoErr = true; }
+  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + a.np + '</div><div class="meta">' + esc(a.team) + ' · ' + esc(a.technicians || '') + ' · ' + (a.job_id ? 'JO ' + esc(a.job_id) + ' · ' : '') + (a.declared_full ? 'Full NAP declared' : '') + (a.not_found_reason ? ' · Hindi nahanap: ' + esc(a.not_found_reason) : '') + '</div>' +
+    '<div class="ports" style="margin:8px 0">' + a.audit_ports.sort(function (x, y) { return x.port - y.port; }).map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
+    (photoErr ? '<div class="meta" style="color:var(--full)">Hindi ma-load ang photos.</div>' : '') + '<div class="photos">' + urls.map(function (u) { return '<a href="' + esc(u.url) + '" target="_blank" rel="noopener"><img src="' + esc(u.url) + '" alt="NAP reading"></a>'; }).join('') + '</div>' +
+    ((state.role === 'admin' || state.role === 'superadmin') && a.review_status !== 'ok' && a.review_status !== 'reviewed' ? '<div class="actions"><button class="btn sm pri" id="markReviewed">Markahan na-review</button></div>' : '');
+  var mr = $('markReviewed'); if (mr) mr.onclick = async function () { mr.disabled = true; try { await api.setReview(a.id, 'reviewed'); toast('Na-review na.'); loadAudits(); el.hidden = true; } catch (e) { mr.disabled = false; toast('Hindi na-save: ' + msgOf(e)); } };
+});
+async function loadPilot(quiet) {
+  var rows;
+  try { rows = await api.listPilot(); } catch (e) { if (!quiet) toast('Hindi ma-load ang pilot list: ' + msgOf(e)); return; }
+  pendingDel = null;
+  $('pilotRows').innerHTML = rows.map(function (r) {
+    return '<tr><td>' + esc(r.username) + '</td><td>' + esc(r.role) + '</td><td>' + esc(r.org) + '</td><td>' + (r.role === 'field' ? '<input type="checkbox" data-gate="' + esc(r.username) + '" ' + (r.gate ? 'checked' : '') + '>' : '') + '</td><td><input type="checkbox" data-act="' + esc(r.username) + '" ' + (r.active ? 'checked' : '') + '></td><td><button class="btn sm" data-del="' + esc(r.username) + '">Alisin</button></td></tr>';
+  }).join('');
+  state.pilot = rows;
+  var s = state.settings;
+  $('settingsRow').innerHTML = [['freshness_days', 'Freshness (araw)'], ['full_multiplier', 'Full multiplier'], ['gps_flag_m', 'GPS flag (m)']].map(function (x) {
+    return '<label class="meta">' + x[1] + ' <input data-set="' + x[0] + '" value="' + esc(s[x[0]]) + '" size="4" style="font:inherit;padding:4px"></label>';
+  }).join('') + '<label class="meta"><input type="checkbox" data-set="gate_enabled" ' + (s.gate_enabled === 'true' ? 'checked' : '') + '> Full NAP gate ON (kill switch)</label>';
+}
+// Run a write with its controls disabled; on failure toast and let revert() restore what the server really has.
+async function guarded(ctrls, write, revert) {
+  ctrls.forEach(function (c) { c.disabled = true; });
+  try { await write(); toast('Na-save.'); return true; }
+  catch (e) { toast('Hindi na-save: ' + msgOf(e)); try { await revert(); } catch (e2) {} return false; }
+  finally { ctrls.forEach(function (c) { c.disabled = false; }); }
+}
+var pendingDel = null;
+$('pilotRows').addEventListener('change', async function (ev) {
+  var t = ev.target, u = t.dataset.gate || t.dataset.act; if (!u) return;
+  var row = state.pilot.find(function (r) { return r.username === u; }); if (!row) return;
+  var next = Object.assign({}, row); if (t.dataset.gate) next.gate = t.checked; else next.active = t.checked;
+  var prev = t.dataset.gate ? row.gate : row.active;
+  await guarded([t], async function () { await api.savePilot(next); row.gate = next.gate; row.active = next.active; }, async function () { t.checked = prev; if (t.dataset.gate) row.gate = prev; else row.active = prev; await loadPilot(true); });
+});
+$('pilotRows').addEventListener('click', async function (ev) {
+  var d = ev.target.closest('[data-del]'); if (!d) return;
+  var u = d.dataset.del;
+  var me = (state.email || '').split('@')[0].toLowerCase();
+  if (me && u.toLowerCase() === me) return toast('Hindi mo puwedeng alisin ang sarili mong account.');
+  if (!pendingDel || pendingDel.u !== u) {   // first click: ask to confirm for 4 seconds
+    if (pendingDel) { clearTimeout(pendingDel.timer); pendingDel.btn.textContent = 'Alisin'; }
+    var p = pendingDel = { u: u, btn: d };
+    d.textContent = 'Sigurado ka?';
+    p.timer = setTimeout(function () { d.textContent = 'Alisin'; if (pendingDel === p) pendingDel = null; }, 4000);
+    return;
+  }
+  clearTimeout(pendingDel.timer); pendingDel = null;
+  if (await guarded([d], async function () { await api.removePilot(u); }, loadPilot)) loadPilot();
+});
+$('pnAdd').onclick = async function () {
+  var btn = $('pnAdd'), u = $('pnUser').value.trim(); if (!u) return toast('Ilagay ang username.');
+  btn.disabled = true;
+  try {
+    var rows = await api.listPilot(); state.pilot = rows;
+    if (rows.some(function (r) { return String(r.username).toLowerCase() === u.toLowerCase(); })) { toast('Nandoon na ang username.'); return; }
+  } catch (e) { toast('Hindi na-save: ' + msgOf(e)); return; }
+  finally { btn.disabled = false; }
+  if (await guarded([btn, $('pnUser'), $('pnRole')], async function () { await api.savePilot({ username: u, role: $('pnRole').value, org: 'AHBA', gate: false, active: true }); }, loadPilot)) { $('pnUser').value = ''; loadPilot(); }
+};
+$('settingsRow').addEventListener('change', async function (ev) {
+  var t = ev.target, k = t.dataset.set; if (!k) return;
+  var prev = state.settings[k], v, bad = null;
+  if (t.type === 'checkbox') v = String(t.checked);
+  else {
+    var n = Number(t.value.trim());
+    if (t.value.trim() === '' || !isFinite(n)) bad = 'Dapat ay numero.';
+    else if (k === 'freshness_days' && !(Number.isInteger(n) && n >= 1 && n <= 365)) bad = 'Freshness: buong numero, 1 hanggang 365.';
+    else if (k === 'full_multiplier' && !(Number.isInteger(n) && n >= 1 && n <= 10)) bad = 'Full multiplier: buong numero, 1 hanggang 10.';
+    else if (k === 'gps_flag_m' && !(n > 0 && n <= 5000)) bad = 'GPS flag: mas mataas sa 0 at hindi lalampas ng 5000 m.';
+    v = String(n);
+  }
+  if (bad) { toast(bad); t.value = prev == null ? '' : prev; return; }
+  var ok = await guarded([t], async function () { await api.setSetting(k, v); state.settings[k] = v; },
+    async function () { if (t.type === 'checkbox') t.checked = prev === 'true'; else t.value = prev == null ? '' : prev; await loadPilot(); });
+  if (ok && k !== 'gate_enabled') loadAll();
+});
+
+$('exportCsv').onclick = function () {
+  if (!state.boxes.length) return toast('Hindi pa naka-load ang board.');
+  var head = ['stencil', 'barangay', 'street', 'dwelling', 'kind', 'free', 'checked', 'age_days', 'converge_available'];
+  var numeric = { free: 1, checked: 1, age_days: 1, converge_available: 1 };
+  function cell(h, v) {
+    var t = String(v == null ? '' : v);
+    if (!numeric[h] && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // neutralize spreadsheet formula injection
+    return '"' + t.replace(/"/g, '""') + '"';
+  }
+  var csv = [head.join(',')].concat(state.boxes.map(function (b) {
+    return head.map(function (h) { return cell(h, b[h]); }).join(',');
+  })).join('\r\n');
+  var url = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+  var a = document.createElement('a'); a.href = url;
+  a.download = 'nap-board-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+};
+
+boot();
+</script>
+</body>
+</html>
