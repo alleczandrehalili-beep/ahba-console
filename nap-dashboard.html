@@ -159,7 +159,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
         </div>
         <div class="kpis" id="kpis"></div>
         <div class="subbar">
-          <input type="search" id="subQ" class="q" placeholder="Hanapin ang address ng subscriber" aria-label="Hanapin ang address ng subscriber" autocomplete="off" enterkeyhint="search">
+          <input type="search" id="subQ" class="q" maxlength="200" placeholder="Hanapin ang address ng subscriber" aria-label="Hanapin ang address ng subscriber" autocomplete="off" enterkeyhint="search">
           <button class="btn pri" id="subGo" type="button">Hanapin</button>
           <label class="rad">Radius (m) <input type="number" id="subRad" min="50" max="500" step="10" aria-label="Radius sa metro"></label>
           <button class="btn" id="subClear" type="button" hidden>Alisin ang pin</button>
@@ -208,7 +208,7 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
     <section id="v-dispatch" hidden>
       <div class="card"><h2>Mag-load ng listahan</h2>
         <div class="err" id="dpTeamsErr" role="alert" hidden style="margin-bottom:8px"></div>
-        <div class="row"><input type="file" id="dpFile" accept=".csv,.tsv,.xlsx,.xls,.txt" aria-label="File ng listahan"></div>
+        <div class="row"><input type="file" id="dpFile" accept=".csv,.tsv,.xlsx,.txt" aria-label="File ng listahan"></div>
         <textarea id="dpPaste" rows="4" placeholder="I-paste dito ang rows mula sa Google Sheet: stencil, team, due" aria-label="I-paste ang rows"></textarea>
         <div class="row" style="margin-top:8px"><button class="btn pri" id="dpRead">Basahin</button><span class="meta" id="dpReadMsg"></span></div>
         <div id="dpWarn"></div>
@@ -249,12 +249,11 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="nap-core.js?v=2026-10-14.6"></script>
-<script src="nap-api.js?v=2026-10-14.6"></script>
+<script src="nap-core.js?v=2026-10-14.7"></script>
+<script src="nap-api.js?v=2026-10-14.7"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-14.6';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-14.7';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -765,10 +764,26 @@ async function dpIngest(res, source, fileName, tok) {
   if (tok !== dp.seq) return;
   $('dpReadMsg').textContent = '';
   dp.source = source; dp.fileName = fileName || '';   // set only together with the preview they describe
-  dp.preview = (m || []).map(function (x) { return { stencil: x.stencil, status: x.status, team: x.team ? String(x.team).toUpperCase() : '', due: x.due || '' }; });
+  dp.preview = (m || []).map(function (x) { return { stencil: x.stencil, box: x.box_stencil || '', status: x.status, team: x.team ? String(x.team).toUpperCase() : '', due: x.due || '' }; });
   drawPreview();
 }
-var DP_EXT = ['csv', 'txt', 'tsv', 'xlsx', 'xls'], DP_MAX_BYTES = 5 * 1024 * 1024, DP_MAX_LINES = 20000;
+// SheetJS is only needed for .xlsx picks, so it is loaded on the first one (pinned version + subresource integrity hash of the cdnjs file).
+var xlsxLoading = null;
+function loadXlsx() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve();
+  if (xlsxLoading) return xlsxLoading;
+  xlsxLoading = new Promise(function (res, rej) {
+    var el = document.createElement('script');
+    el.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    el.integrity = 'sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==';
+    el.crossOrigin = 'anonymous'; el.referrerPolicy = 'no-referrer';
+    el.onload = function () { typeof XLSX !== 'undefined' ? res() : rej(new Error('XLSX missing')); };
+    el.onerror = function () { xlsxLoading = null; el.remove(); rej(new Error('load failed')); };
+    document.head.appendChild(el);
+  });
+  return xlsxLoading;
+}
+var DP_EXT = ['csv', 'txt', 'tsv', 'xlsx'], DP_MAX_BYTES = 5 * 1024 * 1024, DP_MAX_LINES = 20000;
 function dpRejectFile(msg) { $('dpFile').value = ''; toast(msg); }
 function dpFromFile(file) {
   var tok = ++dp.seq;
@@ -777,11 +792,12 @@ function dpFromFile(file) {
   if (file.size > DP_MAX_BYTES) return dpRejectFile('Masyadong malaki ang file (hanggang 5 MB)');
   var rd = new FileReader();
   rd.onerror = function () { if (tok === dp.seq) toast('Hindi mabasa ang file.'); };
-  if (ext === 'xlsx' || ext === 'xls') {
-    if (typeof XLSX === 'undefined') { toast('Hindi ma-load ang Excel reader; gamitin ang CSV o i-paste'); return; }
-    rd.onload = function () {
+  if (ext === 'xlsx') {
+    rd.onload = async function () {
       if (tok !== dp.seq) return;
       var res;
+      try { await loadXlsx(); } catch (e) { if (tok === dp.seq) { dpRejectFile('Hindi ma-load ang Excel reader; gamitin ang CSV o i-paste'); } return; }
+      if (tok !== dp.seq) return;
       try {
         var wb = XLSX.read(rd.result, { type: 'array' });   // no cellDates: dates arrive as Excel serials (timezone-proof)
         var ws = wb.Sheets[wb.SheetNames[0]];
@@ -831,7 +847,7 @@ function drawPreview() {
   $('dpPrevRows').innerHTML = rows.map(function (r) {
     var st = DP_ST[r.status] || [r.status, 'p-stale'], bad = r.status === 'ok' && r.team && !teamValid(r.team);
     var team = !r.team ? (r.status === 'ok' ? '<span class="meta">walang team</span>' : '') : bad ? '<span class="err">' + esc(r.team) + ' (hindi aktibong field team)</span>' : esc(r.team);
-    return '<tr' + (bad ? ' class="dpbad"' : '') + '><td class="stencil">' + esc(r.stencil) + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td>' + esc(r.due) + '</td></tr>';
+    return '<tr' + (bad ? ' class="dpbad"' : '') + '><td class="stencil">' + esc(r.stencil) + (r.box && r.box !== r.stencil ? '<div class="meta">&rarr; ' + esc(r.box) + '</div>' : '') + '</td><td><span class="pill ' + st[1] + '">' + esc(st[0]) + '</span></td><td>' + team + '</td><td>' + esc(r.due) + '</td></tr>';
   }).join('');
   var b = $('dpGo'); b.textContent = 'I-dispatch ang ' + ok + ' na tama'; b.disabled = ok === 0 || dp.busy;
   ['dpFile', 'dpPaste', 'dpRead'].forEach(function (id) { $(id).disabled = dp.busy; });
@@ -887,7 +903,7 @@ function drawItems() {
   $('diBlockedNote').hidden = !rows.some(function (r) { return r.status === 'blocked'; });
   $('diRows').innerHTML = rows.map(function (r) {
     var b = r.boxes || {};
-    return '<tr><td><input type="checkbox" data-it="' + esc(r.id) + '" aria-label="Piliin"' + (dp.sel[r.id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil || r.stencil_raw) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(r.team || '') + '</td><td>' + esc(r.due_date || '') + '</td><td><span class="pill ' + (IT_CLS[r.status] || 'p-stale') + '">' + esc(r.status) + '</span>' + (r.note ? '<div class="meta">' + esc(r.note) + '</div>' : '') + '</td><td>' + (r.done_at ? esc(new Date(r.done_at).toLocaleString()) : '') + '</td></tr>';
+    return '<tr><td><input type="checkbox" data-it="' + esc(r.id) + '" aria-label="Piliin"' + (dp.sel[r.id] ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil || r.stencil_raw) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(r.team || '') + '</td><td>' + esc(r.due_date || '') + '</td><td><span class="pill ' + (IT_CLS[r.status] || 'p-stale') + '">' + esc(r.status) + '</span>' + (r.status === 'done' && r.audit && r.audit.review_status ? ' <span class="pill ' + (r.audit.review_status === 'ok' ? 'p-ok' : 'p-issue') + '">audit: ' + esc(r.audit.review_status) + '</span>' : '') + (r.note ? '<div class="meta">' + esc(r.note) + '</div>' : '') + '</td><td>' + (r.done_at ? esc(new Date(r.done_at).toLocaleString()) : '') + '</td></tr>';
   }).join('') || '<tr><td colspan="7" class="meta">Walang dispatch.</td></tr>';
   var n = Object.keys(dp.sel).length; $('diSelN').textContent = n ? n + ' napili' : '';
 }
@@ -997,14 +1013,14 @@ $('geoRows').addEventListener('click', async function (ev) {
   if (act === 'revert' || act === 'reject') {   // inline double-click confirm (4 s window), no confirm() dialog
     if (b.dataset.armed !== '1') {
       b.dataset.armed = '1'; b.dataset.label = b.textContent; b.textContent = 'Sigurado ka?';
-      setTimeout(function () { if (b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = b.dataset.label; } }, 4000);
+      b._armTimer = setTimeout(function () { if (b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = b.dataset.label; } }, 4000);
       return;
     }
-    b.dataset.armed = '';
+    clearTimeout(b._armTimer); b.dataset.armed = '';
   }
   b.disabled = true;
   try { await api.geoReview({ history_id: b.dataset.h, action: b.dataset.geo }); toast('Na-save.'); await loadGeo(); loadAll(); }
-  catch (e) { b.disabled = false; toast('Hindi na-save: ' + msgOf(e)); }
+  catch (e) { b.disabled = false; if (b.dataset.label) b.textContent = b.dataset.label; toast('Hindi na-save: ' + msgOf(e)); }
 });
 
 boot();
