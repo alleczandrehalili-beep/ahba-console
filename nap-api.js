@@ -6,12 +6,59 @@
   'use strict';
   var BUCKET = 'nap-photos', PAGE = 1000, OPEN_STATUSES = ['pending', 'blocked', 'unassigned'], OPEN_MAX = 2000, BY_IDS_CHUNK = 500;
 
-  function fail(error) {
+  function fail(error, status) {
     var msg = (error && error.message) || String(error);
     var m = /^(NAP_[A-Z_]+)/.exec(msg);
-    var e = new Error(msg); e.code = m ? m[1] : 'NAP_ERROR'; return e;
+    var e = new Error(msg); e.code = m ? m[1] : 'NAP_ERROR';
+    if (status) e.status = status;
+    if (error && error.code && !m) e.pgCode = String(error.code);
+    return e;
   }
-  function unwrap(p) { return Promise.resolve(p).then(function (r) { if (r.error) throw fail(r.error); return r.data; }); }
+  function unwrap(p) { return Promise.resolve(p).then(function (r) { if (r.error) throw fail(r.error, r.status); return r.data; }); }
+  // Phase 8: true when a call failed because the session token is expired / invalid (PostgREST 401, PGRST301 "JWT expired", PGRST302
+  // "no bearer", "JWT expired", "invalid JWT"). A NAP_ error (the server's own refusal) is never an auth error.
+  function isAuthError(e) {
+    if (!e || /^NAP_/.test(String(e.code || '')) && e.code !== 'NAP_ERROR') return false;
+    if (e.status === 401) return true;
+    if (/^PGRST30[0-3]$/.test(String(e.pgCode || ''))) return true;
+    return /JWT expired|invalid JWT|JWSError|JWT is expired|token is expired|Invalid token|not authenticated|session.*(missing|expired)/i.test(String(e.message || ''));
+  }
+  // Phase 8: sign in with the first email that works (NapCore.signInEmails order). Moves on ONLY when the answer is "wrong credentials"
+  // (Supabase answers the same for an unknown email and a wrong password); any other answer (rate limit, network) stops. Resolves
+  // {ok: true, email} or {ok: false, reason: 'credentials' | 'rate' | 'other', message}. The password is passed through, never kept.
+  function signInFirst(client, emails, password) {
+    var list = (emails || []).slice();
+    function bad(err) {
+      var code = String((err && (err.code || err.error_code)) || ''), msg = String((err && err.message) || '');
+      if (code === 'invalid_credentials' || code === 'email_not_confirmed' || /invalid login credentials|email not confirmed/i.test(msg)) return 'credentials';
+      if ((err && err.status === 429) || /rate limit|too many/i.test(msg) || code === 'over_request_rate_limit') return 'rate';
+      return 'other';
+    }
+    function next(i, last) {
+      if (i >= list.length) return Promise.resolve({ ok: false, reason: last || 'credentials' });
+      return Promise.resolve(client.auth.signInWithPassword({ email: list[i], password: password })).then(function (r) {
+        if (r && !r.error) return { ok: true, email: list[i] };
+        var why = bad(r && r.error);
+        if (why === 'credentials') return next(i + 1, 'credentials');
+        return { ok: false, reason: why, message: String((r && r.error && r.error.message) || '') };
+      }, function (err) { return { ok: false, reason: 'other', message: String((err && err.message) || err) }; });
+    }
+    return next(0, '');
+  }
+  // Phase 8: wraps every function of an api object so an auth error also calls onAuth() (the dashboard then shows "Session ended");
+  // the error is still rethrown to the caller. Other errors pass through untouched.
+  function guardAuth(api, onAuth) {
+    var out = {};
+    Object.keys(api).forEach(function (k) {
+      var f = api[k];
+      out[k] = typeof f !== 'function' ? f : function () {
+        var r;
+        try { r = f.apply(out, arguments); } catch (e) { if (isAuthError(e)) { try { onAuth(e); } catch (x) {} } throw e; }
+        return r && typeof r.then === 'function' ? r.then(null, function (e) { if (isAuthError(e)) { try { onAuth(e); } catch (x) {} } throw e; }) : r;
+      };
+    });
+    return out;
+  }
   // writes use .select(): under RLS a forbidden update/delete is not an error, it just changes 0 rows. Report that, never "saved".
   function changed(p) {
     return unwrap(p).then(function (rows) {
@@ -36,6 +83,22 @@
     return {
       myRole: function () { return unwrap(nap().rpc('my_role')); },
       gateApplies: function () { return unwrap(nap().rpc('gate_applies_me')).then(Boolean); },
+      // Phase 8: what the phone may show, decided by the server in ONE call: {audit, view, role} (nap.my_nap_access, nap-17). On a database
+      // without nap-17 (function missing) it falls back to my_role: a pilot field team ('field') gets both, everyone else nothing.
+      myNapAccess: function () {
+        var self = this;
+        return Promise.resolve(nap().rpc('my_nap_access')).then(function (r) {
+          if (r && r.error) {
+            var m = String(r.error.message || '') + ' ' + String(r.error.code || '');
+            if (/PGRST202|could not find the function|does not exist|42883/i.test(m)) {
+              return self.myRole().then(function (role) { var f = role === 'field'; return { audit: f, view: f, role: role || 'none', fallback: true }; });
+            }
+            throw fail(r.error, r.status);
+          }
+          var d = (r && r.data) || {};
+          return { audit: d.audit === true, view: d.view === true, role: typeof d.role === 'string' ? d.role : 'none' };
+        });
+      },
       // Phase 5: true for a console user (public.dashboard_users) while viewer_scope allows it. my_role already says 'viewer' unless the
       // account is also a pilot field team (then my_role stays 'field' for the phone); the dashboard asks this only in that case.
       isViewer: function () { return unwrap(nap().rpc('is_viewer')).then(function (v) { return v === true; }); },
@@ -219,5 +282,5 @@
       }
     };
   }
-  return { create: create, BUCKET: BUCKET };
+  return { create: create, BUCKET: BUCKET, isAuthError: isAuthError, signInFirst: signInFirst, guardAuth: guardAuth };
 });

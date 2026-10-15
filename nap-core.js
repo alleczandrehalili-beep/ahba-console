@@ -526,25 +526,98 @@
     return p;
   }
 
-  // ---------- dashboard access (phase 5) ----------
-  // What the NAP Dashboard shows for a nap.my_role() value. viewerFlag = nap.is_viewer(), asked only when the role is 'field' (a pilot
-  // field team that is also a console user stays 'field' for the phone). The server is the real guard; this only decides the screens.
-  //   superadmin / admin: every tab (Pilot included); dispatcher: every tab but Pilot; viewer: the Board only, read-only
-  //   (no basket / checkboxes, no CSV export, no audit history / photos / account numbers in the NAP detail); anything else: no access
-  //   ({ok: false, message: NO_ACCESS_MSG}).
+  // ---------- dashboard access (phase 5; phase 8 adds FieldOps accounts) ----------
+  // What the NAP Dashboard shows for a nap.my_role() value. The server is the real guard; this only decides the screens.
+  //   superadmin / admin: every tab (Pilot included); dispatcher: every tab but Pilot;
+  //   viewer (granted GC console user) and field (an ACTIVE pilot field team: nap.pilot_access role 'field', phase 8): the Board only,
+  //   read-only (no basket / checkboxes, no CSV export, no audit history / photos / account numbers in the NAP detail);
+  //   anything else: no access ({ok: false, message}). viewerFlag (nap.is_viewer()) is no longer needed for 'field' (kept for callers).
+  //   o.email: the signed-in email; a FieldOps account (@ahbafield.app) without access gets FIELD_NO_ACCESS_MSG (the pilot is the gate).
   var DASH_TABS = ['board', 'audits', 'dispatch', 'master', 'pilot'];
   // Shown to a signed-in account that may not open the dashboard (phase 5: view-only access is the Access Control entry 'napboard',
-  // granted by the superadmin to GC console users).
+  // granted by the superadmin to GC console users; phase 8: FieldOps accounts need an active NAP pilot row).
   var NO_ACCESS_MSG = 'You do not have access to NAP Board. Ask the superadmin to grant it in Access Control.';
-  function dashAccess(role, viewerFlag) {
+  var FIELD_NO_ACCESS_MSG = 'You do not have access to NAP Monitoring. Ask the dispatcher/superadmin to add your account to the NAP pilot.';
+  function dashAccess(role, viewerFlag, o) {
     var r = typeof role === 'string' ? role : 'none';
+    // o.handoff: a session handed over from the FieldOps phone app is ALWAYS the view-only Board, whatever stronger role the account has
+    if (o && o.handoff === true && (r === 'superadmin' || r === 'admin' || r === 'dispatcher' || r === 'viewer')) r = 'field';
     var full = { ok: true, viewOnly: false, canExport: true, canBasket: true, canHistory: true, canTagAcct: true };
     if (r === 'superadmin' || r === 'admin') return Object.assign({ role: r, tabs: DASH_TABS.slice() }, full);
     if (r === 'dispatcher') return Object.assign({ role: r, tabs: DASH_TABS.filter(function (t) { return t !== 'pilot'; }) }, full);
     var ro = { viewOnly: true, canExport: false, canBasket: false, canHistory: false, canTagAcct: false };
-    if (r === 'viewer' || (r === 'field' && viewerFlag === true)) return Object.assign({ ok: true, role: 'viewer', tabs: ['board'] }, ro);
-    return Object.assign({ ok: false, role: r, tabs: [], message: NO_ACCESS_MSG }, ro);
+    if (r === 'viewer') return Object.assign({ ok: true, role: 'viewer', tabs: ['board'] }, ro);
+    if (r === 'field') return Object.assign({ ok: true, role: 'field', tabs: ['board'] }, ro);
+    var msg = isFieldEmail(o && o.email) ? FIELD_NO_ACCESS_MSG : NO_ACCESS_MSG;
+    return Object.assign({ ok: false, role: r, tabs: [], message: msg }, ro);
   }
+
+  // ---------- sign-in (phase 8): console and FieldOps accounts on one form ----------
+  // Console accounts are username@ahbadash.app (app.js dashEmailFor), FieldOps accounts team@ahbafield.app (mobile-a.js emailFor): both
+  // trim + lower-case the username. A bare username tries the console account first, then the FieldOps account; an email is used as typed
+  // (trimmed, lower-cased like before). The form shows ONE generic error whichever failed, so it never tells which account exists.
+  var DASH_DOMAIN = 'ahbadash.app', FIELD_DOMAIN = 'ahbafield.app';
+  var SIGNIN_ERR_MSG = 'Wrong username or password';
+  function signInEmails(input) {
+    var s = String(input == null ? '' : input).trim().toLowerCase();
+    if (!s || s.length > 254) return [];
+    if (s.indexOf('@') >= 0) return [s];
+    if (/\s/.test(s)) return [];
+    return [s + '@' + DASH_DOMAIN, s + '@' + FIELD_DOMAIN];
+  }
+  function isFieldEmail(email) {
+    var e = String(email == null ? '' : email).trim().toLowerCase(), i = e.lastIndexOf('@');
+    return i > 0 && e.slice(i + 1) === FIELD_DOMAIN;
+  }
+  // the team code a FieldOps account works as (public.my_team(): upper-case email local part); '' for any other account
+  function teamOfEmail(email) {
+    return isFieldEmail(email) ? String(email).trim().split('@')[0].toUpperCase() : '';
+  }
+
+  // ---------- FieldOps -> NAP site handoff (phase 8) ----------
+  // The phone opens https://nap.ahbadevt.com/#h=<access token>. The fragment never reaches a server. The dashboard reads it ONCE, removes
+  // it from the address bar before anything else, and keeps the token in memory only. Only a FieldOps account's token is accepted.
+  var HANDOFF_MAX = 8192, HANDOFF_MIN_LEFT_S = 60;
+  // the h= value of a location.hash ('#h=...' or '#a=1&h=...'), or '' when there is none. Never throws.
+  function handoffToken(hash) {
+    var h = String(hash == null ? '' : hash);
+    if (h.length > HANDOFF_MAX * 2) return '';
+    var parts = h.replace(/^#/, '').split('&');
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].slice(0, 2) === 'h=') { try { return decodeURIComponent(parts[i].slice(2)); } catch (e) { return ''; } }
+    }
+    return '';
+  }
+  function b64urlJson(part) {
+    var b = part.replace(/-/g, '+').replace(/_/g, '/');
+    while (b.length % 4) b += '=';
+    var bin = typeof atob === 'function' ? atob(b) : Buffer.from(b, 'base64').toString('binary');
+    var txt;
+    try { txt = decodeURIComponent(bin.split('').map(function (c) { return '%' + ('0' + c.charCodeAt(0).toString(16)).slice(-2); }).join('')); } catch (e) { txt = bin; }
+    return JSON.parse(txt);
+  }
+  // {ok: true, token, email, team, exp} or {ok: false, reason}. now = ms (default Date.now()). Checks the SHAPE and the claims only: the
+  // signature is checked by Supabase on every request (a forged token gets 401 there). reason never contains the token.
+  function checkHandoff(token, now) {
+    var t = String(token == null ? '' : token);
+    if (!t) return { ok: false, reason: 'missing' };
+    if (t.length < 40 || t.length > HANDOFF_MAX) return { ok: false, reason: 'length' };
+    var p = t.split('.');
+    if (p.length !== 3 || !p.every(function (x) { return /^[A-Za-z0-9_-]+$/.test(x); })) return { ok: false, reason: 'shape' };
+    var c;
+    try { c = b64urlJson(p[1]); } catch (e) { return { ok: false, reason: 'payload' }; }
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return { ok: false, reason: 'payload' };
+    var aud = Array.isArray(c.aud) ? c.aud : [c.aud];
+    if (aud.indexOf('authenticated') < 0 || c.role !== 'authenticated') return { ok: false, reason: 'role' };
+    if (typeof c.email !== 'string' || !isFieldEmail(c.email)) return { ok: false, reason: 'not-fieldops' };
+    var nowS = (now == null ? Date.now() : Number(now)) / 1000;
+    if (typeof c.exp !== 'number' || !isFinite(c.exp) || !isFinite(nowS)) return { ok: false, reason: 'exp' };
+    if (c.exp - nowS < HANDOFF_MIN_LEFT_S) return { ok: false, reason: 'expired' };
+    var em = c.email.trim().toLowerCase();
+    return { ok: true, token: t, email: em, team: teamOfEmail(em), exp: c.exp };
+  }
+  // ms left before the handed-over token expires (negative = expired)
+  function handoffMsLeft(exp, now) { return Number(exp) * 1000 - (now == null ? Date.now() : Number(now)); }
 
   return { STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
     BASKET_MAX: BASKET_MAX, PLAN_MAX_TEAMS: PLAN_MAX_TEAMS, isUuid: isUuid, basketAdd: basketAdd, basketRemove: basketRemove, basketGroups: basketGroups,
@@ -555,5 +628,7 @@
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
     normStencil: normStencil, parseDueDate: parseDueDate, manilaToday: manilaToday, isPastDue: isPastDue, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
-    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, fullNapOutcome: fullNapOutcome, validateDeactRecord: validateDeactRecord, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess };
+    boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, fullNapOutcome: fullNapOutcome, validateDeactRecord: validateDeactRecord, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess,
+    FIELD_NO_ACCESS_MSG: FIELD_NO_ACCESS_MSG, SIGNIN_ERR_MSG: SIGNIN_ERR_MSG, signInEmails: signInEmails, isFieldEmail: isFieldEmail, teamOfEmail: teamOfEmail,
+    handoffToken: handoffToken, checkHandoff: checkHandoff, handoffMsLeft: handoffMsLeft };
 });

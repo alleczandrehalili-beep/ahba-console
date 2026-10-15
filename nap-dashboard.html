@@ -165,14 +165,16 @@ tr.inb td{background:var(--bg)}
 <div class="wrap">
   <div id="loginView" class="login card" hidden>
     <h1>NAP Dashboard</h1>
-    <p class="sub">Sign in with your AHBA console account.</p>
+    <p class="sub">Sign in with your AHBA console account, or with your FieldOps (phone app) username and password.</p>
     <form id="liForm" style="display:flex;flex-direction:column;gap:10px">
-    <input id="liEmail" type="email" placeholder="Email" autocomplete="username">
+    <input id="liEmail" type="text" placeholder="Username or email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="Username or email">
     <input id="liPass" type="password" placeholder="Password" autocomplete="current-password">
     <button class="btn pri" id="liGo" type="submit">Sign in</button>
     </form>
-    <div class="meta" id="liErr" style="color:var(--full)"></div>
+    <div class="meta" id="liErr" role="alert" style="color:var(--full)"></div>
   </div>
+
+  <div id="endedView" class="card login" hidden><h2>Session ended</h2><p class="meta">Session ended. Open NAP VIEW again from FieldOps, or sign in.</p><button class="btn pri" id="endedIn">Sign in</button></div>
 
   <div id="noAccess" class="card" hidden><h2>No access</h2><p class="meta" id="noAccessMsg">You do not have access to NAP Board. Ask the superadmin to grant it in Access Control.</p><button class="btn" id="noOut">Sign out</button></div>
 
@@ -193,7 +195,7 @@ tr.inb td{background:var(--bg)}
         <button class="btn sm" id="signOut">Sign out</button>
       </div>
     </header>
-    <div class="vbanner" id="viewBanner" role="note" hidden><b>View only</b> · You can look at the Board: map, NAP lists, stencil search and the subscriber pin. Dispatch, audits and exports are for NAP dispatchers.</div>
+    <div class="vbanner" id="viewBanner" role="note" hidden><b>View only</b> · You can look at the Board: map, NAP lists, stencil search and the subscriber pin. Dispatch, audits and exports are for NAP dispatchers.<span id="viewBannerHo" hidden> Session handed over from FieldOps lasts about an hour. Open NAP VIEW again from FieldOps to renew.</span></div>
     <section id="v-board">
     <div class="board">
       <div class="card">
@@ -374,18 +376,45 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-15.6"></script>
-<script src="nap-api.js?v=2026-10-15.6"></script>
+<script src="nap-core.js?v=2026-10-16.1"></script>
+<script src="nap-api.js?v=2026-10-16.1"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-15.6';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-16.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
 var $ = function (id) { return document.getElementById(id); };
 var C = NapCore, S = C.STATUS;
+// Phase 8: FieldOps -> NAP site handoff. The phone opens this page with #h=<its access token>. Read it ONCE and remove it from the
+// address bar FIRST (nothing awaits before this), keep it in memory only (never stored, logged, shown or put in another URL). Only a
+// FieldOps account's token that is not about to expire is used; anything else is dropped and the normal sign-in shows.
+var HANDOFF = null, HANDOFF_REFUSED = false;
+(function () {
+  var h = '';
+  try { h = String(location.hash || ''); } catch (e) { h = ''; }
+  if (!/(^#|&)h=/.test(h)) return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { try { location.hash = ''; } catch (x) {} }
+  var chk = C.checkHandoff(C.handoffToken(h));
+  h = '';
+  if (chk.ok) HANDOFF = chk; else HANDOFF_REFUSED = true;
+})();
+// a handoff arriving in an ALREADY open page (only the fragment changed, so the browser did not load the page again): load it fully, so
+// the block above reads and removes it before anything else, with a fresh client
+window.addEventListener('hashchange', function () { if (/(^#|&)h=/.test(String(location.hash || ''))) location.reload(); });
 var sb = supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, storageKey: 'ahba-nap-dashboard' } });
-var api = NapApi.create(sb);
+// the handed-over session: its own client, the token as the bearer of every request, no auth storage, no refresh (the phone keeps its
+// refresh token; sharing it would trip Supabase's refresh-token reuse detection). The stored console session ('ahba-nap-dashboard') is untouched.
+var sbH = HANDOFF ? supabase.createClient(SB_URL, SB_KEY, { global: { headers: { Authorization: 'Bearer ' + HANDOFF.token } },
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'ahba-nap-handoff' } }) : null;
+var hoTimer = null, hoEnded = false;
+// the handed-over token expired or was refused (401): stop and say so (never the raw error)
+function handoffEnded() {
+  if (!HANDOFF || hoEnded) return;
+  hoEnded = true; clearTimeout(hoTimer); HANDOFF.token = '';
+  show('endedView');
+}
+var api = HANDOFF ? NapApi.guardAuth(NapApi.create(sbH), handoffEnded) : NapApi.create(sb);
 var RADIUS_DEFAULT = 150, RADIUS_KEY = 'ahba-nap-radius', BRGY_KEY = 'ahba-nap-barangay', FIND_MIN = 3, FIND_MS = 400, AG_PAGE = 200;
 // Phase 2B (whole QC, ~46k boxes): nothing here downloads every box. On load: nap.barangay_summary (one row per barangay, ~140 rows).
 // The map, list, KPIs, Aging and the CSV cover ONE barangay at a time (nap.boxes_in_barangay, paged). The subscriber pin uses
@@ -396,16 +425,18 @@ var state = { role: 'none', summary: [], brgy: '', boxes: [], known: {}, sel: nu
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 var tt; function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 3200); }
-function show(view) { ['loginView', 'noAccess', 'errView', 'app'].forEach(function (v) { $(v).hidden = v !== view; }); }
+function show(view) { if (hoEnded) view = 'endedView'; ['loginView', 'noAccess', 'errView', 'endedView', 'app'].forEach(function (v) { $(v).hidden = v !== view; }); }
 function msgOf(e) { return String((e && e.message) || e || 'Unknown error').replace(/^NAP_[A-Z_]+:\s*/, ''); }
-function showErr(e) { $('errMsg').textContent = msgOf(e); show('errView'); }
-// Who sees what: NapCore.dashAccess (phase 5). Board roles keep every screen; a console user ('viewer') gets the Board only, read-only.
+function showErr(e) { if (HANDOFF && NapApi.isAuthError(e)) return handoffEnded(); $('errMsg').textContent = msgOf(e); show('errView'); }
+// Who sees what: NapCore.dashAccess (phase 5, phase 8). Board roles keep every screen; a granted console user ('viewer') and an active
+// pilot FieldOps team ('field', signed in here or handed over from the phone) get the Board only, read-only.
 // The server is the real guard (nap-14): a viewer's other calls fail with NAP_FORBIDDEN or return no rows.
 var ACC = C.dashAccess('none');
 function applyAccess() {
   C.DASH_TABS.forEach(function (t) { $('tb-' + t).hidden = ACC.tabs.indexOf(t) < 0; });
   $('exportCsv').hidden = !ACC.canExport;
   $('viewBanner').hidden = !ACC.viewOnly;
+  $('viewBannerHo').hidden = !HANDOFF;
   $('blSelRow').hidden = !ACC.canBasket; $('blCkH').hidden = !ACC.canBasket;
   if (!ACC.canBasket) { $('bkBar').hidden = true; document.body.classList.remove('has-bk'); }
   document.body.classList.toggle('view-only', ACC.viewOnly);
@@ -413,17 +444,23 @@ function applyAccess() {
 
 async function boot() {
   try {
-    var s = (await sb.auth.getSession()).data.session;
-    if (!s) return show('loginView');
-    state.email = s.user.email || '';
+    if (HANDOFF) {
+      if (hoEnded) return show('endedView');
+      var left = C.handoffMsLeft(HANDOFF.exp) - 15000;   // end 15 s early: no request goes out with a token about to expire
+      if (left <= 0) return handoffEnded();
+      clearTimeout(hoTimer); hoTimer = setTimeout(handoffEnded, Math.min(left, 2147483000));
+      state.email = HANDOFF.email;
+    } else {
+      var s = (await sb.auth.getSession()).data.session;
+      if (!s) return showLogin();
+      state.email = s.user.email || '';
+    }
     state.role = await api.myRole();
-    // a pilot field team that is also a console user: my_role stays 'field' (for the phone); the Board is still open to it read-only
-    var viewerFlag = false;
-    if (state.role === 'field') { try { viewerFlag = await api.isViewer(); } catch (e) { viewerFlag = false; } }
-    ACC = C.dashAccess(state.role, viewerFlag);
+    // field (an active pilot FieldOps team, phase 8) = the view-only Board like a viewer; a handed-over session is always view-only
+    ACC = C.dashAccess(state.role, false, { email: state.email, handoff: !!HANDOFF });
     if (!ACC.ok) { $('noAccessMsg').textContent = ACC.message; return show('noAccess'); }
     state.role = ACC.role;
-    $('who').textContent = state.email + ' · ' + (ACC.viewOnly ? 'view only' : state.role) + ' · v' + NAP_DASH_VERSION;
+    $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
     if (ACC.tabs.indexOf(cur) < 0) tab('board');
@@ -432,18 +469,40 @@ async function boot() {
     await loadAll();
   } catch (e) { showErr(e); }
 }
+function showLogin() {
+  if (HANDOFF_REFUSED && !$('liErr').textContent) $('liErr').textContent = 'The link from FieldOps has expired or cannot be used here. Open NAP VIEW again from FieldOps, or sign in.';
+  show('loginView');
+}
+// Phase 8: a bare username tries the console account, then the FieldOps account (NapCore.signInEmails); an email is used as typed.
+// One generic error for wrong credentials whichever account was tried, so the form never tells which kind of account exists.
+var liBusy = false;
 $('liForm').addEventListener('submit', async function (ev) {
   ev.preventDefault();
+  if (liBusy) return;
+  var emails = C.signInEmails($('liEmail').value);
   $('liErr').textContent = '';
-  try {
-    var r = await sb.auth.signInWithPassword({ email: $('liEmail').value.trim().toLowerCase(), password: $('liPass').value });
-    if (r.error) { $('liErr').textContent = 'Cannot sign in: ' + r.error.message; return; }
-  } catch (e) { $('liErr').textContent = 'Cannot sign in: ' + msgOf(e); return; }
+  if (!emails.length || !$('liPass').value) { $('liErr').textContent = C.SIGNIN_ERR_MSG; return; }
+  liBusy = true; $('liGo').disabled = true;
+  var r;
+  try { r = await NapApi.signInFirst(sb, emails, $('liPass').value); }
+  catch (e) { r = { ok: false, reason: 'other', message: msgOf(e) }; }
+  finally { liBusy = false; $('liGo').disabled = false; }
+  if (!r.ok) {
+    $('liErr').textContent = r.reason === 'rate' ? 'Too many sign-in attempts. Wait a minute and try again.'
+      : r.reason === 'other' ? 'Cannot sign in: ' + (r.message || 'check the connection and try again.') : C.SIGNIN_ERR_MSG;
+    return;
+  }
+  $('liPass').value = '';
   boot();
 });
-// scope:'local' so signing out here does not revoke the user's console/mobile sessions.
-function out() { Promise.resolve(sb.auth.signOut({ scope: 'local' })).catch(function () {}).then(function () { location.reload(); }); }
+// scope:'local' so signing out here does not revoke the user's console/mobile sessions. A handed-over session is only dropped from
+// memory (the phone's session stays signed in): reload without it.
+function out() {
+  if (HANDOFF) { HANDOFF.token = ''; HANDOFF = null; location.replace(location.pathname + location.search); return; }
+  Promise.resolve(sb.auth.signOut({ scope: 'local' })).catch(function () {}).then(function () { location.reload(); });
+}
 $('signOut').onclick = out; $('noOut').onclick = out; $('errOut').onclick = out;
+$('endedIn').onclick = function () { HANDOFF = null; location.replace(location.pathname + location.search); };
 $('errRetry').onclick = function () { boot(); };
 
 function fmtN(n) { return Number(n || 0).toLocaleString('en-US'); }
