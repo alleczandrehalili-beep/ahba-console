@@ -32,6 +32,45 @@
       { key: 'others', label: 'OTHERS', kind: 'money', editable: true },
       { key: 'note', label: 'NOTE', kind: 'text', editable: true },
       { key: 'total', label: 'TOTAL', kind: 'money', editable: false }
+    ],
+    // The payroll Register. Addressed by LINE id, not by employee: hr.set_line takes a line.
+    // RATE ON FILE is the stored daily_rate and is editable; RATE PAID is the effective rate after the
+    // minimum-wage floor and is NOT, because the Register's screen shows the effective figure and a sheet
+    // that offered it for editing would write the floor back as everybody's real rate on any round trip
+    // where nobody touched it.
+    // Editable = exactly the columns hr.set_line will write, plus the rate, which goes to hr.set_line_rate.
+    register: [
+      { key: 'employee_id', label: 'ID', kind: 'id', editable: false },
+      { key: 'line_id', label: 'LINE', kind: 'id', editable: false },
+      { key: 'emp_no', label: 'EMPLOYEE NO.', kind: 'text', editable: false },
+      { key: 'display_name', label: 'NAME', kind: 'text', editable: false },
+      { key: 'position', label: 'POSITION', kind: 'text', editable: false },
+      { key: 'rate_on_file', label: 'RATE ON FILE', kind: 'money', editable: true },
+      { key: 'rate_paid', label: 'RATE PAID', kind: 'money', editable: false },
+      { key: 'days', label: 'NO. OF DAYS', kind: 'money', editable: false },
+      { key: 'basic', label: 'BASIC PAY', kind: 'money', editable: false },
+      { key: 'rdot', label: 'R.DOT', kind: 'money', editable: false },
+      { key: 'lh_pay', label: 'L.H (PAY)', kind: 'money', editable: false },
+      { key: 'sh_pay', label: 'S.H (PAY)', kind: 'money', editable: false },
+      { key: 'allowance', label: 'ALLOWANCE', kind: 'money', editable: true },
+      { key: 'adjustment', label: 'ADJUSTMENT', kind: 'money', editable: true },
+      { key: 'gross', label: 'GROSS PAY', kind: 'money', editable: false },
+      { key: 'attendance_deduction', label: 'LATE / ABSENCE', kind: 'money', editable: false },
+      { key: 'sss', label: 'SSS', kind: 'money', editable: true },
+      { key: 'phic', label: 'PHILHEALTH', kind: 'money', editable: true },
+      { key: 'hdmf', label: 'PAGIBIG', kind: 'money', editable: true },
+      // The three loan columns are read-only on purpose: they come from Employees → Loans and the Deductions tab, never from
+      // this sheet. They are HERE so that TOTAL and NET can be real Excel formulas — with four of the ten deduction
+      // components and GROSS PAY missing from the sheet, neither figure could be reconciled from anything on the page, and
+      // both stayed frozen at their pre-edit values while the file was edited offline.
+      { key: 'cash_advance', label: 'CASH ADVANCE', kind: 'money', editable: false },
+      { key: 'gov_loan', label: 'SSS/PAGIBIG LOAN', kind: 'money', editable: false },
+      { key: 'company_loan', label: 'COMPANY LOAN', kind: 'money', editable: false },
+      { key: 'partial_payroll', label: 'PARTIAL PAYROLL', kind: 'money', editable: true },
+      { key: 'others', label: 'OTHERS', kind: 'money', editable: true },
+      { key: 'total', label: 'TOTAL', kind: 'money', editable: false },
+      { key: 'net', label: 'NET AMOUNT', kind: 'money', editable: false },
+      { key: 'remarks', label: 'REMARKS', kind: 'text', editable: true }
     ]
   };
 
@@ -50,9 +89,12 @@
   function cents(n) { return Math.round(n * 100); }
 
   // The value the tab's own view row holds for a sheet column.
+  // The Allowances and Deductions rows nest the person under `employee`; the Register's rows are flat.
   function currentValue(row, key) {
-    if (key === 'employee_id') return row.employee && row.employee.id;
-    if (key === 'emp_no' || key === 'display_name') return row.employee && row.employee[key];
+    if (row.employee) {
+      if (key === 'employee_id') return row.employee.id;
+      if (key === 'emp_no' || key === 'display_name') return row.employee[key];
+    }
     return row[key];
   }
 
@@ -109,7 +151,8 @@
 
     // The header is found by its labels, wherever it sits. The ID column and every editable column are required:
     // without them there is nothing safe to read. A missing read-only column only means less to cross-check.
-    var needed = c.filter(function (x) { return x.editable || x.key === 'employee_id'; });
+    // Every id column is required: the Register's LINE is what hr.set_line is addressed by.
+    var needed = c.filter(function (x) { return x.editable || x.kind === 'id'; });
     var headAt = -1, at = {};
     for (var r = 0; r < rowsIn.length && headAt < 0; r++) {
       var cells = (rowsIn[r] || []).map(function (v) { return str(v).toUpperCase(); });
@@ -135,7 +178,7 @@
       seen[id] = n + 1;
       var values = {};
       c.forEach(function (x) {
-        if (x.key === 'employee_id' || at[x.key] === undefined) return;
+        if (x.kind === 'id' || at[x.key] === undefined) return;
         var raw = line[at[x.key]];
         if (x.kind === 'money') {
           var mv = money(raw);
@@ -146,37 +189,61 @@
           } else values[x.key] = mv.value;
         } else values[x.key] = blank(raw) ? null : String(raw).trim();
       });
-      rows.push({ employee_id: id, emp_no: empNo, values: values });
+      var parsedRow = { employee_id: id, emp_no: empNo, values: values };
+      c.forEach(function (x) { if (x.kind === 'id' && x.key !== 'employee_id') parsedRow[x.key] = str(line[at[x.key]]); });
+      rows.push(parsedRow);
     }
     return { rows: rows, provenance: prov, problems: problems };
   }
 
   function diff(kind, parsed, current) {
-    var c = cols(kind), changes = [], ignored = 0, unknown = [], missing = [], problems = [];
+    var c = cols(kind), changes = [], ignored = 0, blanked = 0, unknown = [], missing = [], problems = [];
     var byId = Object.create(null);
     (current || []).forEach(function (r) { var id = currentValue(r, 'employee_id'); if (id != null) byId[id] = r; });
     var sheetIds = Object.create(null);
+
+    // One mechanism for every id cross-check: name the ID (and the employee, when the sheet's own number can be trusted)
+    // and both values. The caller then skips the row, so nothing from it is applied.
+    function crossCheck(row, who, label, noun, sheetVal, curVal) {
+      problems.push('Row for ID ' + row.employee_id + (who ? ' (' + who + ')' : '') + ': the sheet says ' + label + ' "' + sheetVal +
+        '" but that ID is "' + curVal + '". The ID and the ' + noun + ' do not belong together (was one column sorted on its own?), ' +
+        'so nothing from this row was applied.');
+    }
 
     (parsed.rows || []).forEach(function (row) {
       sheetIds[row.employee_id] = true;
       var cur = byId[row.employee_id];
       if (!cur) { unknown.push(row.employee_id); return; }                       // never created, never written
-      // EMPLOYEE NO. is the human cross-check. Sorting ONE column in Excel leaves the ids lined up with the wrong
-      // people's numbers, and every edit would then write to the wrong employee while the sheet looks right.
-      // So a number that disagrees with the one this id carries is a problem, and the row writes nothing.
+      // EMPLOYEE NO. and LINE are the cross-checks. Sorting ONE column in Excel leaves the ids lined up with the wrong
+      // people's numbers or lines, and every edit would then land on the wrong employee while the sheet looks right.
+      // So a value that disagrees with the one this id carries is a problem, and the row writes nothing.
       var curNo = str(currentValue(cur, 'emp_no'));
-      if (row.emp_no && row.emp_no !== curNo) {
-        problems.push('Row for ID ' + row.employee_id + ': the sheet says employee no. "' + row.emp_no + '" but that ID is "' + curNo + '". ' +
-          'The ID and the number do not belong together (was one column sorted on its own?), so nothing from this row was applied.');
-        return;
-      }
+      if (row.emp_no && row.emp_no !== curNo) { crossCheck(row, '', 'employee no.', 'number', row.emp_no, curNo); return; }
+      // LINE exists only on the Register: a parsed row of the other sheets carries no line_id and is not checked.
+      // The test is equality, not presence: a blank LINE beside an employee who HAS a line is an erased cell and
+      // is refused. Blank on both sides is an employee with no payroll line this period: not a mismatch, but
+      // nothing can be written to them either, which is reported below if the row carries edits.
+      var hasLine = row.line_id !== undefined;
+      var curLine = hasLine ? str(currentValue(cur, 'line_id')) : '';
+      if (hasLine && row.line_id !== curLine) { crossCheck(row, row.emp_no || curNo, 'line', 'line', row.line_id, curLine); return; }
+      var firstChange = changes.length;
       c.forEach(function (x) {
         if (x.key === 'employee_id' || !(x.key in row.values)) return;
         if (x.key === 'emp_no' && row.emp_no) return;                            // matched above; a mismatch never gets here
         var to = row.values[x.key], from = currentValue(cur, x.key);
         if (x.editable) {
           if (x.kind === 'money') {
-            if (to === null) return;                                              // blank is "no value", never a zero
+            if (to === null) {                                                    // blank is "no value", never a zero
+              // On the REGISTER that collides with the screen, where blanking the same cell means the opposite: an erased
+              // ALLOWANCE calls hr.restore_automatic_allowance and any other erased override writes a manual zero. A sheet
+              // can do neither — hr.set_line has no "clear" — and the file itself carries no cue, since the download's blank
+              // highlight is painted before the person erases anything. So an erased cell is COUNTED, never dropped in silence.
+              // Only where there is a figure to erase: a roster member awaiting Compute exports an all-blank row (no LINE,
+              // nothing computed), and that blankness is right. (Unchanged for Allowances / Deductions, where a blank
+              // MANUAL really does mean "no manual amount" and the automatic figure stands.)
+              if (kind === 'register' && !blank(from)) blanked++;
+              return;
+            }
             // null and 0 are deliberately the same here: hr.compute_week reads the manual allowance as
             // coalesce(hr.round2(al.amount), 0) and ADDS it to the automatic one, so "no row" and "a row of 0"
             // change no money. (Suppressing an automatic allowance is the Register's ALLOWANCE cell, not this sheet.)
@@ -193,10 +260,15 @@
           if (str(to) !== str(from)) ignored++;
         }
       });
+      if (hasLine && !curLine && changes.length > firstChange) {
+        changes.length = firstChange;
+        problems.push('Row for ID ' + row.employee_id + ' (' + (row.emp_no || curNo) + ') has no payroll line this period, so there is nothing ' +
+          'to write its edits to. Nothing from this row was applied.');
+      }
     });
 
     Object.keys(byId).forEach(function (id) { if (!sheetIds[id]) missing.push(id); });
-    return { changes: changes, ignored: ignored, unknown: unknown, missing: missing, problems: problems };
+    return { changes: changes, ignored: ignored, blanked: blanked, unknown: unknown, missing: missing, problems: problems };
   }
 
   return { SHEETS: SHEETS, build: build, parse: parse, diff: diff };

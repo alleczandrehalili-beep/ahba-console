@@ -972,6 +972,15 @@
       ['partial_payroll', 'PARTIAL PAYROLL', 'r', 1], ['others', 'OTHERS', 'r', 1], ['total_deductions', 'TOTAL', 'r'], ['net', 'NET AMOUNT', 'r'], ['bank_account', 'PSBANK ACCOUNT'], ['remarks', 'REMARKS', '', 1]];
     // Owner 2026-10-05 (demo): the RATE shown / exported is the EFFECTIVE rate (minimum PHP 755 floor); the stored rate stays on l.daily_rate for audit
     function effRate(l) { return l.effective_rate != null ? +l.effective_rate : +l.daily_rate; }
+    // RATE ON FILE on the round-trip sheet: the rate that is actually IN FORCE for this week, before the
+    // minimum-wage floor. That is `rate_raw` — compute_week writes it from hr.effective_rate_on, which prefers
+    // the newest dated step in hr.employee_rates. `daily_rate` is only a copy of the EMPLOYEE MASTER rate, and
+    // hr.set_line_rate never touches the master: so a rate raised from the Register or from a sheet moves
+    // rate_raw and leaves daily_rate where it was, for good. Exporting daily_rate therefore showed the
+    // superseded figure in every later sheet and made the next rate change read as replacing a rate nobody is
+    // on. Fallback to daily_rate because rate_raw is `not null default 0`: a line computed before that column
+    // existed would otherwise export 0.00.
+    function rateOnFile(l) { return +l.rate_raw > 0 ? +l.rate_raw : +l.daily_rate; }
     function rateLabel(l) { return 'Daily rate' + (l.rate_floor_applied ? ' (minimum rate applied; on file ' + money(l.daily_rate) + ')' : ''); }
     function lineVal(l, k) { return k === 'daily_rate' ? effRate(l) : k === 'gov_loan' ? C.round2((+l.sss_loan || 0) + (+l.hdmf_loan || 0)) : l[k]; }
     TABS.register = function () {
@@ -985,7 +994,7 @@
       $('#hrBody').innerHTML = '<div class="hr-card"><div class="hr-bar">' + periodSelect() + '<span class="hr-chip ' + esc(p.status) + '">' + esc(p.status) + '</span><span style="font-size:11px;color:#8a9894">week ' + p.week_of_month + ' · contributions for ' + esc(C.contributionMonth(p.pay_date)) + '</span>' +
         (unv.length && !locked ? '<button class="hr-btn" id="rUnv" title="Open the Validate tab on the first unverified date' + (S.settings && S.settings.lock_requires_verified ? ' — Lock is refused until every log is verified' : '') + '"><span class="hr-chip computed">' + unv.length + ' unverified</span></button>' : '') +
         (ro() ? '' : (locked ? '<button class="hr-btn d" id="rReopen">Reopen…</button>' : '<button class="hr-btn p" id="rCompute">⟳ Compute</button>' + (p.status === 'computed' ? '<button class="hr-btn d" id="rLock">🔒 Lock</button><span style="font-size:11px;color:#8a9894">Lock is refused if anything changed since the last Compute.</span>' : ''))) +
-        '<button class="hr-btn" id="rXlsx" title="Export every computed line in the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>⬇ Excel · full register' + (locked ? '' : ' (DRAFT)') + '</button><button class="hr-btn" id="rSlips" title="Print eligible payslips from the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>🖨 Payslips · full register</button>' + REREAD + '</div>' +
+        '<button class="hr-btn" id="rXlsx" title="Export every computed line in the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>⬇ Excel · full register' + (locked ? '' : ' (DRAFT)') + '</button>' + registerSheetButtons(locked) + '<button class="hr-btn" id="rSlips" title="Print eligible payslips from the full register, across both sections"' + (S.lines.length ? '' : ' disabled') + '>🖨 Payslips · full register</button>' + REREAD + '</div>' +
         (S.unmatched.length && !locked ? '<div class="hr-warn">⚑ ' + S.unmatched.length + ' unmatched crew names — their days are NOT in this register yet.</div>' : '') +
         '<h3>Full-register totals <span class="mut">· ' + S.lines.length + ' computed line(s)</span></h3>' + summary(view.full_totals) +
         (view.awaiting_compute ? '<p class="mut">' + view.awaiting_compute + ' active roster member(s) awaiting Compute. Their amounts are blank until a payroll line is computed.</p>' : '') +
@@ -1011,6 +1020,7 @@
       // reaches paper, and paper is what people get paid against. Dark until hr.period_stale exists (S.stale is null).
       $('#rXlsx').onclick = function () { if (staleGate('Excel export')) exportXlsx(p, S.lines, S.logs).catch(fail); };
       $('#rSlips').onclick = function () { if (staleGate('payslips')) printPayslips(p, S.lines); };
+      if (Sheets) bindSheet('register', p, regSheetRows(view));      // the FULL set (both sections, no search) — see regSheetRows
       rootEl.querySelectorAll('td[contenteditable]').forEach(function (td) {
         var orig = td.textContent;
         td.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); td.blur(); } if (e.key === 'Escape') { td.textContent = orig; td.blur(); } };
@@ -1217,6 +1227,26 @@
       return '<button class="hr-btn" id="shExport">⬇ Excel</button>' +
         (ro() || locked ? '' : '<label class="hr-btn" style="cursor:pointer">⬆ Upload<input type="file" id="shImport" accept=".xlsx,.xls" hidden></label>');
     }
+    // The Register's round-trip sheet. It sits beside the old "full register" report, which is a different thing (the owner's workbook layout,
+    // a one-way export), so the label says what this one is for. Upload is offered under the same conditions as the other two tabs.
+    function registerSheetButtons(locked) {
+      if (!Sheets) return '';
+      return '<button class="hr-btn" id="shExport" title="An editable sheet of the whole register — edit it offline and upload it back. Not the report in the workbook layout (that is the button to its left)"' + (S.lines.length ? '' : ' disabled') + '>⬇ Excel · editable sheet</button>' +
+        (ro() || locked ? '' : '<label class="hr-btn" style="cursor:pointer" title="Upload an editable sheet downloaded from this week">⬆ Upload edited sheet<input type="file" id="shImport" accept=".xlsx,.xls" hidden></label>');
+    }
+    // The sheet is built from registerView's FULL set — both sections, never the search filter (view.visible is the filtered one). A download
+    // that followed the filter and then came back as an upload would report every employee outside it as missing. An employee still awaiting
+    // Compute is in it with a blank LINE: the sheet then lists the whole roster, and nothing can be written to a person who has no line.
+    function regSheetRows(view) {
+      return view.with_logs.concat(view.no_logs).map(function (l) {
+        var aw = !!l.awaitingCompute, v = function (k) { return aw ? null : l[k]; };
+        return { employee_id: l.employee_id, line_id: aw ? '' : l.id, emp_no: l.emp_no, display_name: l.display_name, position: l.position,
+          rate_on_file: aw ? null : rateOnFile(l), rate_paid: aw ? null : effRate(l), days: v('days'), basic: v('basic'), rdot: v('rdot'), lh_pay: v('lh_pay'), sh_pay: v('sh_pay'),
+          allowance: v('allowance'), adjustment: v('adjustment'), gross: v('gross'), attendance_deduction: v('attendance_deduction'), sss: v('sss'), phic: v('phic'), hdmf: v('hdmf'),
+          cash_advance: v('cash_advance'), gov_loan: aw ? null : lineVal(l, 'gov_loan'), company_loan: v('company_loan'),
+          partial_payroll: v('partial_payroll'), others: v('others'), total: v('total_deductions'), net: v('net'), remarks: v('remarks') };
+      });
+    }
     // Deductions: the scheduled amortisation (HrCore.computeLine's loan pass for the two weekly kinds: active, not deleted, due this week,
     // min(weekly, balance)), who has a row, and the rows themselves — extracted from the tab so the screen and the sheet share one build.
     function dedSched(loans, p) {
@@ -1234,6 +1264,10 @@
     // Everything that differs between the two tabs. read() takes the server's rows NOW and builds the view rows from them; whole() is a
     // server row's current value for every field the bulk function replaces; field() maps a sheet column to that field.
     function sheetCfg(kind, p) {
+      if (kind === 'register') return {
+        tab: 'register', noun: 'payroll line', file: 'REGISTER-SHEET', title: 'Register',
+        read: function () { return api.listLines(p.id).then(function (lines) { return { server: lines, view: regSheetRows(registerView(lines, S.employees, S.logs, p, S.settings, 'with_logs', '')) }; }); }
+      };
       if (kind === 'allowance') return {
         tab: 'allowance', noun: 'allowance', file: 'ALLOWANCES', title: 'Allowances',
         read: function () { return api.listAllowances(p.id).then(function (rows) { return { server: rows, view: driverAllowanceView(S.employees, S.logs, S.lines, rows, S.settings, p).rows }; }); },
@@ -1267,35 +1301,55 @@
         // Row 1 provenance · row 2 totals · row 3 header · rows 4.. one per employee. The totals sit ABOVE the header on purpose: parse() reads
         // everything under the header as an employee, so a totals row below it would be refused as a row with no ID.
         var first = 4, last = 3 + n, colIx = {}; cols.forEach(function (x, i) { colIx[x.key] = i; });
-        var totals = cols.map(function (x) { if (x.key === 'display_name') return 'TOTALS'; if (x.kind !== 'money') return ''; var s = 0; viewRows.forEach(function (r, i) { s += Number(aoa[2 + i][colIx[x.key]]) || 0; }); return C.round2(s); });
+        var totals = cols.map(function (x) { if (x.key === 'display_name') return 'TOTALS'; if (x.kind !== 'money' || (kind === 'register' && /^rate_/.test(x.key))) return ''; var s = 0; viewRows.forEach(function (r, i) { s += Number(aoa[2 + i][colIx[x.key]]) || 0; }); return C.round2(s); });
         aoa.splice(1, 0, totals);
         var ws = X.utils.aoa_to_sheet(aoa), FILL = { edit: 'FFF2CC', ro: 'E7E6E6', blank: 'F4B183' };
         function put(r, c, patch) { var a = A({ r: r, c: c }), cell = ws[a] || (ws[a] = { t: 's', v: '' }); Object.keys(patch).forEach(function (k) { cell[k] = patch[k]; }); return cell; }
         function style(fill, extra) { var s = { fill: { patternType: 'solid', fgColor: { rgb: fill } } }; Object.keys(extra || {}).forEach(function (k) { s[k] = extra[k]; }); return s; }
-        function fmt(x) { return x.key === 'deployments' ? '0' : '#,##0.00'; }
+        // NO. OF DAYS is a count of days, stored to 4 dp, and the Register renders it plainly. The money format displayed a
+        // 39-hour week as 4.88 and a 7-hour week as 0.88 — a figure nobody can tie back to the hours. (It did not break the
+        // round trip: diff() compares money at two decimals, so 4.88 still matched 4.875. A coarser format would, and the
+        // untouched-round-trip check now asserts that nothing comes back as an edit.)
+        function fmt(x) { return x.key === 'deployments' ? '0' : x.key === 'days' ? '#,##0.0000' : '#,##0.00'; }
         put(0, 0, { s: { font: { italic: true, color: { rgb: '7F7F7F' } } } });
         cols.forEach(function (x, c) {
           var fill = x.editable ? FILL.edit : FILL.ro, col = L(c), money = x.kind === 'money';
           put(2, c, { s: style(fill, { font: { bold: true }, alignment: { horizontal: money ? 'right' : 'left' } }) });
           var t = put(1, c, { s: style(FILL.ro, { font: { bold: true } }) });
-          if (money) { t.z = fmt(x); if (n) t.f = 'SUM(' + col + first + ':' + col + last + ')'; }
+          if (money) { t.z = fmt(x); if (n && !(kind === 'register' && /^rate_/.test(x.key))) t.f = 'SUM(' + col + first + ':' + col + last + ')'; }
           for (var i = 0; i < n; i++) {
             var r = 3 + i, cell = ws[A({ r: r, c: c })], empty = !cell || cell.v === '' || cell.v == null;
             // a blank that is not a note is a decision still to be made (a missing employee number, an amount left empty)
-            var patch = { s: style(empty && x.key !== 'note' ? FILL.blank : fill) }; if (money) patch.z = fmt(x);
+            // On the Register the blanks that are RIGHT are the awaiting-Compute rows, and those have no LINE: a row that HAS
+            // one should carry a figure in every money column, so mark it when it does not. (Remarks are blank by nature.)
+            var blankable = kind !== 'register' ? x.key !== 'note' : x.key !== 'remarks' && !!(viewRows[i] && viewRows[i].line_id);
+            var patch = { s: style(empty && blankable ? FILL.blank : fill) }; if (money) patch.z = fmt(x);
             put(r, c, patch);
           }
         });
         // TOTAL as a real formula, so it moves while the file is edited offline. Only where it is exactly what the screen shows: an allowance
         // under a Register override keeps its figure whatever MANUAL says, and a deduction's total also carries the scheduled loan amortisation,
         // which is not in the sheet, so that part rides in the formula as a constant.
+        // On the REGISTER both TOTAL and NET are formulas over the sheet's own cells, because the sheet now carries every term of
+        // them: TOTAL is the nine deduction columns, which are hr.compute_line's total_deductions term for term
+        // (attendance_deduction + sss + phic + hdmf + sss_loan + hdmf_loan + cash_advance + company_loan + partial_payroll +
+        // others — SSS/PAGIBIG LOAN being exactly sss_loan + hdmf_loan, as the screen and the payslip also print it), and NET is
+        // GROSS PAY − TOTAL, which is the line's own net. Static values meant a printed sheet showed the net from before the
+        // offline edits, under a column-total row that agreed with it. Skipped for a row awaiting Compute: it has no LINE and
+        // nothing computed, and a formula over its blanks would print 0.00 where the sheet is right to be empty.
+        var REG_DED = ['attendance_deduction', 'sss', 'phic', 'hdmf', 'cash_advance', 'gov_loan', 'company_loan', 'partial_payroll', 'others'];
         viewRows.forEach(function (row, i) {
           var r = 3 + i, xl = r + 1, cell = ws[A({ r: r, c: colIx.total })], f = null;
           if (kind === 'allowance') { if (!row.override && Math.abs(row.total - C.round2(row.automatic + row.manual)) < 0.005) f = L(colIx.automatic) + xl + '+' + L(colIx.manual) + xl; }
-          else f = L(colIx.cash_advance) + xl + '+' + L(colIx.company_loan) + xl + '+' + L(colIx.others) + xl + ((row.sched.cash_advance + row.sched.company_loan) ? '+' + C.round2(row.sched.cash_advance + row.sched.company_loan) : '');
+          else if (kind === 'deduction') f = L(colIx.cash_advance) + xl + '+' + L(colIx.company_loan) + xl + '+' + L(colIx.others) + xl + ((row.sched.cash_advance + row.sched.company_loan) ? '+' + C.round2(row.sched.cash_advance + row.sched.company_loan) : '');
+          else if (kind === 'register' && row.line_id) {
+            f = REG_DED.map(function (k) { return L(colIx[k]) + xl; }).join('+');
+            var net = ws[A({ r: r, c: colIx.net })];
+            if (net) net.f = L(colIx.gross) + xl + '-' + L(colIx.total) + xl;
+          }
           if (f && cell) cell.f = f;
         });
-        ws['!cols'] = cols.map(function (x) { return x.key === 'employee_id' ? { hidden: true, wch: 8 } : { wch: x.key === 'display_name' ? 30 : x.key === 'note' ? 36 : x.key === 'emp_no' ? 14 : 15 }; });
+        ws['!cols'] = cols.map(function (x) { return x.key === 'employee_id' || x.key === 'line_id' ? { hidden: true, wch: 8 } : { wch: x.key === 'display_name' ? 30 : x.key === 'note' || x.key === 'remarks' ? 36 : x.key === 'position' ? 22 : x.key === 'emp_no' ? 14 : 15 }; });
         var wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, cfg.title);
         var fn = cfg.file + '-' + p.period_start + '_' + p.period_end + '.xlsx';
         X.writeFile(wb, fn);
@@ -1307,7 +1361,7 @@
       var at = {}, idCol = -1;
       for (var i = 0; i < aoa.length; i++) {
         var cells = (aoa[i] || []).map(function (v) { return String(v == null ? '' : v).trim().toUpperCase(); });
-        if (idCol < 0) { if (cells.indexOf('ID') >= 0 && cells.indexOf('NOTE') >= 0) idCol = cells.indexOf('ID'); continue; }
+        if (idCol < 0) { if (cells.indexOf('ID') >= 0 && (cells.indexOf('NOTE') >= 0 || cells.indexOf('REMARKS') >= 0)) idCol = cells.indexOf('ID'); continue; }
         var id = String((aoa[i] || [])[idCol] == null ? '' : aoa[i][idCol]).trim();
         if (id && !(id in at)) at[id] = i + 1;
       }
@@ -1342,12 +1396,17 @@
     function showUploadPreview(kind, p, x) {
       var cols = Sheets.SHEETS[kind], cfg = x.cfg, prov = x.parsed.provenance, d = x.d, label = {}, who = {}, rowOf = sheetRowsOf(x.aoa);
       cols.forEach(function (c) { label[c.key] = c; });
-      x.cur.view.forEach(function (r) { who[r.employee.id] = (r.employee.emp_no ? r.employee.emp_no + ' · ' : '') + r.employee.display_name; });
+      x.cur.view.forEach(function (r) { var e = r.employee || r; who[e.id || e.employee_id] = (e.emp_no ? e.emp_no + ' · ' : '') + e.display_name; });      // (the Register's rows are flat)
       // a partly-understood sheet is not a basis for writing payroll: any problem refuses the whole upload
       var refused = x.parsed.problems.concat(d.problems);
       var sameWeek = prov.period_id != null && String(prov.period_id) === String(p.id);
       var sheetWeek = prov.period_start && prov.period_end ? periodLabel({ period_start: prov.period_start, period_end: prov.period_end }) : 'a week the file does not name';
       if (!sameWeek && !x.parsed.problems.length) refused.push('This sheet was exported for ' + sheetWeek + ', not for the week on screen (' + periodLabel(p) + '). A sheet for another week is not an edit, so nothing can be applied from it. Open that week, or download this week\'s sheet.');
+      if (kind === 'register') {      // what the server would refuse, said here, before the whole upload is rolled back by it
+        var rc = d.changes.filter(function (c) { return c.col === 'rate_on_file'; });
+        if (rc.length && !rateEditOK()) refused.push('This sheet changes RATE ON FILE, but your account may not change rates. Remove those edits, or ask someone who may. Nothing can be applied from it until then.');
+        rc.forEach(function (c) { if (!(Number(c.to) > 0)) refused.push('RATE ON FILE for ' + (who[c.employee_id] || c.employee_id) + ' must be more than zero.'); });
+      }
       var moved = refused.length ? [] : sheetMoved(prov, x.cur.server, x.verdict, p, cfg.noun);
       var byEmp = {}, order = []; d.changes.forEach(function (c) { if (!byEmp[c.employee_id]) { byEmp[c.employee_id] = []; order.push(c.employee_id); } byEmp[c.employee_id].push(c); });
       function val(c, v) { return label[c.col].kind === 'money' ? (v == null || v === '' ? '—' : money(v)) : (v === '' || v == null ? '<i>(blank)</i>' : esc(v)); }
@@ -1357,13 +1416,19 @@
           return '<tr>' + (i ? '<td></td>' : '<td>' + esc(who[id] || id) + '</td>') + '<td>' + esc(label[c.col].label) + '</td><td class="' + (m ? 'r' : '') + '">' + val(c, c.from) + '</td><td class="' + (m ? 'r' : '') + '"><b>' + val(c, c.to) + '</b></td></tr>';
         }).join('');
       }).join('');
-      var canApply = !refused.length && d.changes.length > 0, ignoredCols = cols.filter(function (c) { return !c.editable && c.key !== 'employee_id'; }).map(function (c) { return c.label; }).join(', ');
+      var canApply = !refused.length && d.changes.length > 0, ignoredCols = cols.filter(function (c) { return !c.editable && c.kind !== 'id'; }).map(function (c) { return c.label; }).join(', ');
       var html = '<h3>' + esc(cfg.title) + ' upload · ' + esc(periodLabel(p)) + '</h3>' +
         '<p class="mut">' + (prov.exported_at ? 'File downloaded ' + esc(stamp(prov.exported_at)) + (prov.exported_by ? ' by ' + esc(prov.exported_by) : '') + ' for ' + esc(sheetWeek) + '.' : 'The file does not say when it was downloaded.') + ' Nothing has been saved yet.</p>' +
         (refused.length ? '<div class="hr-warn" style="background:#fdecea;border-color:#f0b4ac;color:#8a2f2f"><b>This sheet cannot be applied — nothing was saved.</b><ul style="margin:6px 0 0 18px">' + refused.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul></div>' : '') +
         (moved.length ? '<div class="hr-warn" id="shMoved"><b>The week has moved since this file was downloaded:</b><ul style="margin:6px 0 0 18px">' + moved.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul><span id="shArm">Applying will overwrite those with what is in the file.</span></div>' : '') +
         '<ul style="margin:0 0 8px 18px;font-size:12px;line-height:1.6"><li><b>' + d.changes.length + '</b> cell' + (d.changes.length === 1 ? '' : 's') + ' would change, across <b>' + order.length + '</b> employee' + (order.length === 1 ? '' : 's') + '</li>' +
         '<li><b>' + d.ignored + '</b> cell' + (d.ignored === 1 ? '' : 's') + ' in read-only columns (' + esc(ignoredCols) + ') were edited in the file and are ignored</li>' +
+        // An erased editable amount is the one edit this sheet cannot carry out, and on the Register it is also the one the
+        // SCREEN reads as a deliberate act (a blank ALLOWANCE restores the automatic amount; any other blank override writes a
+        // manual zero). Silently dropping it let someone erase three overridden allowances, read "0 cells would change" and
+        // conclude the restoration had happened, while compute_week kept carrying the overrides into a Locked week.
+        (d.blanked ? '<li id="shBlank"><b>' + d.blanked + '</b> cell' + (d.blanked === 1 ? '' : 's') + ' left blank in an editable column. A blank cannot clear a figure here — use the Register\'s own cell to restore the automatic amount, or type <b>0</b> in the sheet for a deliberate zero.</li>' : '') +
+        (d.changes.some(function (c) { return c.col === 'rate_on_file'; }) ? '<li id="shRateNote"><b>RATE ON FILE</b> records a dated rate step from the start of the week. It does <b>not</b> change anyone\'s pay until you press Compute.</li>' : '') +
         (d.unknown.length ? '<li><b>' + d.unknown.length + '</b> row' + (d.unknown.length === 1 ? '' : 's') + ' with an ID that is not in this week — never created: ' + d.unknown.slice(0, 10).map(function (id) { return esc(id); }).join(', ') + (d.unknown.length > 10 ? ' … +' + (d.unknown.length - 10) : '') + '</li>' : '') +
         (d.missing.length ? '<li><b>' + d.missing.length + '</b> employee' + (d.missing.length === 1 ? ' is' : 's are') + ' no longer in the file — left as they are, never deleted: ' + d.missing.slice(0, 10).map(function (id) { return esc(who[id] || id); }).join('; ') + (d.missing.length > 10 ? ' … +' + (d.missing.length - 10) : '') + '</li>' : '') + '</ul>' +
         (order.length ? '<div class="hr-scroll" style="max-height:38vh"><table class="hr-t"><thead><tr><th>Employee</th><th>Column</th><th class="r">Now</th><th class="r">File</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : (refused.length ? '' : '<p>Nothing in this file differs from what is saved. Nothing to apply.</p>')) +
@@ -1379,7 +1444,7 @@
             box.querySelector('#shArm').innerHTML = '<b>Click once more to overwrite them with what is in the file.</b>'; return;
           }
           apply.disabled = true; cancel.disabled = true; err.textContent = '';
-          sheetApply(kind, p, x, rowOf).then(function (msg) { closeModal(); toast(msg); }).catch(function (e) {
+          (kind === 'register' ? registerSheetApply(p, x, rowOf) : sheetApply(kind, p, x, rowOf)).then(function (msg) { closeModal(); toast(msg); }).catch(function (e) {
             apply.disabled = false; cancel.disabled = false; err.textContent = (e && e.message) || String(e); toast('Upload not applied — nothing was saved');
           });
         };
@@ -1417,6 +1482,58 @@
           });
         }, function (e) {
           // the server counts positions in the array it was sent; the person needs the row in their file
+          throw new Error(String((e && e.message) || e).replace(/Row (\d+) of this upload/g, function (m, i) { var id = order[Number(i) - 1]; return id && rowOf[id] ? 'Excel row ' + rowOf[id] + ' of your file' : m; }));
+        });
+      });
+    }
+
+    // The Register's writer. THE INVERSE OF sheetApply: hr.set_line writes only the keys it is sent and appends EVERY ONE of them to manual_fields,
+    // which hr.lock_period reads to decide whether a contribution was a deliberate manual figure. A key sent with an unchanged value therefore
+    // freezes that column as manual for the rest of the week, invisibly, until a Lock. So each element carries ONLY the keys the diff found changed —
+    // never a whole row, never a "to be safe" key. line_id comes from the line the server holds NOW for that employee, never from the sheet.
+    // The rate is its own field (hr.set_line_rate writes a dated step) and moves no money until a Compute.
+    function registerSheetApply(p, x, rowOf) {
+      var cfg = x.cfg;
+      return cfg.read().then(function (now) {
+        if (!S.period || S.period.id !== p.id) throw new Error('The week on screen changed while this preview was open. Nothing was saved — upload again.');
+        var line = {}, rows = {}, order = [], drift = [];
+        now.server.forEach(function (l) { line[l.employee_id] = l; });
+        function name(c) { var v = x.cur.view.filter(function (r) { return r.employee_id === c.employee_id; })[0]; return (v ? v.emp_no || v.display_name : c.employee_id) + ' ' + c.col; }
+        x.d.changes.forEach(function (c) {
+          var ln = line[c.employee_id];
+          if (!ln || !ln.id) throw new Error((rowOf[c.employee_id] ? 'Excel row ' + rowOf[c.employee_id] : c.employee_id) + ' has no payroll line this week any more. Nothing was saved — upload again.');
+          var held = c.col === 'rate_on_file' ? rateOnFile(ln) : ln[c.col];      // the SAME field the sheet exported, or the drift check would refuse every rate edit
+          // the preview said "from X"; if the server no longer holds X, someone changed it in between and the preview is no longer what would happen
+          if (c.col === 'remarks' ? String(c.from == null ? '' : c.from).trim() !== String(held == null ? '' : held).trim() : Math.round((Number(c.from) || 0) * 100) !== Math.round((Number(held) || 0) * 100)) drift.push(name(c));
+          var row = rows[c.employee_id];      // one element per employee: a repeated line would apply both and the last would win
+          if (!row) { row = rows[c.employee_id] = { line_id: ln.id, employee_id: c.employee_id, set: {}, rate: null }; order.push(c.employee_id); }
+          if (c.col === 'rate_on_file') {
+            // DEFENCE IN DEPTH, unreachable through the UI today: showUploadPreview refuses a rate that is not above zero before
+            // the Apply button is drawn, and diff() only produces a money change whose `to` is a finite number (money() reports
+            // anything else as not-a-number, which becomes a problem and refuses the sheet). Kept because this function is also
+            // the last place between the file and hr.set_lines_bulk.
+            if (!(Number(c.to) > 0)) throw new Error('RATE ON FILE for ' + (rowOf[c.employee_id] ? 'Excel row ' + rowOf[c.employee_id] : c.employee_id) + ' must be more than zero. Nothing was saved.');
+            row.rate = Number(c.to);
+          } else if (c.col === 'remarks') row.set.remarks = String(c.to == null ? '' : c.to);
+          else {
+            // likewise unreachable: a money cell that is not a number never becomes a change in the first place
+            if (!(typeof c.to === 'number' && isFinite(c.to))) throw new Error('Not a number for ' + (rowOf[c.employee_id] ? 'Excel row ' + rowOf[c.employee_id] : c.employee_id) + ' (' + c.col + '). Nothing was saved.');
+            row.set[c.col] = c.to;
+          }
+        });
+        if (drift.length) throw new Error('Changed on the server since this preview was built: ' + drift.slice(0, 5).join(', ') + (drift.length > 5 ? ' … +' + (drift.length - 5) : '') + '. Nothing was saved — upload the file again to see the current picture.');
+        var send = order.map(function (id) { return rows[id]; });
+        return api.setLinesBulk(p.id, send).then(function (res) {
+          var lines = S.lines;
+          ((res && res.rows) || []).forEach(function (r) { if (r.line && r.line.id) lines = patchRows(lines, r.line, 'id'); });      // a rate-only element returns no line
+          if (S.period && S.period.id === p.id) S.lines = lines;
+          return staleRead(p.id).then(function () {
+            if (S.tab === 'register' && S.period && S.period.id === p.id) TABS.register();
+            var n = res && res.applied, nr = (res && res.rates) || 0;
+            return n + ' row' + (n === 1 ? '' : 's') + ' saved from the Excel file' + (n !== send.length ? ' (' + send.length + ' sent)' : '') +
+              (nr ? ' · ' + nr + ' rate' + (nr === 1 ? '' : 's') + ' recorded as a dated step from the start of the week — pay does NOT change until you press Compute' : '');
+          });
+        }, function (e) {
           throw new Error(String((e && e.message) || e).replace(/Row (\d+) of this upload/g, function (m, i) { var id = order[Number(i) - 1]; return id && rowOf[id] ? 'Excel row ' + rowOf[id] + ' of your file' : m; }));
         });
       });
