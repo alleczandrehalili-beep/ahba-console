@@ -619,7 +619,176 @@
   // ms left before the handed-over token expires (negative = expired)
   function handoffMsLeft(exp, now) { return Number(exp) * 1000 - (now == null ? Date.now() : Number(now)); }
 
-  return { STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
+  // ---------- Audits tab filters + filtered export (phase 10; server: nap.list_audits, nap-19, same caps and messages) ----------
+  // chips: '' All, flagged GPS flag, not_found Not found, awo Active w/o tagging, deact NAP deactivated, desk Desk update (phase 11:
+  // audits.source = 'desk'; none before nap-20) (the server also accepts 'reviewed')
+  var AUDIT_KINDS = ['', 'flagged', 'not_found', 'reviewed', 'awo', 'deact', 'desk'];
+  var AUDIT_KIND_LABEL = { flagged: 'GPS flag', not_found: 'Not found', reviewed: 'Reviewed', awo: 'Active w/o tagging', deact: 'NAP deactivated', desk: 'Desk update' };
+  var AUDIT_PAGE = 200, AUDIT_EXPORT_PAGE = 1000, AUDIT_EXPORT_MAX = 50000, AUDIT_STREET_MIN = 3, AUDIT_Q_MIN = 2;
+  var AUDIT_MAXLEN = { district: 40, barangay: 100, street: 100, q: 80 };
+  function auditFilterDefaults() { return { kind: '', district: '', barangay: '', street: '', from: '', to: '', q: '' }; }
+  function oneLine(v) { return String(v == null ? '' : v).replace(/[\s ]+/g, ' ').trim(); }
+  function validYmd(s) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); return !!m && iso(+m[1], +m[2], +m[3]) === s; }
+  function nextYmd(s) { var t = new Date(Date.parse(s + 'T00:00:00Z') + DAY); return t.toISOString().slice(0, 10); }
+  // the filter state of the Audits tab -> { ok, error, params } (params = the nap.list_audits arguments without paging). Dates are Philippine
+  // days: From = 00:00 of that day (+08:00), To = 00:00 of the NEXT day (the server's p_to is exclusive), whatever the computer's time zone.
+  // A barangay implies its district, so the district is sent only without a barangay.
+  function auditFilterParams(f) {
+    f = f || {};
+    var kind = oneLine(f.kind).toLowerCase(), d = oneLine(f.district), b = oneLine(f.barangay), s = oneLine(f.street), q = normStencil(f.q);
+    var from = oneLine(f.from), to = oneLine(f.to);
+    function bad(msg) { return { ok: false, error: msg, params: null }; }
+    if (AUDIT_KINDS.indexOf(kind) < 0) return bad('Unknown audit filter.');
+    if (d.length > AUDIT_MAXLEN.district || b.length > AUDIT_MAXLEN.barangay || s.length > AUDIT_MAXLEN.street || q.length > AUDIT_MAXLEN.q) return bad('A filter is too long.');
+    if (s && !b && s.length < AUDIT_STREET_MIN) return bad('Street: type at least ' + AUDIT_STREET_MIN + ' characters, or choose a barangay first.');
+    if (q && q.length < AUDIT_Q_MIN) return bad('NAP stencil: type at least ' + AUDIT_Q_MIN + ' characters.');
+    if ((from && !validYmd(from)) || (to && !validYmd(to))) return bad('Dates must be valid (YYYY-MM-DD).');
+    if (from && to && from > to) return bad('The date range is reversed: From is after To.');
+    return { ok: true, error: null, params: { p_district: b ? null : (d || null), p_barangay: b || null, p_street: s || null, p_kind: kind || null,
+      p_from: from ? from + 'T00:00:00+08:00' : null, p_to: to ? nextYmd(to) + 'T00:00:00+08:00' : null, p_q: q || null } };
+  }
+  // true when a filter beyond the chips is set (the old list before nap-19 cannot apply those)
+  function auditNewFilters(f) { f = f || {}; return !!(oneLine(f.district) || oneLine(f.barangay) || oneLine(f.street) || oneLine(f.from) || oneLine(f.to) || oneLine(f.q)); }
+  // the active filters in words, for the line above the list (plain text: the dashboard escapes it)
+  function auditFilterSummary(f) {
+    f = f || {};
+    var out = [], b = oneLine(f.barangay), d = oneLine(f.district), s = oneLine(f.street), q = normStencil(f.q), from = oneLine(f.from), to = oneLine(f.to);
+    if (AUDIT_KIND_LABEL[oneLine(f.kind).toLowerCase()]) out.push(AUDIT_KIND_LABEL[oneLine(f.kind).toLowerCase()]);
+    if (d) out.push('District ' + d);
+    if (b) out.push('Barangay ' + b);
+    if (s) out.push('Street contains "' + s + '"');
+    if (from && to) out.push(from === to ? 'On ' + from : from + ' to ' + to); else if (from) out.push('From ' + from); else if (to) out.push('Up to ' + to);
+    if (q) out.push('Stencil contains "' + q + '"');
+    return out;
+  }
+  // keyset cursor of the next page = the last row received (rows are newest first: created_at desc, id desc)
+  function auditCursor(rows) {
+    var r = rows && rows.length ? rows[rows.length - 1] : null;
+    return r && r.created_at && r.id ? { p_before_at: r.created_at, p_before_id: r.id } : null;
+  }
+  function slugPart(v, dflt) { var t = String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); return t || dflt; }
+  // nap-audits-<district|all>-<barangay|all>-<from|all>-<to|all>-<today, Philippine date>.<ext>
+  function auditExportName(f, ext, now) {
+    f = f || {};
+    var d = oneLine(f.district);
+    return 'nap-audits-' + (d ? 'district-' + slugPart(d, 'x') : 'all') + '-' + slugPart(f.barangay, 'all') + '-' + (validYmd(oneLine(f.from)) ? oneLine(f.from) : 'all') + '-' +
+      (validYmd(oneLine(f.to)) ? oneLine(f.to) : 'all') + '-' + manilaToday(now == null ? Date.now() : now) + '.' + (ext === 'xlsx' ? 'xlsx' : 'csv');
+  }
+  // 'YYYY-MM-DD HH:MM' in Philippine time (UTC+8, no daylight saving), whatever the computer's time zone; '' when empty / unreadable
+  function fmtManila(v) {
+    if (v == null || v === '') return '';
+    var t = toMs(v); if (!isFinite(t)) return '';
+    var s = new Date(t + 8 * 3600000).toISOString();
+    return s.slice(0, 10) + ' ' + s.slice(11, 16);
+  }
+  // export columns: no account numbers (tag_acct) and no photo paths, by design. source = 'field' (a team's visit) or 'desk' (phase 11 desk update)
+  var AUDIT_EXPORT_COLS = ['audit_at_ph', 'stencil', 'np', 'district', 'barangay', 'street', 'team', 'technicians', 'review_status', 'free_ports', 'checked_ports',
+    'gps_distance_m', 'gps_flag', 'declared_full', 'nap_deactivated', 'job_id', 'geo_result', 'photo_count', 'reviewed', 'source'];
+  var AUDIT_EXPORT_NUMERIC = { np: 1, free_ports: 1, checked_ports: 1, gps_distance_m: 1, photo_count: 1 };
+  var AUDIT_EXPORT_WIDTHS = { audit_at_ph: 17, stencil: 24, np: 5, district: 9, barangay: 22, street: 24, team: 10, technicians: 28, review_status: 13, free_ports: 10,
+    checked_ports: 13, gps_distance_m: 14, gps_flag: 9, declared_full: 13, nap_deactivated: 15, job_id: 14, geo_result: 11, photo_count: 11, reviewed: 9, source: 8 };
+  function yn(v) { return v === true ? 'YES' : 'NO'; }
+  function numOr(v) { return v == null || v === '' || !isFinite(Number(v)) ? '' : Number(v); }
+  // one nap.list_audits row -> the export cells, in AUDIT_EXPORT_COLS order (numbers stay numbers; a not-found visit or a deactivated-NAP
+  // record has no port reading, and a desk update holds only the ports it changed, so their free_ports is blank, as the list shows "-";
+  // checked_ports of a desk update = the number of ports it changed)
+  function auditExportCells(r) {
+    r = r || {};
+    var desk = r.source === 'desk', noPorts = r.review_status === 'not_found' || r.jo_nap_inactive === true || desk;
+    return [fmtManila(r.created_at), r.stencil == null ? '' : String(r.stencil), numOr(r.np), r.district == null ? '' : String(r.district),
+      r.barangay == null ? '' : String(r.barangay), r.street == null ? '' : String(r.street), r.team == null ? '' : String(r.team),
+      r.technicians == null ? '' : String(r.technicians), r.review_status == null ? '' : String(r.review_status), noPorts ? '' : numOr(r.free_ports),
+      numOr(r.checked_ports), r.distance_m == null || r.distance_m === '' ? '' : Math.round(Number(r.distance_m) * 10) / 10, yn(r.gps_flag), yn(r.declared_full),
+      yn(r.jo_nap_inactive), r.job_id == null ? '' : String(r.job_id), r.geo_result == null ? '' : String(r.geo_result), numOr(r.photo_count), yn(r.review_status === 'reviewed'), desk ? 'desk' : 'field'];
+  }
+  function auditExportCsv(rows) { return '﻿' + toCsv(AUDIT_EXPORT_COLS, (rows || []).map(auditExportCells), AUDIT_EXPORT_NUMERIC); }
+  // an audit as the old PostgREST list returned it (embedded boxes / audit_ports / audit_photos) -> the nap.list_audits row shape, for the
+  // fallback while nap-19 is not on the database yet (district / barangay unknown there)
+  function auditRowFromLegacy(a) {
+    a = a || {};
+    var ports = a.audit_ports || [], bx = a.boxes || {};
+    return { id: a.id, created_at: a.created_at, box_id: a.box_id, stencil: bx.stencil == null ? null : bx.stencil, district: null, barangay: null,
+      street: bx.street == null ? null : bx.street, np: a.np, team: a.team, technicians: a.technicians == null ? null : a.technicians, review_status: a.review_status,
+      gps_flag: a.gps_flag === true, distance_m: a.distance_m == null ? null : a.distance_m, has_gps: a.gps_lat != null && a.gps_lng != null,
+      declared_full: a.declared_full === true, job_id: a.job_id == null ? null : a.job_id, geo_result: a.geo_result == null ? null : a.geo_result,
+      jo_nap_inactive: a.jo_nap_inactive === true, free_ports: ports.filter(function (p) { return isUsable(p.status); }).length, checked_ports: ports.length,
+      photo_count: (a.audit_photos || []).length, total_count: null, source: a.source === 'desk' ? 'desk' : 'field' };
+  }
+
+  // ======================================================================================================================
+  // ---------- phase 11: DESK UPDATE of ports (nap-20, nap.desk_update_ports). Self-contained block; exported as NapCore.desk ----------
+  // Same rules as the server (change both together): the six statuses (never 'Unverified'); 'Active (w/ tagging)' needs EXACTLY 13 digits
+  // (spaces and dashes stripped); every other status sends no account number; reason 3..200 characters (trimmed); 1..8 distinct ports;
+  // ports whose status and account are unchanged are not sent.
+  var DESK = (function () {
+    var REASON_MIN = 3, REASON_MAX = 200, ACCT_LEN = 13;
+    // ' 1234-5678 90123 ' -> '1234567890123' (paste-friendly: spaces, tabs, dashes removed; anything else is kept so it fails the check)
+    function normAcct(s) { return String(s == null ? '' : s).replace(/[\s-]+/g, ''); }
+    function isAcct(s) { return /^[0-9]{13}$/.test(normAcct(s)); }
+    // '' when fine, else the message for one port {status, tag_acct}
+    function portError(p) {
+      if (!p || PORT_STATUSES.indexOf(p.status) < 0) return 'Choose a status.';
+      if (p.status === STATUS.AWT) {
+        var a = normAcct(p.tag_acct);
+        if (!a) return 'Enter the 13-digit account number.';
+        if (!/^[0-9]+$/.test(a)) return 'Digits only.';
+        if (a.length !== ACCT_LEN) return 'Exactly 13 digits (' + a.length + ' entered).';
+      }
+      return '';
+    }
+    function reasonError(r) {
+      var t = String(r == null ? '' : r).trim();
+      if (t.length < REASON_MIN) return 'Enter the reason (at least ' + REASON_MIN + ' characters).';
+      if (t.length > REASON_MAX) return 'The reason is too long (at most ' + REASON_MAX + ' characters).';
+      return '';
+    }
+    // the value a port is saved with: the account only for 'Active (w/ tagging)'
+    function clean(p) { return { port: Number(p.port), status: p.status, tag_acct: p.status === STATUS.AWT ? normAcct(p.tag_acct) : null }; }
+    // current: [{port, status, tag_acct}] of ONE NAP number; edits: {port: {status, tag_acct}}. Returns the ports that change, P1..P8 order.
+    function diff(current, edits) {
+      var cur = {};
+      (current || []).forEach(function (p) { cur[Number(p.port)] = p; });
+      var out = [];
+      Object.keys(edits || {}).map(Number).filter(function (n) { return Number.isInteger(n) && n >= 1 && n <= 8; }).sort(function (a, b) { return a - b; }).forEach(function (n) {
+        var e = edits[n]; if (!e || !e.status) return;
+        var next = clean({ port: n, status: e.status, tag_acct: e.tag_acct }), was = cur[n];
+        if (was && was.status === next.status && String(was.tag_acct || '') === String(next.tag_acct || '')) return;
+        out.push(next);
+      });
+      return out;
+    }
+    // {ok, errors: {port: message}, reason: message, changed: [...]} for the editor (the Save button is enabled only when ok)
+    function validate(current, edits, reason) {
+      var changed = diff(current, edits), errors = {}, any = false;
+      changed.forEach(function (p) { var m = portError({ status: p.status, tag_acct: edits[p.port].tag_acct }); if (m) { errors[p.port] = m; any = true; } });
+      var rm = reasonError(reason);
+      return { ok: changed.length > 0 && !any && !rm, errors: errors, reason: rm, changed: changed, nothing: changed.length === 0 };
+    }
+    function payload(o) {
+      return { client_id: o.clientId, box_id: o.boxId, np: Number(o.np), reason: String(o.reason == null ? '' : o.reason).trim(),
+               ports: (o.changed || []).map(function (p) { return { port: p.port, status: p.status, tag_acct: p.tag_acct }; }) };
+    }
+    // a fresh idempotency key (crypto.randomUUID when there is one); one per Save attempt series of the same edit
+    function newClientId() {
+      try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) { /* fall through */ }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+    }
+    // the warning text for the server's duplicate_acct list (never blocks)
+    function duplicateText(list) {
+      if (!list || !list.length) return '';
+      return 'The same account number is also on: ' + list.slice(0, 5).map(function (d) { return d.stencil + ' (NP' + d.np + ' P' + d.port + ')'; }).join(', ') +
+        (list.length > 5 ? ' and ' + (list.length - 5) + ' more' : '') + '. Check that it is not a typo.';
+    }
+    return { REASON_MIN: REASON_MIN, REASON_MAX: REASON_MAX, ACCT_LEN: ACCT_LEN, normAcct: normAcct, isAcct: isAcct, portError: portError,
+             reasonError: reasonError, diff: diff, validate: validate, payload: payload, newClientId: newClientId, duplicateText: duplicateText, SOURCE_DESK: 'desk', LABEL: 'Desk update' };
+  })();
+  // ======================================================================================================================
+
+  return {
+    desk: DESK, AUDIT_KINDS: AUDIT_KINDS, AUDIT_KIND_LABEL: AUDIT_KIND_LABEL, AUDIT_PAGE: AUDIT_PAGE, AUDIT_EXPORT_PAGE: AUDIT_EXPORT_PAGE, AUDIT_EXPORT_MAX: AUDIT_EXPORT_MAX,
+    AUDIT_STREET_MIN: AUDIT_STREET_MIN, AUDIT_MAXLEN: AUDIT_MAXLEN, auditFilterDefaults: auditFilterDefaults, auditFilterParams: auditFilterParams, auditNewFilters: auditNewFilters,
+    auditFilterSummary: auditFilterSummary, auditCursor: auditCursor, auditExportName: auditExportName, fmtManila: fmtManila, AUDIT_EXPORT_COLS: AUDIT_EXPORT_COLS,
+    AUDIT_EXPORT_NUMERIC: AUDIT_EXPORT_NUMERIC, AUDIT_EXPORT_WIDTHS: AUDIT_EXPORT_WIDTHS, auditExportCells: auditExportCells, auditExportCsv: auditExportCsv, auditRowFromLegacy: auditRowFromLegacy, STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
     BASKET_MAX: BASKET_MAX, PLAN_MAX_TEAMS: PLAN_MAX_TEAMS, isUuid: isUuid, basketAdd: basketAdd, basketRemove: basketRemove, basketGroups: basketGroups,
     basketParse: basketParse, hilbertIndex: hilbertIndex, walkOrder: walkOrder, splitEvenly: splitEvenly, moveBoxes: moveBoxes, planSummary: planSummary, planPayload: planPayload,
     MASTER_IMPORT_COLS: MASTER_IMPORT_COLS, MASTER_EXPORT_COLS: MASTER_EXPORT_COLS, MASTER_COMPUTED: MASTER_COMPUTED, MASTER_NUMERIC: MASTER_NUMERIC,

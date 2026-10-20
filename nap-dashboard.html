@@ -51,6 +51,7 @@ h2{font-size:14px;margin:0 0 8px;font-weight:600}
 .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;padding:6px 10px;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+#auditFilter{flex-wrap:wrap;max-width:100%}   /* six status buttons (phase 10 + 11): wrap on a phone instead of being cut off */
 .btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
 .btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.sm{padding:4px 9px;font-size:12.5px}
@@ -158,7 +159,28 @@ tr.inb td{background:var(--bg)}
 .bkres{margin-top:10px}
 .vbanner{background:var(--stalebg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
 .vbanner b{font-weight:600}
+.filters input[type=search]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);max-width:100%;min-width:0;width:100%}
+.filters input[type=date]{width:100%}
+.filters input:disabled,.filters select:disabled{opacity:.55}
+.auactive{overflow-wrap:anywhere;min-width:0;flex:1 1 200px}
+.auexp .meta{overflow-wrap:anywhere}
+#auditRows td.st{min-width:90px;overflow-wrap:anywhere}
+#auditRows td.stencil{min-width:9.5em}
 .photo-missing{width:64px;height:64px;border-radius:6px;border:1px dashed var(--full);color:var(--full);font-size:10.5px;display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
+/* ---------- phase 11: desk update of ports (NAP detail panel) ---------- */
+.dk-tag{font:inherit;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--issue);background:none;border:1px dashed var(--issue);border-radius:5px;padding:1px 6px;cursor:pointer;margin:0 2px}
+.dk-ed{margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+.dk-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:4px 8px;align-items:center;padding:5px 6px;border-radius:6px;border:1px solid transparent}
+.dk-row.dk-chg{background:var(--bg);border-color:var(--accent)}
+.dk-row b{font-family:var(--mono);font-weight:500}
+.dk-row .dk-f{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.dk-row select{flex:1 1 170px;min-width:0}
+.dk-row input{font:inherit;font-family:var(--mono);padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);flex:1 1 150px;min-width:0}
+.dk-row input.dk-bad{border-color:var(--full)}
+.dk-row .dk-m{grid-column:2;font-size:11.5px;color:var(--full)}
+.dk-row .dk-was{grid-column:2;font-size:11.5px;color:var(--muted)}
+.dk-reason{display:block;width:100%;margin-top:8px;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
+.dk-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 </style>
 </head>
 <body>
@@ -257,8 +279,24 @@ tr.inb td{background:var(--bg)}
     </div>
     </section>
     <section id="v-audits" hidden>
-      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">All</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Not found</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button><button data-f="deact" aria-pressed="false">NAP deactivated</button></div></div>
-      <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>NAP</th><th>NP</th><th>Team</th><th>Free</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
+      <div class="card"><div class="row"><div class="seg" id="auditFilter"><button data-f="" aria-pressed="true">All</button><button data-f="flagged" aria-pressed="false">GPS flag</button><button data-f="not_found" aria-pressed="false">Not found</button><button data-f="awo" aria-pressed="false">Active w/o tagging</button><button data-f="deact" aria-pressed="false">NAP deactivated</button><button data-f="desk" aria-pressed="false">Desk update</button></div></div>
+      <div class="filters aufilters" id="auFilters" style="margin-top:10px">
+        <label>District<select id="auDist" aria-label="District"></select></label>
+        <label>Barangay<select id="auBrgy" aria-label="Barangay"></select></label>
+        <label>Street<input type="search" id="auStreet" list="auStreets" maxlength="100" placeholder="contains…" autocomplete="off" enterkeyhint="search" aria-label="Street contains"></label>
+        <label>From<input type="date" id="auFrom" aria-label="From date"></label>
+        <label>To<input type="date" id="auTo" aria-label="To date"></label>
+        <label>NAP stencil<input type="search" id="auQ" maxlength="80" placeholder="contains…" autocomplete="off" enterkeyhint="search" aria-label="NAP stencil contains"></label>
+      </div>
+      <datalist id="auStreets"></datalist>
+      <div class="row"><button class="btn sm" id="auClear" type="button">Clear filters</button><span class="meta auactive" id="auActive" role="status" aria-live="polite"></span></div>
+      <div class="warn" id="auPending" role="note" hidden style="margin:10px 0 0"><b>Update pending.</b> The District, Barangay, Street, date and stencil filters and the filtered export start working after the database update (nap-PHASE10-ALL.sql). Until then the list shows the newest 200 audits per status, as before.</div>
+      <p class="meta err" id="auErr" role="alert" hidden style="margin:8px 0 0"></p>
+      <div class="row auexp" style="margin-top:10px"><span class="meta" id="auCount" role="status" aria-live="polite"></span>
+        <button class="btn sm pri" id="auCsv" type="button">Export filtered (.csv)</button><button class="btn sm" id="auXlsx" type="button">Export filtered (.xlsx)</button><button class="btn sm" id="auCancel" type="button" hidden>Cancel export</button>
+        <span class="meta" id="auExpMsg" role="status" aria-live="polite"></span></div>
+      <div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>NAP</th><th>NP</th><th>Barangay</th><th>Street</th><th>Team</th><th>Free</th><th>Status</th><th></th></tr></thead><tbody id="auditRows"></tbody></table></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" id="auMore" type="button" hidden>Load more</button><span class="meta" id="auMoreMsg" role="status" aria-live="polite"></span></div>
       <div id="auditDetail" class="detail" hidden></div></div>
     </section>
     <section id="v-pilot" hidden>
@@ -376,11 +414,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-16.1"></script>
-<script src="nap-api.js?v=2026-10-16.1"></script>
+<script src="nap-core.js?v=2026-10-20.3"></script>
+<script src="nap-api.js?v=2026-10-20.3"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-16.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-20.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -460,6 +498,7 @@ async function boot() {
     ACC = C.dashAccess(state.role, false, { email: state.email, handoff: !!HANDOFF });
     if (!ACC.ok) { $('noAccessMsg').textContent = ACC.message; return show('noAccess'); }
     state.role = ACC.role;
+    deskInit();   // phase 11: may this session desk-update ports? (async; the NAP detail shows "Edit ports" when yes)
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
@@ -732,7 +771,8 @@ async function drawDetail(refresh) {
   else {
     el.innerHTML = '<div class="meta">Loading…</div>';
     // view-only: the port grid through nap.box_ports (no account numbers); board roles read nap.ports directly (with tag_acct)
-    try { ports = ACC.canTagAcct ? await api.boxPorts(b.box_id) : await api.boxPortsView(b.box_id); }
+    // phase 11: a desk-update session that is not a board role (QAS team) reads the ports WITH account numbers through nap.port_detail
+    try { ports = ACC.canTagAcct ? await api.boxPorts(b.box_id) : deskOn() ? await api.portDetail(b.box_id) : await api.boxPortsView(b.box_id); }
     catch (e) { if (tok === detailTok) { portsCache = null; el.innerHTML = '<div class="meta" style="color:var(--full)">Cannot load the ports: ' + esc(msgOf(e)) + '</div>'; } return; }
     if (tok !== detailTok) return;   // a newer call superseded this one
     portsCache = { box_id: b.box_id, ports: ports };
@@ -740,14 +780,16 @@ async function drawDetail(refresh) {
   var nps = {}; ports.forEach(function (p) { (nps[p.np] = nps[p.np] || []).push(p); });
   el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></div><div class="nps">' +
     Object.keys(nps).map(function (np) {
-      var list = nps[np], tags = list.filter(function (p) { return ACC.canTagAcct && p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
+      var list = nps[np], tags = list.filter(function (p) { return (ACC.canTagAcct || deskOn()) && p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
       var untagged = list.filter(function (p) { return p.status === S.AWO; }).map(function (p) { return 'P' + p.port; });
       var newest = list.reduce(function (m, p) { return p.verified_at && p.verified_at > m ? p.verified_at : m; }, '');
-      return '<div class="np"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'no audit yet') + '</span></div><div class="ports">' +
+      return '<div class="np" data-dk-np="' + esc(np) + '"><div class="np-h"><b>NP' + np + '</b><span>' + (newest ? 'audit ' + new Date(newest).toLocaleDateString() : 'no audit yet') + deskEditBtn(b, np) + '</span></div><div class="ports">' +
         list.map(function (p) { return '<div class="port s-' + PCLS[p.status] + '" title="' + esc(p.status) + '">P' + p.port + '<small>' + PSHORT[p.status] + '</small></div>'; }).join('') + '</div>' +
         (tags ? '<div style="margin-top:6px">' + tags + '</div>' : '') +
-        (untagged.length ? '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active but no label. Ask the team to tag it.</div>' : '') + '</div>';
+        (untagged.length ? (deskCanEdit(b) ? deskUntaggedHtml(np, untagged) : '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.join(', ') + ': Active but no label. Ask the team to tag it.</div>') : '') +
+        '<div class="dk-slot"></div></div>';
     }).join('') + '</div>' + (ACC.canHistory ? '<div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>' : '');
+  deskAfterDetail(b, ports);
   if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -773,7 +815,7 @@ async function drawHistory(b, tok, refresh) {
     if (open) showAudit(rows[+btn.dataset.hi], tr.querySelector('.detail'), function () { histCache = null; drawDetail(true); });
   };
 }
-function freeCell(a) { return a.review_status === 'not_found' || a.jo_nap_inactive ? '-' : String((a.audit_ports || []).filter(function (p) { return C.isUsable(p.status); }).length); }
+function freeCell(a) { return a.review_status === 'not_found' || a.jo_nap_inactive || a.source === 'desk' ? '-' : a.free_ports != null ? String(Number(a.free_ports)) : String((a.audit_ports || []).filter(function (p) { return C.isUsable(p.status); }).length); }
 // Phase 7 (nap-16): the "This job's NAP is deactivated" record a gated team saves in the Full NAP flow (no ports; the server proved the
 // named NAP is deactivated). Always flagged for review; shows the named NAP, the JO and the team's GPS distance to the NAP.
 var DEACT_LABEL = 'NAP deactivated (Full NAP job)';
@@ -784,11 +826,12 @@ function deactPills(a) {
 }
 function statusPills(a) {
   var tag = a.review_status === 'ok' ? 'ok' : a.review_status === 'reviewed' ? 'stale' : 'issue';
-  return deactPills(a) + '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
-    (a.gps_lat == null && a.review_status === 'flagged' ? ' <span class="pill p-issue">No GPS</span>' : '');
+  return deactPills(a) + deskPill(a) + '<span class="pill p-' + tag + '">' + esc(a.review_status) + (a.gps_flag ? (a.distance_m != null ? ' · ' + Math.round(a.distance_m) + ' m' : ' · GPS flag') : '') + '</span>' +
+    ((a.has_gps === false || (a.has_gps == null && a.gps_lat == null)) && a.review_status === 'flagged' ? ' <span class="pill p-issue">No GPS</span>' : '');
 }
 // Renders one audit (ports, photos, review button) into el. Photos that cannot be signed show "Cannot load" instead of vanishing.
 async function showAudit(a, el, onReviewed) {
+  if (a && a.source === 'desk') return showDeskAudit(a, el);   // phase 11: desk update (old -> new values + reason)
   var tok = el._tok = (el._tok || 0) + 1;
   el.hidden = false; el.innerHTML = '<div class="meta">Loading…</div>';
   var urls = [], photoErr = false;
@@ -954,30 +997,195 @@ function tab(name) {
   if (ACC.tabs.indexOf(name) < 0) name = 'board';   // a view-only account never opens another tab
   ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
-  if (name === 'audits') loadAudits(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
+  if (name === 'audits') auOpen(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
 }
 ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
-async function loadAudits() {
-  var f = document.querySelector('#auditFilter [aria-pressed=true]').dataset.f;
-  var rows;
-  // 'awo' (Active w/o tagging) is filtered here over the loaded audits; 'deact' (NAP deactivated) is jo_nap_inactive on the server;
-  // the others are review_status filters on the server
-  try { rows = await api.listAudits({ reviewStatus: (f && f !== 'awo' && f !== 'deact') ? f : undefined, joNapInactive: f === 'deact', limit: 200 }); } catch (e) { return toast('Cannot load the audits: ' + msgOf(e)); }
-  if (f === 'awo') rows = rows.filter(function (a) { return (a.audit_ports || []).some(function (p) { return p.status === S.AWO; }); });
-  state.audits = rows;
-  $('auditRows').innerHTML = rows.map(function (a, i) {
-    return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td class="stencil">' + esc(a.boxes && a.boxes.stencil) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td>' + statusPills(a) + '</td><td><button class="btn sm" data-ai="' + i + '">View</button></td></tr>';
-  }).join('') || '<tr><td colspan="7" class="meta">' + (f ? 'No matches.' : 'No audits yet.') + '</td></tr>';
+// ---------- Audits tab (phase 10): server-side filters (nap.list_audits, nap-19), 200 per page + Load more, export of the filtered audits ----------
+// Every filter is applied by the server (never over the loaded rows). The list carries no ports / photos / account numbers: View reads ONE
+// audit (api.getAudit). A response that arrives after a newer request (filters changed meanwhile) is dropped (sequence token au.seq).
+// Before nap-19 is on the database the RPC is missing: the tab falls back to the old list (newest 200 per chip) and says "Update pending".
+var au = { f: C.auditFilterDefaults(), rows: [], cursor: null, done: true, total: null, seq: 0, busy: false, fallback: false, streetsFor: null, streetsSeq: 0, exp: null, timer: null };
+function auDistricts() {
+  var ds = {}; state.summary.forEach(function (r) { if (r.district) ds[r.district] = true; });
+  return Object.keys(ds).sort(function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); });
 }
+function auFillSelects() {
+  var ds = auDistricts();
+  if (au.f.district && ds.indexOf(au.f.district) < 0) ds.push(au.f.district);
+  $('auDist').innerHTML = '<option value="">All</option>' + ds.map(function (d) { return '<option value="' + esc(d) + '"' + (d === au.f.district ? ' selected' : '') + '>District ' + esc(d) + '</option>'; }).join('');
+  var rows = state.summary.filter(function (r) { return !au.f.district || String(r.district || '') === au.f.district; })
+    .slice().sort(function (x, y) { return String(x.barangay).localeCompare(String(y.barangay)); });
+  if (au.f.barangay && !rows.some(function (r) { return r.barangay === au.f.barangay; })) rows.unshift({ barangay: au.f.barangay, boxes: null });
+  $('auBrgy').innerHTML = '<option value="">All</option>' + rows.map(function (r) {
+    return '<option value="' + esc(r.barangay) + '"' + (r.barangay === au.f.barangay ? ' selected' : '') + '>' + esc(r.barangay) + (r.boxes != null ? ' (' + fmtN(r.boxes) + ')' : '') + '</option>';
+  }).join('');
+}
+// the Street choices of the chosen barangay (typing anything else still works: "contains")
+async function auLoadStreets() {
+  var b = au.f.barangay, tok = ++au.streetsSeq;
+  if (!b || au.fallback) { au.streetsFor = null; $('auStreets').innerHTML = ''; return; }
+  if (au.streetsFor === b) return;
+  var rows;
+  try { rows = await api.streetsInBarangay(b, 500); } catch (e) { rows = []; }
+  if (tok !== au.streetsSeq) return;
+  au.streetsFor = b;
+  $('auStreets').innerHTML = rows.map(function (r) { return '<option value="' + esc(r.street) + '">' + esc(r.street) + ' (' + fmtN(r.boxes) + ')</option>'; }).join('');
+}
+function auSyncInputs() {
+  $('auStreet').value = au.f.street; $('auFrom').value = au.f.from; $('auTo').value = au.f.to; $('auQ').value = au.f.q;
+  document.querySelectorAll('#auditFilter button').forEach(function (x) { x.setAttribute('aria-pressed', String(x.dataset.f === au.f.kind)); });
+  ['auDist', 'auBrgy', 'auStreet', 'auFrom', 'auTo', 'auQ'].forEach(function (id) { $(id).disabled = au.fallback; });
+  $('auCsv').disabled = $('auXlsx').disabled = !!au.exp || au.fallback;
+  $('auStreet').placeholder = au.f.barangay ? 'contains…' : 'contains… (3+ letters)';
+}
+function auErr(msg) { var e = $('auErr'); e.textContent = msg || ''; e.hidden = !msg; }
+function auCountText() {
+  var n = au.rows.length;
+  if (au.fallback) return n ? 'Showing the newest ' + fmtN(n) + ' audits.' : '';
+  if (au.total != null) return (au.total > C.AUDIT_EXPORT_MAX ? 'More than ' + fmtN(C.AUDIT_EXPORT_MAX) : fmtN(au.total)) + ' audit' + (au.total === 1 ? '' : 's') + ' match' + (n < au.total ? ' · showing ' + fmtN(n) : '') + '.';
+  if (!au.done) return fmtN(n) + '+ audits match · showing ' + fmtN(n) + '.';
+  return fmtN(n) + ' audit' + (n === 1 ? '' : 's') + ' match.';
+}
+function auDraw() {
+  var sum = C.auditFilterSummary(au.f);
+  $('auActive').textContent = sum.length ? 'Filters: ' + sum.join(' · ') : 'No filter: every audit, newest first.';
+  $('auPending').hidden = !au.fallback;
+  $('auCount').textContent = auCountText();
+  $('auditRows').innerHTML = au.rows.map(function (a, i) {
+    return '<tr><td>' + esc(new Date(a.created_at).toLocaleString()) + '</td><td class="stencil">' + esc(a.stencil) + '</td><td>NP' + esc(a.np) + '</td><td>' + esc(a.barangay || '') + '</td><td>' + esc(a.street || '') +
+      '</td><td>' + esc(a.team) + '</td><td>' + freeCell(a) + '</td><td class="st">' + statusPills(a) + '</td><td><button class="btn sm" type="button" data-ai="' + i + '">View</button></td></tr>';
+  }).join('') || '<tr><td colspan="9" class="meta">' + (sum.length ? 'No audits match these filters.' : 'No audits yet.') + '</td></tr>';
+  $('auMore').hidden = au.done || !au.rows.length || au.fallback;
+  $('auMore').disabled = au.busy;
+  auSyncInputs();
+}
+// reset = a new list (filters changed / tab opened); otherwise the next page (Load more)
+async function loadAudits(reset) {
+  reset = reset !== false;
+  if (!reset && (au.busy || au.done)) return;
+  var chk = C.auditFilterParams(au.f);
+  if (!chk.ok) { au.seq++; au.busy = false; au.rows = []; au.done = true; au.total = null; auErr(chk.error); auDraw(); return; }
+  auErr('');
+  var tok = ++au.seq, rows;
+  au.busy = true; $('auMore').disabled = true; $('auMoreMsg').textContent = reset ? 'Loading…' : 'Loading more…';
+  if (reset) { $('auditDetail').hidden = true; }
+  try {
+    if (au.fallback) throw Object.assign(new Error('fallback'), { code: 'NAP_RPC_MISSING' });
+    rows = await api.listAuditsPage(chk.params, { limit: C.AUDIT_PAGE, cursor: reset ? null : au.cursor });
+  } catch (e) {
+    if (tok !== au.seq) return;
+    if (e && e.code === 'NAP_RPC_MISSING') {
+      au.fallback = true;
+      try {
+        var f = au.f.kind;
+        rows = await api.listAudits({ reviewStatus: (f && f !== 'awo' && f !== 'deact' && f !== 'desk') ? f : undefined, joNapInactive: f === 'deact', limit: 200 });
+        if (f === 'awo') rows = rows.filter(function (a) { return (a.audit_ports || []).some(function (p) { return p.status === S.AWO; }); });
+        if (f === 'desk') rows = rows.filter(function (a) { return a.source === 'desk'; });   // old list: newest 200 only (like awo)
+        rows = rows.map(C.auditRowFromLegacy);
+      } catch (e2) { if (tok === au.seq) { au.busy = false; $('auMoreMsg').textContent = ''; auDraw(); toast('Cannot load the audits: ' + msgOf(e2)); } return; }
+      if (tok !== au.seq) return;
+      au.rows = rows; au.done = true; au.total = null; au.cursor = null; au.busy = false; $('auMoreMsg').textContent = ''; auDraw();
+      return;
+    }
+    au.busy = false; $('auMoreMsg').textContent = ''; auDraw();
+    if (e && e.code === 'NAP_BAD_REQUEST') auErr(msgOf(e)); else toast('Cannot load the audits: ' + msgOf(e));
+    return;
+  }
+  if (tok !== au.seq) return;   // a newer request (other filters) superseded this one
+  au.rows = reset ? rows : au.rows.concat(rows);
+  if (reset) au.total = rows.length && rows[0].total_count != null ? Number(rows[0].total_count) : (rows.length < C.AUDIT_PAGE ? rows.length : null);
+  au.cursor = C.auditCursor(rows) || au.cursor;
+  au.done = rows.length < C.AUDIT_PAGE;
+  if (au.done && au.total == null) au.total = au.rows.length;
+  au.busy = false; $('auMoreMsg').textContent = '';
+  auDraw();
+}
+function auOpen() { au.fallback = false; auFillSelects(); auLoadStreets(); loadAudits(true); }
+function auSet(k, v) { if (au.f[k] === v) return false; au.f[k] = v; return true; }
 $('auditFilter').addEventListener('click', function (ev) {
   var b = ev.target.closest('button'); if (!b) return;
-  document.querySelectorAll('#auditFilter button').forEach(function (x) { x.setAttribute('aria-pressed', x === b); }); loadAudits();
+  au.f.kind = b.dataset.f || ''; auSyncInputs(); loadAudits(true);
 });
-$('auditRows').addEventListener('click', function (ev) {
+$('auFilters').addEventListener('change', function (ev) {
+  var id = ev.target.id, v = ev.target.value;
+  if (id === 'auDist') { auSet('district', v); if (au.f.barangay && v && String((summaryRow(au.f.barangay) || {}).district || '') !== v) { au.f.barangay = ''; au.f.street = ''; } auFillSelects(); auLoadStreets(); }
+  else if (id === 'auBrgy') { auSet('barangay', v); au.f.street = ''; if (v) { var d = String((summaryRow(v) || {}).district || ''); if (d) au.f.district = d; } auFillSelects(); auLoadStreets(); }
+  else if (id === 'auFrom') auSet('from', v);
+  else if (id === 'auTo') auSet('to', v);
+  else if (id === 'auStreet' || id === 'auQ') { clearTimeout(au.timer); if (!auSet(id === 'auStreet' ? 'street' : 'q', v.trim())) return; }
+  else return;
+  loadAudits(true);
+});
+// typed filters: applied 600 ms after the last key, or at once on Enter
+['auStreet', 'auQ'].forEach(function (id) {
+  var key = id === 'auStreet' ? 'street' : 'q';
+  $(id).addEventListener('input', function () {
+    clearTimeout(au.timer);
+    au.timer = setTimeout(function () { if (auSet(key, $(id).value.trim())) loadAudits(true); }, 600);
+  });
+  $(id).addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(au.timer); if (auSet(key, $(id).value.trim())) loadAudits(true); } });
+});
+$('auClear').onclick = function () { clearTimeout(au.timer); au.f = C.auditFilterDefaults(); auFillSelects(); auLoadStreets(); loadAudits(true); };
+$('auMore').onclick = function () { loadAudits(false); };
+$('auditRows').addEventListener('click', async function (ev) {
   var b = ev.target.closest('[data-ai]'); if (!b) return;
-  var el = $('auditDetail');
-  showAudit(state.audits[+b.dataset.ai], el, function () { histCache = null; loadAudits(); el.hidden = true; });
+  var row = au.rows[+b.dataset.ai], el = $('auditDetail'); if (!row) return;
+  var tok = el._vtok = (el._vtok || 0) + 1, full;
+  el.hidden = false; el.innerHTML = '<div class="meta">Loading…</div>';
+  try { full = await api.getAudit(row.id); } catch (e) { if (tok === el._vtok) el.innerHTML = '<div class="meta err">Cannot load the audit: ' + esc(msgOf(e)) + '</div>'; return; }
+  if (tok !== el._vtok) return;
+  if (!full) { el.innerHTML = '<div class="meta err">This audit is no longer available.</div>'; return; }
+  showAudit(full, el, function () { histCache = null; loadAudits(true); el.hidden = true; });
+  el.scrollIntoView({ block: 'nearest' });
 });
+// Export of the filtered audits: every matching row, 1,000 per request (keyset), cancellable, up to 50,000 rows (more: narrow the filters).
+// The filters are taken when the export starts; changing them meanwhile does not change the file. Same file builders as NAP Master.
+async function auExport(kind) {
+  if (au.exp || au.fallback) return;
+  var f = Object.assign({}, au.f), chk = C.auditFilterParams(f);
+  if (!chk.ok) { auErr(chk.error); return; }
+  var job = au.exp = { cancel: false };
+  function msg(t) { $('auExpMsg').textContent = t || ''; }
+  $('auCancel').hidden = false; auSyncInputs();
+  try {
+    if (kind === 'xlsx') { msg('Loading the Excel writer…'); try { await loadXlsx(); } catch (e) { throw new Error('Cannot load the Excel writer; use .csv'); } }
+    msg('Counting the audits…');
+    var rows = await api.exportAuditsAll(chk.params, { max: C.AUDIT_EXPORT_MAX, cancelled: function () { return job.cancel; },
+      onPage: function (n, total) { if (!job.cancel) msg('Fetching ' + fmtN(n) + (total != null ? ' of ' + fmtN(total) : '') + ' audits…'); } });
+    if (!rows.length) { msg('No audits match these filters: nothing to export.'); return; }
+    msg('Building the file (' + fmtN(rows.length) + ' audits)…');
+    await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
+    if (job.cancel) throw Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' });
+    var name = C.auditExportName(f, kind), blob;
+    if (kind === 'csv') blob = new Blob([C.auditExportCsv(rows)], { type: 'text/csv;charset=utf-8' });
+    else {
+      var wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([C.AUDIT_EXPORT_COLS].concat(rows.map(C.auditExportCells)));
+      ws['!cols'] = C.AUDIT_EXPORT_COLS.map(function (c) { return { wch: C.AUDIT_EXPORT_WIDTHS[c] || 12 }; });
+      XLSX.utils.book_append_sheet(wb, ws, 'AUDITS');
+      var sum = C.auditFilterSummary(f);
+      var rm = XLSX.utils.aoa_to_sheet([['NAP AUDITS EXPORT (NAP Dashboard, tab Audits)'], [''], ['Filters: ' + (sum.length ? sum.join(' · ') : 'none (every audit)')],
+        ['Rows: ' + rows.length + ', newest first. Exported ' + C.fmtManila(Date.now()) + ' (Philippine time).'], [''],
+        ['audit_at_ph = date and time of the audit in Philippine time. free_ports = Vacant + Released ports in that reading (blank for a not-found visit or a deactivated-NAP record).'],
+        ['checked_ports = ports read in that audit. gps_distance_m = the team GPS distance to the NAP. reviewed = YES when the dispatcher marked it reviewed.'],
+        ['No account numbers and no photos are in this file; open the audit in the dashboard (View) to see them.']]);
+      rm['!cols'] = [{ wch: 150 }];
+      XLSX.utils.book_append_sheet(wb, rm, 'READ ME');
+      blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+    saveBlob(blob, name);
+    msg('Exported ' + fmtN(rows.length) + ' audits to ' + name + '.');
+  } catch (e) {
+    if (e && e.code === 'NAP_CANCELLED') msg('Export cancelled.');
+    else if (e && e.code === 'NAP_EXPORT_TOO_MANY') msg('More than ' + fmtN(C.AUDIT_EXPORT_MAX) + ' audits match these filters: the export is limited to ' + fmtN(C.AUDIT_EXPORT_MAX) + ' rows. Narrow the filters (a shorter date range, a district or a barangay) and export again.');
+    else msg('Cannot export: ' + msgOf(e));
+  } finally {
+    if (au.exp === job) au.exp = null;
+    $('auCancel').hidden = true; auSyncInputs();
+  }
+}
+$('auCsv').onclick = function () { auExport('csv'); };
+$('auXlsx').onclick = function () { auExport('xlsx'); };
+$('auCancel').onclick = function () { if (au.exp) { au.exp.cancel = true; $('auExpMsg').textContent = 'Cancelling…'; } };
 async function loadPilot(quiet) {
   var rows;
   try { rows = await api.listPilot(); } catch (e) { if (!quiet) toast('Cannot load the pilot list: ' + msgOf(e)); return; }
@@ -1935,6 +2143,183 @@ $('bkGo').onclick = async function () {
   bkRemove(made);
   bk.fetched = {}; bkRefresh(true); loadTeamLoad(); loadItems();
 };
+
+// =====================================================================================================================================
+// ---------- phase 11: DESK UPDATE of ports (nap-20, nap.desk_update_ports). Self-contained block. ----------
+// Who: the server decides (nap.my_desk_access: dispatcher / admin / super, and the QAS teams when desk_update_roles = 'board+field').
+// Never in a session handed over from the phone (that one is always the view-only Board) and never for a console viewer.
+// The NAP detail shows "Edit ports" per NAP number; 'Active but no label' ports become one-click "Tag" targets. Rules: NapCore.desk.
+var DK = { on: false, tok: 0, edit: null, note: null };   // edit = {box_id, stencil, np, cur, edits, reason, busy, cid, err}; note = {box_id, html}
+var DK_STATUSES = C.PORT_STATUSES.slice();
+function deskOn() { return DK.on && !HANDOFF && ACC.ok && ACC.role !== 'viewer'; }
+function deskCanEdit(b) { return deskOn() && !!b && b.active !== false; }
+async function deskInit() {
+  var tok = ++DK.tok, was = DK.on;
+  DK.on = false;
+  if (HANDOFF || !ACC.ok || ACC.role === 'viewer') return;
+  var v = false;
+  try { v = await api.myDeskAccess(); } catch (e) { v = false; }
+  if (tok !== DK.tok) return;
+  DK.on = v === true;
+  if (DK.on !== was && state.sel) { portsCache = null; drawDetail(true); }
+}
+function deskEditBtn(b, np) {
+  if (!deskCanEdit(b) || (DK.edit && DK.edit.box_id === b.box_id && String(DK.edit.np) === String(np))) return '';
+  return ' <button class="btn sm" type="button" data-dk-edit="' + esc(np) + '">Edit ports</button>';
+}
+function deskUntaggedHtml(np, untagged) {
+  return '<div class="meta" style="color:var(--issue);margin-top:6px">' + untagged.map(function (p) {
+    return '<button class="dk-tag" type="button" data-dk-tag="' + esc(np) + ':' + esc(String(p).replace(/^P/, '')) + '" title="Tag ' + esc(p) + ' with its account number">' + esc(p) + '</button>';
+  }).join('') + ': Active but no label. Click a port to tag it.</div>';
+}
+// called at the end of every drawDetail: the editor (when open on this box) and the last save's duplicate-account warning
+function deskAfterDetail(b, ports) {
+  var el = $('detail');
+  if (DK.note && DK.note.box_id === b.box_id) {
+    var w = document.createElement('div'); w.className = 'warn'; w.style.marginTop = '8px'; w.innerHTML = DK.note.html;
+    var nps = el.querySelector('.nps'); if (nps) el.insertBefore(w, nps);
+  }
+  if (!DK.edit) return;
+  if (DK.edit.box_id !== b.box_id || !deskCanEdit(b)) { DK.edit = null; return; }
+  var e = DK.edit;
+  e.cur = ports.filter(function (p) { return String(p.np) === String(e.np); });
+  var slot = el.querySelector('[data-dk-np="' + CSS.escape(String(e.np)) + '"] .dk-slot');
+  if (!slot) { DK.edit = null; return; }
+  deskRender(slot);
+}
+function deskOpen(np, focusPort) {
+  var b = state.sel; if (!deskCanEdit(b) || !portsCache || portsCache.box_id !== b.box_id) return;
+  if (DK.edit && DK.edit.busy) return;
+  var cur = portsCache.ports.filter(function (p) { return String(p.np) === String(np); }), edits = {};
+  cur.forEach(function (p) { edits[p.port] = { status: p.status === S.UNVERIFIED ? '' : p.status, tag_acct: p.tag_acct || '' }; });
+  for (var i = 1; i <= 8; i++) if (!edits[i]) edits[i] = { status: '', tag_acct: '' };
+  if (focusPort) edits[focusPort] = { status: S.AWT, tag_acct: edits[focusPort].tag_acct || '' };
+  DK.edit = { box_id: b.box_id, stencil: b.stencil, np: Number(np), cur: cur, edits: edits, reason: '', busy: false, cid: null, err: '', focus: focusPort || 0 };
+  DK.note = null;
+  drawDetail(false);
+}
+function deskStatusOpts(cur) {
+  return '<option value=""' + (cur ? '' : ' selected') + ' disabled>Choose a status</option>' +
+    DK_STATUSES.map(function (s) { return '<option value="' + esc(s) + '"' + (s === cur ? ' selected' : '') + '>' + esc(s) + '</option>'; }).join('');
+}
+function deskRender(slot) {
+  var e = DK.edit, curBy = {};
+  e.cur.forEach(function (p) { curBy[p.port] = p; });
+  var rows = '';
+  for (var n = 1; n <= 8; n++) {
+    var ed = e.edits[n], was = curBy[n];
+    rows += '<div class="dk-row" data-dk-p="' + n + '"><b>P' + n + '</b><div class="dk-f"><select aria-label="P' + n + ' status" data-dk-s="' + n + '">' + deskStatusOpts(ed.status) + '</select>' +
+      '<input type="text" inputmode="numeric" autocomplete="off" maxlength="40" placeholder="13-digit account no." aria-label="P' + n + ' account number" data-dk-a="' + n + '" value="' + esc(ed.tag_acct) + '"' + (ed.status === S.AWT ? '' : ' hidden') + '></div>' +
+      '<div class="dk-was">Now: ' + esc(was ? was.status : 'no reading') + (was && was.tag_acct ? ' · ' + esc(was.tag_acct) : '') + '</div><div class="dk-m" data-dk-m="' + n + '"></div></div>';
+  }
+  slot.innerHTML = '<div class="dk-ed" role="group" aria-label="Edit NP' + esc(e.np) + ' ports"><div class="meta"><b>Desk update of NP' + esc(e.np) + '</b>: change only what you know is wrong. ' +
+      'Saving counts as a fresh check of the changed ports (a Vacant or Released port becomes installable now). The change, the old values, your name and the reason are kept in the Audits tab.</div>' +
+    rows + '<label class="meta" style="display:block;margin-top:8px">Reason (required)<input class="dk-reason" type="text" maxlength="200" autocomplete="off" data-dk-r placeholder="e.g. Team called: P3 is subscriber 1234567890123" value="' + esc(e.reason) + '"></label>' +
+    '<div class="meta err" data-dk-rm></div><div class="dk-acts"><button class="btn sm pri" type="button" data-dk-save>Save desk update</button><button class="btn sm" type="button" data-dk-cancel>Cancel</button>' +
+    '<span class="meta" data-dk-sum role="status" aria-live="polite"></span></div><div class="meta err" data-dk-err role="alert"></div></div>';
+  deskRefresh(slot);
+  var f = e.focus; e.focus = 0;
+  if (f) { var inp = slot.querySelector('[data-dk-a="' + f + '"]'); if (inp) { inp.focus(); try { inp.scrollIntoView({ block: 'nearest' }); } catch (x) {} } }
+}
+// live validation: highlight changed ports, per-port messages, Save enabled only when valid and something changed
+function deskRefresh(slot) {
+  var e = DK.edit; if (!e || !slot) return;
+  var v = C.desk.validate(e.cur, e.edits, e.reason), chg = {};
+  v.changed.forEach(function (p) { chg[p.port] = true; });
+  for (var n = 1; n <= 8; n++) {
+    var row = slot.querySelector('[data-dk-p="' + n + '"]'); if (!row) continue;
+    row.classList.toggle('dk-chg', !!chg[n]);
+    var inp = row.querySelector('[data-dk-a]'); inp.hidden = e.edits[n].status !== S.AWT;
+    var m = chg[n] ? (v.errors[n] || '') : '';
+    inp.classList.toggle('dk-bad', !!m);
+    row.querySelector('[data-dk-m]').textContent = m;
+  }
+  var reasonShown = e.reason.trim() !== '' || v.changed.length > 0;
+  slot.querySelector('[data-dk-rm]').textContent = reasonShown && v.reason ? v.reason : '';
+  slot.querySelector('[data-dk-sum]').textContent = e.busy ? 'Saving…' : v.nothing ? 'No change yet.' : v.changed.length + ' port' + (v.changed.length === 1 ? '' : 's') + ' will change.';
+  slot.querySelector('[data-dk-err]').textContent = e.err || '';
+  var save = slot.querySelector('[data-dk-save]'); save.disabled = e.busy || !v.ok;
+  slot.querySelectorAll('select,input').forEach(function (x) { x.disabled = e.busy; });
+  slot.querySelector('[data-dk-cancel]').disabled = e.busy;
+}
+async function deskSave(slot) {
+  var e = DK.edit; if (!e || e.busy) return;
+  var v = C.desk.validate(e.cur, e.edits, e.reason); if (!v.ok) { deskRefresh(slot); return; }
+  if (!e.cid) e.cid = C.desk.newClientId();   // kept while the values stay the same: a retry after a network error cannot save twice
+  e.busy = true; e.err = ''; deskRefresh(slot);
+  var res;
+  try { res = await api.deskUpdatePorts(C.desk.payload({ clientId: e.cid, boxId: e.box_id, np: e.np, reason: e.reason, changed: v.changed })); }
+  catch (x) {
+    e.busy = false;
+    if (DK.edit !== e) { toast('Desk update not saved: ' + msgOf(x)); return; }
+    e.err = 'Not saved: ' + msgOf(x);
+    if (/NAP_FORBIDDEN/.test(String(x && x.code || x && x.message || ''))) { DK.on = false; DK.edit = null; toast(e.err); drawDetail(true); return; }
+    deskRefresh(slot); toast(e.err); return;
+  }
+  e.busy = false;
+  var n = Number(res && res.changed || 0), dup = C.desk.duplicateText(res && res.duplicate_acct);
+  if (DK.edit === e) DK.edit = null;
+  DK.note = dup ? { box_id: e.box_id, html: '<b>Saved, but check:</b> ' + esc(dup) } : null;
+  toast(n ? 'Desk update saved: ' + n + ' port' + (n === 1 ? '' : 's') + ' changed on ' + e.stencil + ' NP' + e.np + '.' : 'Nothing changed.');
+  histCache = null;
+  if (state.sel && state.sel.box_id === e.box_id) {
+    portsCache = null;
+    // the box's kind / free count changed: read its fresh row (Board read path) so the list, map and KPIs follow
+    try {
+      var rows = await api.searchBoxes(e.stencil, 5), fresh = (rows || []).filter(function (r) { return r.box_id === e.box_id; })[0];
+      if (fresh) {
+        var known = state.known[e.box_id]; if (known) Object.assign(known, fresh); else remember(fresh);
+        state.boxes.forEach(function (bx) { if (bx.box_id === e.box_id) Object.assign(bx, fresh); });
+        if (state.sel && state.sel.box_id === e.box_id) Object.assign(state.sel, fresh);
+        markersDirty = true;
+      }
+    } catch (x) { /* the panel still refreshes below */ }
+    if (state.sel && state.sel.box_id === e.box_id) drawBoard(true);
+  }
+}
+$('detail').addEventListener('click', function (ev) {
+  var t = ev.target;
+  var ed = t.closest('[data-dk-edit]'); if (ed) { deskOpen(ed.getAttribute('data-dk-edit'), 0); return; }
+  var tg = t.closest('[data-dk-tag]'); if (tg) { var pp = tg.getAttribute('data-dk-tag').split(':'); deskOpen(pp[0], Number(pp[1])); return; }
+  var slot = t.closest('.dk-slot'); if (!slot || !DK.edit) return;
+  if (t.closest('[data-dk-cancel]')) { if (!DK.edit.busy) { DK.edit = null; drawDetail(false); } return; }
+  if (t.closest('[data-dk-save]')) deskSave(slot);
+});
+function deskInput(ev) {
+  var t = ev.target, slot = t.closest('.dk-slot'), e = DK.edit; if (!slot || !e || e.busy) return;
+  if (t.hasAttribute('data-dk-s')) { var n = +t.getAttribute('data-dk-s'); e.edits[n].status = t.value; if (t.value === S.AWT) setTimeout(function () { var a = slot.querySelector('[data-dk-a="' + n + '"]'); if (a) a.focus(); }, 0); }
+  else if (t.hasAttribute('data-dk-a')) { var m = +t.getAttribute('data-dk-a'), clean = C.desk.normAcct(t.value); if (ev.type === 'change' || /[\s-]/.test(t.value) && ev.inputType === 'insertFromPaste') t.value = clean; e.edits[m].tag_acct = t.value; }
+  else if (t.hasAttribute('data-dk-r')) e.reason = t.value;
+  else return;
+  e.cid = null; e.err = '';   // the values changed: a new request id at the next Save
+  deskRefresh(slot);
+}
+$('detail').addEventListener('input', deskInput);
+$('detail').addEventListener('change', deskInput);
+$('detail').addEventListener('keydown', function (ev) {
+  if (ev.key === 'Enter' && ev.target.closest && ev.target.closest('.dk-slot') && ev.target.tagName === 'INPUT') { ev.preventDefault(); var s = ev.target.closest('.dk-slot'), b = s.querySelector('[data-dk-save]'); if (b && !b.disabled) deskSave(s); }
+});
+// Audits tab + NAP history: the "Desk update" badge, and the audit view with old -> new values and the reason
+function deskPill(a) { return a && a.source === 'desk' ? '<span class="pill p-upd">' + esc(C.desk.LABEL) + '</span> ' : ''; }
+async function showDeskAudit(a, el) {
+  var tok = el._tok = (el._tok || 0) + 1;
+  el.hidden = false; el.innerHTML = '<div class="meta">Loading…</div>';
+  var rows = null, err = '';
+  try { rows = await api.deskAuditPorts(a.id); } catch (x) { err = msgOf(x); }
+  if (tok !== el._tok) return;
+  if (!rows) rows = (a.audit_ports || []).slice();
+  rows.sort(function (x, y) { return x.port - y.port; });
+  el.innerHTML = '<div class="stencil">' + esc(a.boxes && a.boxes.stencil) + ' NP' + esc(a.np) + '</div><div class="meta"><b>' + esc(C.desk.LABEL) + '</b> by ' + esc(a.submitted_by || a.team) +
+      (a.team && a.team !== a.submitted_by ? ' (' + esc(a.team) + ')' : '') + ' · ' + esc(new Date(a.created_at).toLocaleString()) + ' · no photo (desk update)</div>' +
+    '<div class="meta" style="margin-top:4px">Reason: <b style="color:var(--ink)">' + esc(a.note || '-') + '</b></div>' +
+    (err ? '<div class="meta err">Cannot load the old values: ' + esc(err) + '</div>' : '') +
+    '<div class="tablewrap" style="margin-top:6px"><table><thead><tr><th>Port</th><th>Before</th><th>After</th></tr></thead><tbody>' +
+    rows.map(function (p) {
+      var before = p.old_status == null && !('old_status' in p) ? '?' : (p.old_status || 'no reading') + (p.old_tag_acct ? ' · ' + p.old_tag_acct : '');
+      return '<tr><td>P' + esc(p.port) + '</td><td>' + esc(before) + '</td><td><b>' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '</b></td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+// =====================================================================================================================================
 
 boot();
 </script>

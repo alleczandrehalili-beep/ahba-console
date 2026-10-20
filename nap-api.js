@@ -174,6 +174,63 @@
         if (o.boxId) q = q.eq('box_id', o.boxId);
         return unwrap(q);
       },
+      // ---------- Audits tab (phase 10, nap-19; board only, the server checks) ----------
+      // One page of nap.list_audits: params = NapCore.auditFilterParams(...).params, o = {limit (default 200, max 1000), cursor
+      // (NapCore.auditCursor of the previous page), count (export: ask for the capped total)}. Rows: newest first, no ports / photos / account
+      // numbers. Before nap-19 is on the database the call fails with code NAP_RPC_MISSING (the dashboard then uses listAudits, "Update pending").
+      listAuditsPage: function (params, o) {
+        o = o || {};
+        var args = {}, p = params || {};
+        ['p_district', 'p_barangay', 'p_street', 'p_kind', 'p_from', 'p_to', 'p_q'].forEach(function (k) { args[k] = p[k] == null || p[k] === '' ? null : p[k]; });
+        args.p_limit = o.limit == null ? 200 : o.limit;
+        if (o.cursor) { args.p_before_at = o.cursor.p_before_at; args.p_before_id = o.cursor.p_before_id; }
+        if (o.count) args.p_count = true;
+        return Promise.resolve(nap().rpc('list_audits', args)).then(function (r) {
+          if (r && r.error) {
+            var m = String(r.error.message || '') + ' ' + String(r.error.code || '');
+            if (/PGRST202|could not find the function|does not exist|42883/i.test(m) && !/^NAP_/.test(String(r.error.message || ''))) {
+              var e = new Error('NAP_RPC_MISSING: the database update for the Audits filters (nap-PHASE10-ALL.sql) is not installed yet'); e.code = 'NAP_RPC_MISSING'; throw e;
+            }
+            throw fail(r.error, r.status);
+          }
+          return (r && r.data) || [];
+        });
+      },
+      // the distinct streets of one barangay: [{street, boxes}] (max 2000; default 500)
+      streetsInBarangay: function (barangay, limit) {
+        return unwrap(nap().rpc('streets_in_barangay', { p_barangay: barangay, p_limit: limit == null ? 500 : limit })).then(function (r) { return r || []; });
+      },
+      // ONE audit with its ports and photos, for the detail View (board RLS on the tables; the list never carries them)
+      getAudit: function (id) {
+        return unwrap(nap().from('audits').select('*, boxes:box_id(stencil,street), audit_ports(port,status,tag_acct), audit_photos(path)').eq('id', id).limit(1))
+          .then(function (rows) { return (rows && rows[0]) || null; });
+      },
+      // Every row matching params, o.pageSize (1000) per request by keyset cursor, until an EMPTY page (a server row cap below the page size
+      // never ends it early). The first page asks for the capped total: more than o.max (50,000) stops at once with NAP_EXPORT_TOO_MANY
+      // (err.total), as does a run that passes o.max. o.onPage(rowsSoFar, total) reports progress; o.cancelled() true between pages stops
+      // with NAP_CANCELLED. Rows are de-duplicated by id. At most max / pageSize + 2 requests.
+      exportAuditsAll: function (params, o) {
+        o = o || {};
+        var self = this, size = o.pageSize || PAGE, max = o.max == null ? 50000 : o.max, out = [], seen = {}, total = null, n = 0, limit = Math.ceil(max / size) + 2;
+        function stop(code, msg, extra) { var e = new Error(code + ': ' + msg); e.code = code; if (extra) Object.keys(extra).forEach(function (k) { e[k] = extra[k]; }); throw e; }
+        function next(cursor) {
+          if (o.cancelled && o.cancelled()) stop('NAP_CANCELLED', 'export cancelled');
+          return self.listAuditsPage(params, { limit: size, cursor: cursor, count: n === 0 }).then(function (rows) {
+            n++;
+            if (o.cancelled && o.cancelled()) stop('NAP_CANCELLED', 'export cancelled');
+            if (n === 1 && rows.length && rows[0].total_count != null) total = Number(rows[0].total_count);
+            if (total != null && total > max) stop('NAP_EXPORT_TOO_MANY', 'more than ' + max + ' audits match', { total: total });
+            rows.forEach(function (r) { if (r && r.id != null && !seen[r.id]) { seen[r.id] = true; out.push(r); } });
+            if (out.length > max) stop('NAP_EXPORT_TOO_MANY', 'more than ' + max + ' audits match', { total: total });
+            if (o.onPage) { try { o.onPage(out.length, total); } catch (e) { /* progress only */ } }
+            if (!rows.length) return out;
+            if (n >= limit) stop('NAP_TOO_MANY_PAGES', 'the export stopped after ' + n + ' pages');
+            var r = rows[rows.length - 1];
+            return next({ p_before_at: r.created_at, p_before_id: r.id });
+          });
+        }
+        return Promise.resolve().then(function () { return next(null); });
+      },
       setReview: function (auditId, status) { return changed(nap().from('audits').update({ review_status: status }).eq('id', auditId).select('id')); },
       listPilot: function () { return unwrap(nap().from('pilot_access').select('*').order('role').order('username')); },
       savePilot: function (row) { return changed(nap().from('pilot_access').upsert(row, { onConflict: 'username' }).select('username')); },
@@ -282,5 +339,34 @@
       }
     };
   }
+  // ======================================================================================================================
+  // ---------- phase 11: DESK UPDATE of ports (nap-20). Self-contained block: adds four methods to every api object create() returns ----------
+  function deskApi(client) {
+    var nap = function () { return client.schema('nap'); };
+    function missingFn(err) { return /PGRST202|could not find the function|does not exist|42883/i.test(String((err && err.message) || '') + ' ' + String((err && err.code) || '')); }
+    return {
+      // true when the server lets this session desk-update ports (nap.my_desk_access). A database without nap-20 = false (button hidden).
+      myDeskAccess: function () {
+        return Promise.resolve(nap().rpc('my_desk_access')).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) return false; throw fail(r.error, r.status); }
+          return !!(r && r.data === true);
+        });
+      },
+      // the ports of one active box WITH account numbers (desk-update sessions only); np null = every NAP number
+      portDetail: function (boxId, np) {
+        return unwrap(nap().rpc('port_detail', { p_box_id: boxId, p_np: np == null ? null : Number(np) })).then(function (r) { return r || []; });
+      },
+      // payload = NapCore.desk.payload(...) -> {ok, audit_id, changed, unchanged, ports: [{port, status, tag_acct, old_status, old_tag_acct}], duplicate_acct, replay}
+      deskUpdatePorts: function (payload) { return unwrap(nap().rpc('desk_update_ports', { p_payload: payload })); },
+      // the old -> new values of one desk audit (the Audits list query is not changed: it reads audit_ports without the old_* columns)
+      deskAuditPorts: function (auditId) {
+        return unwrap(nap().from('audit_ports').select('port,status,tag_acct,old_status,old_tag_acct').eq('audit_id', auditId).order('port')).then(function (r) { return r || []; });
+      }
+    };
+  }
+  var createBase = create;
+  create = function (client) { var api = createBase(client), d = deskApi(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
+  // ======================================================================================================================
+
   return { create: create, BUCKET: BUCKET, isAuthError: isAuthError, signInFirst: signInFirst, guardAuth: guardAuth };
 });
