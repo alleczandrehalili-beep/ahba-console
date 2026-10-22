@@ -2882,7 +2882,7 @@ async function openQaPhotoHistory(job,photo){
 // Validation cell of the Completed (QA Validation) table — three states (owner 2026-10-22): Pending (+ Validate for editors),
 // Returned to team (remarks · by · when; no Validate while the team works on it), Validated. A re-completed return shows a re-submitted note.
 function completedValidationCell(j,canEdit){
-  const st=(window.QaSubscriberInfo&&window.QaSubscriberInfo.returnState(j))||'none';
+  const st=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo.returnState(j):'none';
   if(j.validated) return `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`;
   if(st==='returned') return `<span class="vbadge ret">Returned to team</span><div style="font-size:8px;color:#c2503a;margin-top:2px">${esc(j.qa_return_remarks||'')}</div><div style="font-size:8px;color:#8a9894">${j.qa_returned_by?('by '+esc(j.qa_returned_by)):''}${j.qa_returned_at?((j.qa_returned_by?' · ':'')+fmtWhen(j.qa_returned_at)):''}</div>`;
   return `<span class="vbadge no">Pending</span>${st==='resubmitted'?`<div style="font-size:8px;color:#1d4f8a;margin-top:2px">re-submitted ${fmtWhen(j.qa_return_resolved_at)}</div>`:''}${canEdit?` <button class="assign-btn" data-validate="${j.id}">Validate</button>`:''}`;
@@ -2898,7 +2898,7 @@ async function renderCompleted(){
   try{ compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id)); }catch(e){ body.innerHTML='<tr><td colspan="7" class="empty-cell">Photos could not be loaded — retry this day.</td></tr>'; showToast('❌ '+e.message); return; }
   const totalPhotos=Object.values(compPhotos).reduce((a,b)=>a+b.length,0);
   const val=compJobs.filter(j=>j.validated).length;
-  const ret=compJobs.filter(j=>!j.validated&&window.QaSubscriberInfo&&window.QaSubscriberInfo.returnState(j)==='returned').length;
+  const ret=compJobs.filter(j=>!j.validated&&typeof QaSubscriberInfo!=='undefined'&&QaSubscriberInfo.returnState(j)==='returned').length;
   $('#compTotal').textContent=compJobs.filter(j=>j.status==='completed').length;
   $('#compValidated').textContent=val;
   $('#compPending').textContent=compJobs.length-val-ret;
@@ -2917,7 +2917,8 @@ async function openGallery(jobId){
   const j=compJobs.find(x=>x.id===jobId)||{};
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
-  const _si=$('#photoSubInfo'); if(_si) _si.innerHTML=(window.QaSubscriberInfo&&j.id)?window.QaSubscriberInfo.render(j):'';   // full subscriber info (owner 2026-10-22) — the row is already in memory
+  const _SI=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo:null;
+  const _si=$('#photoSubInfo'); if(_si) _si.innerHTML=(_SI&&j.id)?_SI.render(j):'';   // full subscriber info (owner 2026-10-22) — the row is already in memory
   const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
   const rb=$('#returnBtn'); if(rb){ rb.style.display='none'; rb.onclick=null; }
   openModal($('#photoModal'));
@@ -2926,7 +2927,7 @@ async function openGallery(jobId){
     compPhotos[jobId]=paths;
     $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
     renderQaPhotoTiles($('#photoGrid'),j,paths);
-    const st=window.QaSubscriberInfo?window.QaSubscriberInfo.returnState(j):'none';
+    const st=_SI?_SI.returnState(j):'none';
     const actionable=!j.validated&&st!=='returned'&&dashCanEdit('completed');
     vb.style.display=actionable?'':'none';vb.onclick=()=>{validateJob(jobId);closeModals();};
     if(rb){ rb.style.display=actionable?'':'none'; rb.onclick=async()=>{ closeModals(); const ok=await returnJobToTeam(jobId,{prompt:'Ano ang kulang? (details / photos — the team sees this)'}); if(ok) renderCompleted(); }; }
