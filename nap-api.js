@@ -209,9 +209,12 @@
       // never ends it early). The first page asks for the capped total: more than o.max (50,000) stops at once with NAP_EXPORT_TOO_MANY
       // (err.total), as does a run that passes o.max. o.onPage(rowsSoFar, total) reports progress; o.cancelled() true between pages stops
       // with NAP_CANCELLED. Rows are de-duplicated by id. At most max / pageSize + 2 requests.
+      // Streaming (2026-10-20.4, the .xlsx worker): with o.onRows(rows) each page's new rows go to onRows (it may return a promise; the next
+      // request waits for it), nothing is kept here, and the promise resolves with the row COUNT instead of the rows.
       exportAuditsAll: function (params, o) {
         o = o || {};
         var self = this, size = o.pageSize || PAGE, max = o.max == null ? 50000 : o.max, out = [], seen = {}, total = null, n = 0, limit = Math.ceil(max / size) + 2;
+        var stream = typeof o.onRows === 'function', count = 0;
         function stop(code, msg, extra) { var e = new Error(code + ': ' + msg); e.code = code; if (extra) Object.keys(extra).forEach(function (k) { e[k] = extra[k]; }); throw e; }
         function next(cursor) {
           if (o.cancelled && o.cancelled()) stop('NAP_CANCELLED', 'export cancelled');
@@ -220,13 +223,16 @@
             if (o.cancelled && o.cancelled()) stop('NAP_CANCELLED', 'export cancelled');
             if (n === 1 && rows.length && rows[0].total_count != null) total = Number(rows[0].total_count);
             if (total != null && total > max) stop('NAP_EXPORT_TOO_MANY', 'more than ' + max + ' audits match', { total: total });
-            rows.forEach(function (r) { if (r && r.id != null && !seen[r.id]) { seen[r.id] = true; out.push(r); } });
-            if (out.length > max) stop('NAP_EXPORT_TOO_MANY', 'more than ' + max + ' audits match', { total: total });
-            if (o.onPage) { try { o.onPage(out.length, total); } catch (e) { /* progress only */ } }
-            if (!rows.length) return out;
-            if (n >= limit) stop('NAP_TOO_MANY_PAGES', 'the export stopped after ' + n + ' pages');
-            var r = rows[rows.length - 1];
-            return next({ p_before_at: r.created_at, p_before_id: r.id });
+            var dest = stream ? [] : out;
+            rows.forEach(function (r) { if (r && r.id != null && !seen[r.id]) { seen[r.id] = true; dest.push(r); count++; } });
+            if (count > max) stop('NAP_EXPORT_TOO_MANY', 'more than ' + max + ' audits match', { total: total });
+            return Promise.resolve(stream && dest.length ? o.onRows(dest) : null).then(function () {
+              if (o.onPage) { try { o.onPage(count, total); } catch (e) { /* progress only */ } }
+              if (!rows.length) return stream ? count : out;
+              if (n >= limit) stop('NAP_TOO_MANY_PAGES', 'the export stopped after ' + n + ' pages');
+              var r = rows[rows.length - 1];
+              return next({ p_before_at: r.created_at, p_before_id: r.id });
+            });
           });
         }
         return Promise.resolve().then(function () { return next(null); });
@@ -322,20 +328,29 @@
       },
       // Every row of an export scope, PAGE rows per request, until a page comes back EMPTY (so a server row cap below PAGE can never end
       // it early and lose rows). Rows are de-duplicated by stencil (a box added meanwhile can shift a page). At most 200 requests.
+      // o.cancelled() true before / after a request stops with NAP_CANCELLED. Streaming (2026-10-20.4, the .xlsx worker): with o.onRows(rows)
+      // each page's new rows go to onRows (it may return a promise; the next request waits for it), nothing is kept here, and the promise
+      // resolves with the row COUNT instead of the rows.
       exportBoxesAll: function (o) {
         o = o || {};
-        var self = this, out = [], seen = {}, size = o.pageSize || PAGE, n = 0;
+        var self = this, out = [], seen = {}, size = o.pageSize || PAGE, n = 0, stream = typeof o.onRows === 'function', count = 0;
+        function cancelled() { if (o.cancelled && o.cancelled()) { var e = new Error('NAP_CANCELLED: export cancelled'); e.code = 'NAP_CANCELLED'; throw e; } }
         function next(offset) {
+          cancelled();
           return self.exportBoxes({ barangay: o.barangay, includeInactive: o.includeInactive, limit: size, offset: offset }).then(function (rows) {
             n++;
-            rows.forEach(function (r) { var k = r && r.stencil; if (k == null || !seen[k]) { if (k != null) seen[k] = true; out.push(r); } });
-            if (o.onPage) { try { o.onPage(out.length, n); } catch (e) { /* progress only */ } }
-            if (!rows.length) return out;
-            if (n >= 200) { var e = new Error('NAP_TOO_MANY_PAGES: the export stopped after 200 pages'); e.code = 'NAP_TOO_MANY_PAGES'; throw e; }
-            return next(offset + rows.length);
+            cancelled();
+            var dest = stream ? [] : out;
+            rows.forEach(function (r) { var k = r && r.stencil; if (k == null || !seen[k]) { if (k != null) seen[k] = true; dest.push(r); count++; } });
+            return Promise.resolve(stream && dest.length ? o.onRows(dest) : null).then(function () {
+              if (o.onPage) { try { o.onPage(count, n); } catch (e) { /* progress only */ } }
+              if (!rows.length) return stream ? count : out;
+              if (n >= 200) { var e = new Error('NAP_TOO_MANY_PAGES: the export stopped after 200 pages'); e.code = 'NAP_TOO_MANY_PAGES'; throw e; }
+              return next(offset + rows.length);
+            });
           });
         }
-        return next(0);
+        return Promise.resolve().then(function () { return next(0); });
       }
     };
   }

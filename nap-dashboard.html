@@ -379,6 +379,7 @@ tr.inb td{background:var(--bg)}
           <label class="meta"><input type="checkbox" id="mxInactive" checked> Include deactivated NAPs</label>
           <button class="btn pri" id="mxXlsx" type="button">Download .xlsx</button>
           <button class="btn" id="mxCsv" type="button">Download .csv</button>
+          <button class="btn" id="mxCancel" type="button" hidden>Cancel export</button>
         </div>
         <p class="meta" id="mxMsg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
       </div>
@@ -414,11 +415,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-20.3"></script>
-<script src="nap-api.js?v=2026-10-20.3"></script>
+<script src="nap-core.js?v=2026-10-20.4"></script>
+<script src="nap-api.js?v=2026-10-20.4"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-20.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-20.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -1144,48 +1145,89 @@ async function auExport(kind) {
   if (au.exp || au.fallback) return;
   var f = Object.assign({}, au.f), chk = C.auditFilterParams(f);
   if (!chk.ok) { auErr(chk.error); return; }
-  var job = au.exp = { cancel: false };
+  var job = au.exp = { cancel: false, x: null };
   function msg(t) { $('auExpMsg').textContent = t || ''; }
   $('auCancel').hidden = false; auSyncInputs();
   try {
-    if (kind === 'xlsx') { msg('Loading the Excel writer…'); try { await loadXlsx(); } catch (e) { throw new Error('Cannot load the Excel writer; use .csv'); } }
-    msg('Counting the audits…');
-    var rows = await api.exportAuditsAll(chk.params, { max: C.AUDIT_EXPORT_MAX, cancelled: function () { return job.cancel; },
-      onPage: function (n, total) { if (!job.cancel) msg('Fetching ' + fmtN(n) + (total != null ? ' of ' + fmtN(total) : '') + ' audits…'); } });
-    if (!rows.length) { msg('No audits match these filters: nothing to export.'); return; }
-    msg('Building the file (' + fmtN(rows.length) + ' audits)…');
-    await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
-    if (job.cancel) throw Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' });
-    var name = C.auditExportName(f, kind), blob;
-    if (kind === 'csv') blob = new Blob([C.auditExportCsv(rows)], { type: 'text/csv;charset=utf-8' });
-    else {
-      var wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([C.AUDIT_EXPORT_COLS].concat(rows.map(C.auditExportCells)));
-      ws['!cols'] = C.AUDIT_EXPORT_COLS.map(function (c) { return { wch: C.AUDIT_EXPORT_WIDTHS[c] || 12 }; });
-      XLSX.utils.book_append_sheet(wb, ws, 'AUDITS');
-      var sum = C.auditFilterSummary(f);
-      var rm = XLSX.utils.aoa_to_sheet([['NAP AUDITS EXPORT (NAP Dashboard, tab Audits)'], [''], ['Filters: ' + (sum.length ? sum.join(' · ') : 'none (every audit)')],
-        ['Rows: ' + rows.length + ', newest first. Exported ' + C.fmtManila(Date.now()) + ' (Philippine time).'], [''],
-        ['audit_at_ph = date and time of the audit in Philippine time. free_ports = Vacant + Released ports in that reading (blank for a not-found visit or a deactivated-NAP record).'],
-        ['checked_ports = ports read in that audit. gps_distance_m = the team GPS distance to the NAP. reviewed = YES when the dispatcher marked it reviewed.'],
-        ['No account numbers and no photos are in this file; open the audit in the dashboard (View) to see them.']]);
-      rm['!cols'] = [{ wch: 150 }];
-      XLSX.utils.book_append_sheet(wb, rm, 'READ ME');
-      blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var n, name;
+    if (kind === 'csv') {
+      msg('Counting the audits…');
+      var rows = await api.exportAuditsAll(chk.params, { max: C.AUDIT_EXPORT_MAX, cancelled: function () { return job.cancel; },
+        onPage: function (k, total) { if (!job.cancel) msg('Fetching ' + fmtN(k) + (total != null ? ' of ' + fmtN(total) : '') + ' audits…'); } });
+      if (!rows.length) { msg('No audits match these filters: nothing to export.'); return; }
+      msg('Building the file (' + fmtN(rows.length) + ' audits)…');
+      await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
+      if (job.cancel) throw Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' });
+      name = C.auditExportName(f, kind); n = rows.length;
+      saveBlob(new Blob([C.auditExportCsv(rows)], { type: 'text/csv;charset=utf-8' }), name);
+      rows = null;
+    } else {
+      var res = await auXlsx(f, chk, job, msg);
+      if (!res) { msg('No audits match these filters: nothing to export.'); return; }
+      n = res.n; name = res.name;
     }
-    saveBlob(blob, name);
-    msg('Exported ' + fmtN(rows.length) + ' audits to ' + name + '.');
+    msg('Exported ' + fmtN(n) + ' audits to ' + name + '.');
   } catch (e) {
     if (e && e.code === 'NAP_CANCELLED') msg('Export cancelled.');
     else if (e && e.code === 'NAP_EXPORT_TOO_MANY') msg('More than ' + fmtN(C.AUDIT_EXPORT_MAX) + ' audits match these filters: the export is limited to ' + fmtN(C.AUDIT_EXPORT_MAX) + ' rows. Narrow the filters (a shorter date range, a district or a barangay) and export again.');
     else msg('Cannot export: ' + msgOf(e));
   } finally {
+    if (job.x) { job.x.close(); job.x = null; }
     if (au.exp === job) au.exp = null;
     $('auCancel').hidden = true; auSyncInputs();
   }
 }
+// .xlsx: every fetched page goes straight to the builder (the worker), so the page never holds all rows plus the workbook. A worker that
+// fails mid-way makes the export run again on the page (the rows are fetched again; the file is never lost).
+async function auXlsx(f, chk, job, msg) {
+  var CANCEL = function () { return Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' }); };
+  for (var attempt = 0; ; attempt++) {
+    var fetched = 0, total = null, added = 0, phase = 'fetch';
+    job.forceMain = attempt > 0; job.fallback = false;
+    var say = function () {
+      if (job.cancel) return;
+      var t = phase === 'fetch' ? 'Fetching ' + fmtN(fetched) + (total != null ? ' of ' + fmtN(total) : '') + ' audits…' + (added ? ' (' + fmtN(added) + ' in the file)' : '')
+        : phase === 'build' ? 'Building the file: ' + fmtN(added) + ' of ' + fmtN(fetched) + ' audits added…' : 'Writing the .xlsx file (' + fmtN(fetched) + ' audits)…';
+      msg(t + (job.fallback ? XLSX_FREEZE : ''));
+    };
+    job.onProgress = function (p) { if (p.phase === 'rows') added = p.rows; else phase = 'write'; say(); };
+    msg('Loading the Excel writer…');
+    try {
+      await xlsxJob({ sheet: 'AUDITS', head: C.AUDIT_EXPORT_COLS, cols: C.AUDIT_EXPORT_COLS.map(function (c) { return { wch: C.AUDIT_EXPORT_WIDTHS[c] || 12 }; }) }, job);
+    } catch (e) { if (job.cancel) throw CANCEL(); throw new Error('Cannot load the Excel writer; use .csv'); }
+    if (job.cancel) throw CANCEL();
+    msg('Counting the audits…' + (job.fallback ? XLSX_FREEZE : ''));
+    try {
+      var n = await api.exportAuditsAll(chk.params, { max: C.AUDIT_EXPORT_MAX, cancelled: function () { return job.cancel; },
+        onPage: function (k, t) { fetched = k; total = t; say(); },
+        onRows: function (rows) { return job.x.add(rows.map(C.auditExportCells)); } });
+      if (!n) return null;
+      phase = 'build'; say();
+      if (job.x.mode() === 'main') { phase = 'write'; say(); await new Promise(function (r) { setTimeout(r, 30); }); }   // paint before the synchronous build
+      if (job.cancel) throw CANCEL();
+      var sum = C.auditFilterSummary(f);
+      var buf = await job.x.finish([['NAP AUDITS EXPORT (NAP Dashboard, tab Audits)'], [''], ['Filters: ' + (sum.length ? sum.join(' · ') : 'none (every audit)')],
+        ['Rows: ' + n + ', newest first. Exported ' + C.fmtManila(Date.now()) + ' (Philippine time).'], [''],
+        ['audit_at_ph = date and time of the audit in Philippine time. free_ports = Vacant + Released ports in that reading (blank for a not-found visit or a deactivated-NAP record).'],
+        ['checked_ports = ports read in that audit. gps_distance_m = the team GPS distance to the NAP. reviewed = YES when the dispatcher marked it reviewed.'],
+        ['No account numbers and no photos are in this file; open the audit in the dashboard (View) to see them.']]);
+      var name = C.auditExportName(f, 'xlsx');
+      saveBlob(new Blob([buf], { type: XLSX_TYPE }), name);
+      buf = null;
+      return { n: n, name: name };
+    } catch (e) {
+      if (e && e.code === 'NAP_XLSX_WORKER' && !job.cancel && attempt === 0) {
+        job.x.close(); job.x = null;
+        msg('The background Excel builder stopped (' + msgOf(e) + '): exporting again on this tab.' + XLSX_FREEZE);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
 $('auCsv').onclick = function () { auExport('csv'); };
 $('auXlsx').onclick = function () { auExport('xlsx'); };
-$('auCancel').onclick = function () { if (au.exp) { au.exp.cancel = true; $('auExpMsg').textContent = 'Cancelling…'; } };
+$('auCancel').onclick = function () { if (au.exp) { au.exp.cancel = true; if (au.exp.x) au.exp.x.cancel(); $('auExpMsg').textContent = 'Cancelling…'; } };
 async function loadPilot(quiet) {
   var rows;
   try { rows = await api.listPilot(); } catch (e) { if (!quiet) toast('Cannot load the pilot list: ' + msgOf(e)); return; }
@@ -1348,14 +1390,16 @@ async function dpIngest(res, source, fileName, tok) {
   drawPreview();
 }
 // SheetJS is only needed for .xlsx picks, so it is loaded on the first one (pinned version + subresource integrity hash of the cdnjs file).
+var XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+var XLSX_SRI = 'sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==';
 var xlsxLoading = null;
 function loadXlsx() {
   if (typeof XLSX !== 'undefined') return Promise.resolve();
   if (xlsxLoading) return xlsxLoading;
   xlsxLoading = new Promise(function (res, rej) {
     var el = document.createElement('script');
-    el.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    el.integrity = 'sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA==';
+    el.src = XLSX_SRC;
+    el.integrity = XLSX_SRI;
     el.crossOrigin = 'anonymous'; el.referrerPolicy = 'no-referrer';
     el.onload = function () { typeof XLSX !== 'undefined' ? res() : rej(new Error('XLSX missing')); };
     el.onerror = function () { xlsxLoading = null; el.remove(); rej(new Error('load failed')); };
@@ -1363,6 +1407,37 @@ function loadXlsx() {
   });
   return xlsxLoading;
 }
+// .xlsx EXPORTS are built in a Web Worker (NapCore.xlsxExportJob): the page fetches the same SheetJS file WITH the same integrity hash
+// (the browser refuses the bytes if the hash differs), wraps it with NapCore.xlsxWorkerSource's glue in a Blob, and starts the worker from
+// that Blob URL (made once per page; no importScripts from a CDN). Without Worker / Blob / fetch integrity (or window.__napNoWorker) the
+// file is built on the page as before, with the notice "Large export may freeze this tab".
+var xlsxWorkerUrl = null;
+function xlsxWorkerBlob() {
+  if (window.__napNoWorker || typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof fetch !== 'function' || typeof Request === 'undefined' ||
+      !('integrity' in Request.prototype) || !window.URL || !URL.createObjectURL) return Promise.reject(new Error('no worker support'));
+  if (xlsxWorkerUrl) return xlsxWorkerUrl;
+  xlsxWorkerUrl = fetch(XLSX_SRC, { integrity: XLSX_SRI, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function (src) { return URL.createObjectURL(new Blob([C.xlsxWorkerSource(src)], { type: 'text/javascript' })); });
+  xlsxWorkerUrl.catch(function () { xlsxWorkerUrl = null; });
+  return xlsxWorkerUrl;
+}
+// one .xlsx export job: the worker when it can run, else the page. ui.msg(text) shows progress; ui.forceMain = build on the page.
+async function xlsxJob(spec, ui) {
+  var url = null;
+  if (!ui.forceMain) { try { url = await xlsxWorkerBlob(); } catch (e) { url = null; } }
+  var job = C.xlsxExportJob({
+    createWorker: url ? function () { return new Worker(url); } : null,
+    loadMain: function () { return loadXlsx().then(function () { return XLSX; }); },
+    onFallback: function () { ui.fallback = true; },
+    onProgress: ui.onProgress
+  });
+  ui.x = job;
+  await job.open(spec);
+  return job;
+}
+var XLSX_FREEZE = ' Large export may freeze this tab.';
+var XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 var DP_EXT = ['csv', 'txt', 'tsv', 'xlsx'], DP_MAX_BYTES = 5 * 1024 * 1024, DP_MAX_LINES = 20000;
 function dpRejectFile(msg) { $('dpFile').value = ''; toast(msg); }
 // Shared by Dispatch and NAP Master: reads a picked file with the same type / size / line caps. Resolves {name, ext, wb} for .xlsx (SheetJS
@@ -1665,35 +1740,77 @@ function mxOpen() {
   }).join('');
   mmDraw();
 }
+function mxLock(on) { $('mxXlsx').disabled = $('mxCsv').disabled = $('mxScope').disabled = on; $('mxCancel').hidden = !on; }
 async function mxRun(kind) {
   if (mx.busy) return;
-  mx.busy = true; $('mxXlsx').disabled = $('mxCsv').disabled = $('mxScope').disabled = true;
+  var job = mx.busy = { cancel: false, x: null };
+  mxLock(true);
   var scope = $('mxScope').value, label = scope || 'Whole QC', inc = $('mxInactive').checked;
+  var cancelled = function () { return job.cancel; }, CANCEL = function () { return Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' }); };
   try {
-    if (kind === 'xlsx') { mxMsg('Loading the Excel writer…'); try { await loadXlsx(); } catch (e) { throw new Error('Cannot load the Excel writer; use .csv'); } }
-    mxMsg('Exporting ' + label + '…');
-    var rows = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, onPage: function (n) { mxMsg('Exporting ' + label + '… ' + fmtN(n) + ' rows'); } });
-    mxMsg('Building the file (' + fmtN(rows.length) + ' rows)…');
-    await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
-    var cells = rows.map(C.masterExportCells), name = C.masterFileName(scope || 'whole-qc', kind), blob;
-    if (kind === 'csv') blob = new Blob(['\ufeff' + C.toCsv(C.MASTER_EXPORT_COLS, cells, C.MASTER_NUMERIC)], { type: 'text/csv;charset=utf-8' });
-    else {
-      var wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([C.MASTER_EXPORT_COLS].concat(cells));
-      ws['!cols'] = C.MASTER_EXPORT_COLS.map(function (c) { return { wch: MX_WIDTHS[c] || 12 }; });
-      XLSX.utils.book_append_sheet(wb, ws, 'EXPORT');
-      var rm = XLSX.utils.aoa_to_sheet(C.MASTER_EXPORT_README.map(function (l) { return [l]; }));
-      rm['!cols'] = [{ wch: 150 }];
-      XLSX.utils.book_append_sheet(wb, rm, 'READ ME');
-      blob = new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var n, off = 0, name;
+    if (kind === 'csv') {
+      mxMsg('Exporting ' + label + '…');
+      var rows = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, cancelled: cancelled, onPage: function (k) { if (!job.cancel) mxMsg('Exporting ' + label + '… ' + fmtN(k) + ' rows'); } });
+      mxMsg('Building the file (' + fmtN(rows.length) + ' rows)…');
+      await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
+      if (job.cancel) throw CANCEL();
+      var cells = rows.map(C.masterExportCells);
+      name = C.masterFileName(scope || 'whole-qc', kind);
+      saveBlob(new Blob(['\ufeff' + C.toCsv(C.MASTER_EXPORT_COLS, cells, C.MASTER_NUMERIC)], { type: 'text/csv;charset=utf-8' }), name);
+      n = rows.length; off = rows.filter(function (r) { return r.active === 'NO'; }).length;
+      rows = cells = null;
+    } else {
+      var res = await mxXlsx(scope, label, inc, job);
+      n = res.n; off = res.off; name = res.name;
     }
-    saveBlob(blob, name);
-    var off = rows.filter(function (r) { return r.active === 'NO'; }).length;
-    mxMsg('Exported ' + fmtN(rows.length) + ' NAP boxes (' + label + (off ? ', ' + fmtN(off) + ' deactivated' : '') + ') to ' + name + '.');
-  } catch (e) { mxMsg('Cannot export: ' + msgOf(e)); }
-  finally { mx.busy = false; $('mxXlsx').disabled = $('mxCsv').disabled = $('mxScope').disabled = false; }
+    mxMsg('Exported ' + fmtN(n) + ' NAP boxes (' + label + (off ? ', ' + fmtN(off) + ' deactivated' : '') + ') to ' + name + '.');
+  } catch (e) { mxMsg(e && e.code === 'NAP_CANCELLED' ? 'Export cancelled.' : 'Cannot export: ' + msgOf(e)); }
+  finally { if (job.x) { job.x.close(); job.x = null; } mx.busy = false; mxLock(false); }
+}
+// .xlsx: each page of 1,000 boxes becomes cells here and goes to the builder (the worker) at once; a failed worker = one more run on the page
+async function mxXlsx(scope, label, inc, job) {
+  var CANCEL = function () { return Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' }); };
+  for (var attempt = 0; ; attempt++) {
+    var fetched = 0, added = 0, off = 0, phase = 'fetch';
+    job.forceMain = attempt > 0; job.fallback = false;
+    var say = function () {
+      if (job.cancel) return;
+      var t = phase === 'fetch' ? 'Exporting ' + label + '… ' + fmtN(fetched) + ' rows' + (added ? ' (' + fmtN(added) + ' in the file)' : '')
+        : phase === 'build' ? 'Building the file: ' + fmtN(added) + ' of ' + fmtN(fetched) + ' rows added…' : 'Writing the .xlsx file (' + fmtN(fetched) + ' rows)…';
+      mxMsg(t + (job.fallback ? XLSX_FREEZE : ''));
+    };
+    job.onProgress = function (p) { if (p.phase === 'rows') added = p.rows; else phase = 'write'; say(); };
+    mxMsg('Loading the Excel writer…');
+    try { await xlsxJob({ sheet: 'EXPORT', head: C.MASTER_EXPORT_COLS, cols: C.MASTER_EXPORT_COLS.map(function (c) { return { wch: MX_WIDTHS[c] || 12 }; }) }, job); }
+    catch (e) { if (job.cancel) throw CANCEL(); throw new Error('Cannot load the Excel writer; use .csv'); }
+    if (job.cancel) throw CANCEL();
+    mxMsg('Exporting ' + label + '…' + (job.fallback ? XLSX_FREEZE : ''));
+    try {
+      var n = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, cancelled: function () { return job.cancel; },
+        onPage: function (k) { fetched = k; say(); },
+        onRows: function (rows) { rows.forEach(function (r) { if (r.active === 'NO') off++; }); return job.x.add(rows.map(C.masterExportCells)); } });
+      phase = 'build'; say();
+      if (job.x.mode() === 'main') { phase = 'write'; say(); await new Promise(function (r) { setTimeout(r, 30); }); }   // paint before the synchronous build
+      if (job.cancel) throw CANCEL();
+      var buf = await job.x.finish(C.MASTER_EXPORT_README.map(function (l) { return [l]; }));
+      var name = C.masterFileName(scope || 'whole-qc', 'xlsx');
+      saveBlob(new Blob([buf], { type: XLSX_TYPE }), name);
+      buf = null;
+      return { n: n, off: off, name: name };
+    } catch (e) {
+      if (e && e.code === 'NAP_XLSX_WORKER' && !job.cancel && attempt === 0) {
+        job.x.close(); job.x = null;
+        mxMsg('The background Excel builder stopped (' + msgOf(e) + '): exporting again on this tab.' + XLSX_FREEZE);
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 $('mxXlsx').onclick = function () { mxRun('xlsx'); };
 $('mxCsv').onclick = function () { mxRun('csv'); };
+$('mxCancel').onclick = function () { var j = mx.busy; if (j && j.cancel === false) { j.cancel = true; if (j.x) j.x.cancel(); mxMsg('Cancelling…'); } };
 
 // --- import ---
 function mmDisarm() { if (mm.armed) { clearTimeout(mm.armed); mm.armed = null; } }

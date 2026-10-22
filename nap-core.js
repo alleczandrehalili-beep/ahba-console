@@ -784,6 +784,156 @@
   })();
   // ======================================================================================================================
 
+  // ---------- .xlsx exports off the page (2026-10-20.4): a Web Worker builds the workbook, page by page ----------
+  // The NAP Master and Audits .xlsx exports used to build the whole workbook on the page (2-12 s frozen tab, 0.5-0.7 GB at the peak). Now
+  // the page sends each fetched page of cells (an array of arrays, 1,000 rows) to a worker as it arrives; the worker appends it to the one
+  // data sheet, adds READ ME, writes the file and TRANSFERS the bytes back. The worker is a Blob made of the SheetJS source (fetched by the
+  // page WITH its subresource integrity hash) + xlsxWorkerSource's glue. If no worker can run, the same builder runs on the page (fallback).
+  // xlsxBuilder(X): X = the SheetJS object. spec = { sheet, head: [column names], cols: [{ wch }], readmeCols? }. add(aoa) appends rows under
+  // the header at an explicit origin (no concat of one giant array); finish(readme) returns the file (ArrayBuffer, compression on) and drops
+  // every reference. Both paths (worker and page) use this builder, so they write the same cells. Self-contained: it is also stringified
+  // into the worker, so it must not use anything outside its own body.
+  function xlsxBuilder(X) {
+    var wb = null, ws = null, spec = null, n = 0;
+    return {
+      start: function (s) { spec = s; wb = X.utils.book_new(); ws = X.utils.aoa_to_sheet([s.head]); n = 0; return n; },
+      add: function (aoa) {
+        if (!ws) throw new Error('the Excel builder was not started');
+        if (!Array.isArray(aoa)) throw new Error('a page of rows must be an array');
+        if (aoa.length) { X.utils.sheet_add_aoa(ws, aoa, { origin: { r: n + 1, c: 0 } }); n += aoa.length; }
+        return n;
+      },
+      rows: function () { return n; },
+      finish: function (readme) {
+        if (!ws) throw new Error('the Excel builder was not started');
+        ws['!cols'] = spec.cols;
+        X.utils.book_append_sheet(wb, ws, spec.sheet);
+        var rm = X.utils.aoa_to_sheet(readme || []);
+        rm['!cols'] = spec.readmeCols || [{ wch: 150 }];
+        X.utils.book_append_sheet(wb, rm, 'READ ME');
+        var out = X.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
+        wb = ws = spec = null;
+        return out;
+      }
+    };
+  }
+  // the worker's message loop (stringified by xlsxWorkerSource; runs in the worker, where xlsxBuilder and XLSX are globals).
+  // in:  { t: 'start', spec } | { t: 'rows', rows: [[...], ...] } | { t: 'finish', readme: [[...], ...] }
+  // out: { t: 'ready', ok } | { t: 'progress', rows } | { t: 'writing', rows } | { t: 'done', rows, buf (transferred) } | { t: 'error', message }
+  function xlsxWorkerGlue() {
+    var X = typeof XLSX !== 'undefined' ? XLSX : null, B = null;
+    self.onmessage = function (e) {
+      var m = e.data || {};
+      try {
+        if (m.t === 'start') { B = xlsxBuilder(X); B.start(m.spec); }
+        else if (m.t === 'rows') { var k = B.add(m.rows); m = e = null; self.postMessage({ t: 'progress', rows: k }); }
+        else if (m.t === 'finish') {
+          var n = B.rows();
+          self.postMessage({ t: 'writing', rows: n });
+          var out = B.finish(m.readme), buf = out instanceof ArrayBuffer ? out : out.buffer;
+          B = null;
+          self.postMessage({ t: 'done', rows: n, buf: buf }, [buf]);
+        }
+      } catch (err) { B = null; self.postMessage({ t: 'error', message: String((err && err.message) || err) }); }
+    };
+    self.postMessage({ t: 'ready', ok: !!(X && X.utils && X.write) });
+  }
+  // the worker script: the SheetJS source (lib, as fetched with integrity) + the builder + the glue
+  function xlsxWorkerSource(lib) {
+    return String(lib || '') + '\n;\nvar xlsxBuilder = ' + xlsxBuilder.toString() + ';\n(' + xlsxWorkerGlue.toString() + ')();\n';
+  }
+  // One .xlsx export. o.createWorker() -> a Worker (or throws / returns null: no worker); o.loadMain() -> Promise of the page's SheetJS (the
+  // fallback); o.onProgress({ phase: 'rows' | 'writing', rows }); o.onFallback(reason) when the page builds it; o.readyMs (default 15 s).
+  // open(spec) -> Promise of 'worker' | 'main'. add(aoa) -> Promise (rejects NAP_XLSX_WORKER once the worker failed, NAP_CANCELLED after
+  // cancel). finish(readme) -> Promise of the file (ArrayBuffer). cancel() terminates the worker at once (also mid-build); close() releases it.
+  // A worker that fails AFTER open (rows already sent) rejects with NAP_XLSX_WORKER: the caller exports again on the page (never lost).
+  function xlsxExportJob(o) {
+    o = o || {};
+    var w = null, B = null, mode = null, failed = null, cancelled = false, pending = null, opening = null, sent = 0;
+    function err(code, msg) { var e = new Error(code + ': ' + msg); e.code = code; return e; }
+    function progress(p) { if (o.onProgress) { try { o.onProgress(p); } catch (e) { /* progress only */ } } }
+    function kill() { if (w) { try { w.onmessage = w.onerror = w.onmessageerror = null; w.terminate(); } catch (e) { /* gone */ } w = null; } }
+    function fail(e) {
+      if (failed) return;
+      failed = e; kill();
+      if (pending) { var p = pending; pending = null; p.reject(e); }
+    }
+    function openWorker(spec) {
+      return new Promise(function (resolve, reject) {
+        var t = null, ready = false;
+        opening = function (e) { if (!ready) { clearTimeout(t); ready = true; reject(e); } };
+        try { w = o.createWorker ? o.createWorker() : null; } catch (e) { w = null; return reject(e); }
+        if (!w) return reject(new Error('no worker'));
+        w.onmessage = function (ev) {
+          var m = ev.data || {};
+          if (!ready) {
+            clearTimeout(t); ready = true;
+            if (m.t === 'ready' && m.ok) { w.postMessage({ t: 'start', spec: spec }); resolve(); }
+            else reject(new Error(m.message || 'the Excel writer did not load in the worker'));
+            return;
+          }
+          if (m.t === 'progress' || m.t === 'writing') progress({ phase: m.t === 'progress' ? 'rows' : 'writing', rows: m.rows });
+          else if (m.t === 'done') {
+            if (m.rows !== sent) return fail(err('NAP_XLSX_WORKER', 'the background Excel builder wrote ' + m.rows + ' of ' + sent + ' rows'));   // never a short file
+            if (pending) { var p = pending; pending = null; p.resolve(m.buf); }
+            kill();
+          }
+          else if (m.t === 'error') fail(err('NAP_XLSX_WORKER', m.message || 'the background Excel builder failed'));
+        };
+        w.onerror = function (ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          var e = new Error((ev && ev.message) || 'the background Excel builder failed');
+          if (!ready) { clearTimeout(t); ready = true; reject(e); } else fail(err('NAP_XLSX_WORKER', e.message));
+        };
+        w.onmessageerror = w.onerror;
+        t = setTimeout(function () { if (!ready) { ready = true; reject(new Error('the background Excel builder did not start')); } }, o.readyMs || 15000);
+      });
+    }
+    return {
+      mode: function () { return mode; },
+      open: function (spec) {
+        function main(reason) {
+          kill();
+          if (o.onFallback) { try { o.onFallback(reason); } catch (e) { /* notice only */ } }
+          return Promise.resolve(o.loadMain()).then(function (X) {
+            if (cancelled) throw err('NAP_CANCELLED', 'export cancelled');
+            B = xlsxBuilder(X); B.start(spec); mode = 'main'; return mode;
+          });
+        }
+        if (!o.createWorker) return main('no worker');
+        return openWorker(spec).then(function () {
+          opening = null;
+          if (cancelled) { kill(); throw err('NAP_CANCELLED', 'export cancelled'); }
+          mode = 'worker'; return mode;
+        }, function (e) { opening = null; if (cancelled) throw err('NAP_CANCELLED', 'export cancelled'); return main(String((e && e.message) || e)); });
+      },
+      add: function (aoa) {
+        if (cancelled) return Promise.reject(err('NAP_CANCELLED', 'export cancelled'));
+        if (failed) return Promise.reject(failed);
+        if (mode === 'worker') { sent += aoa.length; w.postMessage({ t: 'rows', rows: aoa }); return Promise.resolve(); }
+        var n = B.add(aoa); progress({ phase: 'rows', rows: n });
+        return Promise.resolve();
+      },
+      finish: function (readme) {
+        if (cancelled) return Promise.reject(err('NAP_CANCELLED', 'export cancelled'));
+        if (failed) return Promise.reject(failed);
+        if (mode === 'worker') {
+          return new Promise(function (resolve, reject) { pending = { resolve: resolve, reject: reject }; w.postMessage({ t: 'finish', readme: readme }); });
+        }
+        progress({ phase: 'writing', rows: B.rows() });
+        var out = B.finish(readme); B = null;
+        return Promise.resolve(out);
+      },
+      cancel: function () {
+        if (cancelled) return;
+        cancelled = true; B = null; kill();
+        if (opening) { var op = opening; opening = null; op(err('NAP_CANCELLED', 'export cancelled')); }
+        if (pending) { var p = pending; pending = null; p.reject(err('NAP_CANCELLED', 'export cancelled')); }
+      },
+      close: function () { kill(); B = null; pending = null; }
+    };
+  }
+
   return {
     desk: DESK, AUDIT_KINDS: AUDIT_KINDS, AUDIT_KIND_LABEL: AUDIT_KIND_LABEL, AUDIT_PAGE: AUDIT_PAGE, AUDIT_EXPORT_PAGE: AUDIT_EXPORT_PAGE, AUDIT_EXPORT_MAX: AUDIT_EXPORT_MAX,
     AUDIT_STREET_MIN: AUDIT_STREET_MIN, AUDIT_MAXLEN: AUDIT_MAXLEN, auditFilterDefaults: auditFilterDefaults, auditFilterParams: auditFilterParams, auditNewFilters: auditNewFilters,
@@ -799,5 +949,6 @@
     normStencil: normStencil, parseDueDate: parseDueDate, manilaToday: manilaToday, isPastDue: isPastDue, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
     boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, fullNapOutcome: fullNapOutcome, validateDeactRecord: validateDeactRecord, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess,
     FIELD_NO_ACCESS_MSG: FIELD_NO_ACCESS_MSG, SIGNIN_ERR_MSG: SIGNIN_ERR_MSG, signInEmails: signInEmails, isFieldEmail: isFieldEmail, teamOfEmail: teamOfEmail,
-    handoffToken: handoffToken, checkHandoff: checkHandoff, handoffMsLeft: handoffMsLeft };
+    handoffToken: handoffToken, checkHandoff: checkHandoff, handoffMsLeft: handoffMsLeft,
+    xlsxBuilder: xlsxBuilder, xlsxWorkerSource: xlsxWorkerSource, xlsxExportJob: xlsxExportJob };
 });
