@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-22.5';
+const APP_VERSION='2026-10-22.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2885,7 +2885,7 @@ function completedValidationCell(j,canEdit){
   const st=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo.returnState(j):'none';
   if(j.validated) return `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`;
   if(st==='returned') return `<span class="vbadge ret">Returned to team</span><div style="font-size:8px;color:#c2503a;margin-top:2px">${esc(j.qa_return_remarks||'')}</div><div style="font-size:8px;color:#8a9894">${j.qa_returned_by?('by '+esc(j.qa_returned_by)):''}${j.qa_returned_at?((j.qa_returned_by?' · ':'')+fmtWhen(j.qa_returned_at)):''}</div>`;
-  return `<span class="vbadge no">Pending</span>${st==='resubmitted'?`<div style="font-size:8px;color:#1d4f8a;margin-top:2px">re-submitted ${fmtWhen(j.qa_return_resolved_at)}</div>`:''}${canEdit?` <button class="assign-btn" data-validate="${j.id}">Validate</button>`:''}`;
+  return `<span class="vbadge no">Pending</span>${st==='resubmitted'?`<div style="font-size:8px;color:#1d4f8a;margin-top:2px">re-submitted ${fmtWhen(j.qa_return_resolved_at)}</div>`:''}${canEdit?` <button class="assign-btn" data-validate="${j.id}">Validate</button> <button class="assign-btn" data-return="${j.id}" style="background:#fde8e4;color:#c2503a" title="Return this JO to the team (backjob: missing details / photos)">↩ Return JO</button>`:''}`;
 }
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
@@ -2911,6 +2911,7 @@ async function renderCompleted(){
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
+  $$('#completedBody [data-return]').forEach(b=>b.onclick=async()=>{ const ok=await returnJobToTeam(b.dataset.return,{prompt:'Ano ang kulang? (details / photos — the team sees this)',button:b,buttonLabel:'↩ Return JO'}); if(ok) renderCompleted(); });   // owner 2026-10-22: Return JO beside Validate
 }
 async function openGallery(jobId){
   const seq=(openGallery._seq||0)+1;openGallery._seq=seq;
