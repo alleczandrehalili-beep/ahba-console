@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-10-13.12" />
+  <link rel="stylesheet" href="styles.css?v=2026-10-22.5" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -161,10 +161,15 @@
           <button class="nav-item" data-page="completed"><i data-icon="check"></i><span>QA Validation</span></button>
           <button class="nav-item" data-page="qafindings"><i data-icon="check"></i><span>QA Findings</span><b id="qaFindBadge" style="display:none">0</b></button>
         </div>
+        <!-- NAP VIEW (owner 2026-10-15): HINDI page — link papunta sa NAP Dashboard sa BAGONG browser tab. Kita lang sa GC console
+             user na may 'NAP Board' (napboard) sa Access Control, o superadmin (napViewNav() sa app.js). href = NAP_BOARD_URL. -->
+        <a class="nav-item" id="napViewNav" target="_blank" rel="noopener noreferrer" style="display:none;text-decoration:none"><i data-icon="pin"></i><span>NAP VIEW</span></a>
         <button class="nav-item" data-page="wims"><i data-icon="truck"></i><span>WIMS</span></button>
         <button class="nav-item" data-page="fms"><i data-icon="truck"></i><span>Fleet</span><b id="fmsBadge" style="display:none">0</b></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
-        <button class="nav-item" data-page="attendance"><i data-icon="clock"></i><span>Attendance</span></button>
+        <!-- HR (owner 2026-10-14): pinagsama ang Payroll + Attendance sa iisang tab;
+             per-page pa rin ang access grants (attendance/payroll sa Access Control) -->
+        <button class="nav-item" data-page="hr" style="display:none"><i data-icon="users"></i><span>HR</span></button>
         <button type="button" class="nav-group-head" data-grp="fldaccess" aria-expanded="false"><i data-icon="users"></i><span>Field Ops Access</span><b class="grp-badge" style="display:none">0</b><i class="grp-chev">▸</i></button>
         <div class="nav-group" data-grpbody="fldaccess">
           <button class="nav-item" data-page="access" style="display:none"><i data-icon="users"></i><span>Access Control</span></button>
@@ -345,7 +350,9 @@
         <article class="panel expense-log"><div class="panel-head"><div><h2>Expense log</h2><p>Receipts and team submissions</p></div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Team</th><th>Category</th><th>Description</th><th>Work order</th><th>Amount</th><th>Status</th></tr></thead><tbody id="expenseBody"></tbody></table></div></article>
       </section>
 
+      <section id="payrollPage" class="page"><div id="hrTabsPayroll"></div><div id="hrRoot"></div></section>
       <section id="attendancePage" class="page">
+        <div id="hrTabsAttendance"></div>
         <div class="page-toolbar"><div><h2>Attendance · Time records</h2><p>Technician time-in / time-out (Philippine time). Serves as the daily work-hours log.</p></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="search-box" style="min-width:auto"><i data-icon="calendar"></i><span style="font-size:10px;color:#8a9894;margin-right:2px">From</span><input id="attDate" type="date"></div><div class="search-box" style="min-width:auto"><span style="font-size:10px;color:#8a9894;margin-right:2px">To</span><input id="attDateTo" type="date"></div></div></div>
         <div class="dispatch-stats">
           <div class="small-stat"><span>Currently timed in</span><strong id="attIn">0</strong></div>
@@ -387,6 +394,7 @@
           <div class="small-stat"><span>Completed (this day)</span><strong id="compTotal">0</strong></div>
           <div class="small-stat"><span>Validated</span><strong id="compValidated">0</strong></div>
           <div class="small-stat"><span>Pending validation</span><strong id="compPending">0</strong></div>
+          <div class="small-stat"><span>Returned to team</span><strong id="compReturned">0</strong></div>
           <div class="small-stat"><span>Proof photos</span><strong id="compPhotos">0</strong></div>
         </div>
         <article class="panel full-table">
@@ -640,6 +648,8 @@
         <div class="field full form-sec">Service · Migration</div>
         <label class="field"><span>Current Plan</span><input name="current_plan"></label>
         <label class="field"><span>New Plan</span><input name="mig_plan"></label>
+        <label class="field"><span>1P / 2P</span><select name="mig_play_type" id="ord_mig_play"><option>1-PLAY</option><option>2-PLAY</option></select></label>
+        <label class="field" id="ord_mig_cpe_wrap" style="display:none"><span>No. of CPE (2P) *</span><select name="mig_cpe_count" id="ord_mig_cpe"><option value="">— Select —</option><option>1</option><option>2</option></select></label>
         <label class="field"><span>Amount to Collect (₱)</span><input name="mig_amount" type="number" inputmode="numeric"></label>
         <label class="field"><span>Reference No.</span><input name="mig_ref"></label>
         <label class="field full"><span>Special note</span><textarea name="mig_note" rows="2"></textarea></label>
@@ -779,8 +789,9 @@
 
   <dialog id="photoModal" class="modal">
     <div class="modal-head"><div><span class="eyebrow">PROOF PHOTOS</span><h2 id="photoTitle">Job photos</h2><p id="photoSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div id="photoSubInfo"></div>
     <div class="photo-grid" id="photoGrid"></div>
-    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="returnBtn" style="display:none">↩ Return JO (backjob)</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
   </dialog>
 
   <dialog id="valModal" class="modal">
@@ -817,13 +828,19 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-10-13.12"></script>
-  <script src="qa-photo-corrections.js?v=2026-10-13.12"></script>
-  <script src="app.js?v=2026-10-13.12"></script>
+  <script src="qa-wims-export.js?v=2026-10-22.5"></script>
+  <script src="qa-photo-corrections.js?v=2026-10-22.5"></script>
+  <script src="hr-core.js?v=2026-10-22.5"></script>
+  <script src="hr-api.js?v=2026-10-22.5"></script>
+  <script src="hr-attendance-import.js?v=2026-10-22.5"></script>
+  <script src="hr-sheets.js?v=2026-10-22.5"></script>
+  <script src="console-hr.js?v=2026-10-22.5"></script>
+  <script src="hr-entry.js?v=2026-10-22.5"></script>
+  <script src="app.js?v=2026-10-22.5"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-10-13.12"></script>
+  <script src="ahba-cloud.js?v=2026-10-22.5"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-10-13.12"></script><script src="qa-api.js?v=2026-10-13.12"></script><script src="console-qa.js?v=2026-10-13.12"></script><script src="console-qa-findings.js?v=2026-10-13.12"></script>
-  <script src="fms-core.js?v=2026-10-13.12"></script><script src="fms-api.js?v=2026-10-13.12"></script><script src="console-fms.js?v=2026-10-13.12"></script>
+  <script src="qa-core.js?v=2026-10-22.5"></script><script src="qa-subscriber-info.js?v=2026-10-22.5"></script><script src="qa-api.js?v=2026-10-22.5"></script><script src="console-qa.js?v=2026-10-22.5"></script><script src="console-qa-findings.js?v=2026-10-22.5"></script>
+  <script src="fms-core.js?v=2026-10-22.5"></script><script src="fms-api.js?v=2026-10-22.5"></script><script src="console-fms.js?v=2026-10-22.5"></script>
 </body>
 </html>

@@ -162,6 +162,25 @@
       // ----- return JO to the team for photo replacement (qa-05h) -----
       // security definer RPC: head or inspector only, remarks required, JO must be completed with a team → JO back to in-progress.
       returnJobForPhotos: function (jobId, remarks, o) { return rpc('return_job_for_photos', { p_job_id: jobId, p_remarks: remarks }); },
+      // ----- full subscriber / JO / VAS info for the QA Audit detail (owner 2026-10-22) -----
+      // explicit column list from qa-subscriber-info.js (never *); the existing console jobs RLS applies; if the live schema lacks an
+      // optional column, one retry without the optional ones.
+      getJobFullInfo: function (jobId) {
+        if (!jobId) return Promise.resolve(null);
+        var Info = typeof QaSubscriberInfo !== 'undefined' ? QaSubscriberInfo : require('./qa-subscriber-info.js');
+        var read = function (cols) { return unwrap(client.from('jobs').select(cols.join(',')).eq('id', jobId).is('deleted_at', null).maybeSingle()); };
+        return read(Info.columns()).catch(function (e) {
+          if (!/column|does not exist|schema cache/i.test(String(e && e.message || e))) throw e;
+          return read(Info.columns({ withoutOptional: true }));
+        });
+      },
+      findJobByJoOrAcct: function (jo, acct) {
+        var Info = typeof QaSubscriberInfo !== 'undefined' ? QaSubscriberInfo : require('./qa-subscriber-info.js');
+        var cols = Info.columns().join(',');
+        var one = function (col, val) { return unwrap(client.from('jobs').select(cols).eq(col, val).is('deleted_at', null).order('created_at', { ascending: false }).limit(1)).then(function (rows) { return (rows && rows[0]) || null; }); };
+        var first = jo ? one('job_order_no', jo) : Promise.resolve(null);
+        return first.then(function (job) { if (job) return job; return acct ? one('ibass_acct_no', acct) : null; });
+      },
       // Column tiers: Gate B (8) → original return columns (6) — a server without the Gate B pair still answers with the return identity.
       jobReturnStatus: function (jobId) {
         var full = 'status,team,qa_return_remarks,qa_returned_at,qa_returned_by,qa_return_resolved_at,qa_return_submitted_at,qa_return_checked_by';

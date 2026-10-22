@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-13.12';
+const APP_VERSION='2026-10-22.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -676,9 +676,94 @@ function wimsMaterialsHTML(rows){
     if(has(row.photos_count)) meta.push(esc(row.photos_count)+' photo(s)');
     if(row.id) meta.push('report '+esc(String(row.id)));
     if(meta.length) h+=`<div style="padding:6px 2px 0;font-size:10px;color:#9aa6a2">${meta.join(' · ')}</div>`;
+    // ✏️ EDIT DECLARED MATERIALS (owner 2026-10-14): bukas sa lahat ng WIMS
+    // console user — server (edit_install_report) ang gate + balance compensation
+    if(row.id) h+=`<div style="padding:8px 2px 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="assign-btn" data-wimsdecl-edit="${esc(String(row.id))}">✏️ Edit declared materials</button><button type="button" class="assign-btn" data-wimsdecl-history="${esc(String(row.id))}">History</button></div>`;
     return h;
   }).join('<hr style="border:0;border-top:1px dashed #d8e4de;margin:10px 0">');
 }
+// ---- WIMS · edit declared materials + history (kagaya ng QA photo replace) ----
+const WIMS_KIT_LABELS={conn:'Fast Connector (kit)',patch:'Patch Cord (kit)',tbox:'Terminal Box (kit)',sar:'SAR form (kit)',saf:'SAF form (kit)'};
+const wimsHdr=extra=>Object.assign({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},extra||{});
+async function wimsDeclOpen(installId,btn){
+  let row,cat;
+  try{
+    row=(await (await fetch(`${SUPA_URL}/rest/v1/installs?select=id,jo_number,team_id,materials_used,kit_used,foc_reel_no,foc_start_m,foc_end_m,foc2_reel_no,foc2_end_m&id=eq.${installId}`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json())[0];
+    cat=await (await fetch(`${SUPA_URL}/rest/v1/materials?select=key,name,consume_unit&order=sort`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json();
+    if(!row||!Array.isArray(cat)) throw new Error('WIMS console access is required to edit declarations');
+  }catch(e){ showToast(e.message||'WIMS access required'); return; }
+  let dlg=document.getElementById('wimsDeclModal');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='wimsDeclModal';dlg.className='modal';document.body.appendChild(dlg);}
+  const esc=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const mu=row.materials_used||{},ku=row.kit_used||{};
+  const matRows=cat.filter(m=>m.key!=='foc').map(m=>`<label class="field" style="margin:0"><span style="font-size:10px">${esc(m.name)} (${esc(m.consume_unit||'')})</span><input type="number" min="0" step="any" data-declmat="${esc(m.key)}" value="${esc(mu[m.key]!=null?mu[m.key]:'')}" placeholder="0"></label>`).join('');
+  const kitRows=Object.keys(WIMS_KIT_LABELS).map(k=>`<label class="field" style="margin:0"><span style="font-size:10px">${WIMS_KIT_LABELS[k]}</span><input type="number" min="0" step="1" data-declkit="${k}" value="${esc(ku[k]!=null?ku[k]:'')}" placeholder="0"></label>`).join('');
+  dlg.innerHTML=`<div class="modal-head"><div><span class="eyebrow">WIMS · DECLARED MATERIALS</span><h2>Edit declared materials</h2><p>JO ${esc(row.jo_number)} · report ${esc(row.id)}</p></div></div>
+  <div style="max-height:52vh;overflow:auto;padding:4px 2px">
+    <div style="font-weight:700;font-size:11px;margin:4px 0">📏 FOC readings <span style="color:#8a9894;font-weight:600">· usage = |END − START| (+ reel 2) · blangko pareho = walang FOC</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel #</span><input id="declFocReel" value="${esc(row.foc_reel_no)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">START m</span><input id="declFocStart" type="number" step="any" value="${esc(row.foc_start_m)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">END m</span><input id="declFocEnd" type="number" step="any" value="${esc(row.foc_end_m)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel 2 #</span><input id="declFoc2Reel" value="${esc(row.foc2_reel_no)}"></label>
+      <label class="field" style="margin:0"><span style="font-size:10px">Reel 2 END m</span><input id="declFoc2End" type="number" step="any" value="${esc(row.foc2_end_m)}"></label>
+    </div>
+    <div style="font-weight:700;font-size:11px;margin:10px 0 4px">🧰 Kit <span style="color:#8a9894;font-weight:600">· record lang, walang balance effect</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${kitRows}</div>
+    <div style="font-weight:700;font-size:11px;margin:10px 0 4px">🧱 Drop materials <span style="color:#8a9894;font-weight:600">· awtomatikong ibabalik/babawasan ang team balance sa pagkakaiba</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${matRows}</div>
+    <label class="field" style="margin-top:10px"><span>Reason for edit (REQUIRED — makikita sa history at ledger)</span><textarea id="declReason" rows="2" maxlength="2000"></textarea></label>
+    <p id="declErr" role="alert" style="color:#8a2013;font-weight:600;font-size:12px"></p>
+  </div>
+  <div class="modal-actions"><button type="button" class="secondary-btn" id="declCancel">Cancel</button><button type="button" class="primary-btn" id="declSave">Save changes</button></div>`;
+  const err=dlg.querySelector('#declErr');
+  dlg.querySelector('#declCancel').onclick=()=>dlg.close();
+  dlg.querySelector('#declSave').onclick=async()=>{
+    const mats={};
+    dlg.querySelectorAll('[data-declmat]').forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v)&&v>0)mats[i.getAttribute('data-declmat')]=v;});
+    const kit={};
+    dlg.querySelectorAll('[data-declkit]').forEach(i=>{const v=parseFloat(i.value);kit[i.getAttribute('data-declkit')]=(!isNaN(v)&&v>0)?v:0;});
+    const num=id=>{const t=dlg.querySelector(id).value.trim();return t===''?null:parseFloat(t);};
+    const body={p_install_id:installId,p_materials:mats,p_kit:kit,
+      p_foc_reel:dlg.querySelector('#declFocReel').value.trim()||null,
+      p_foc_start:num('#declFocStart'),p_foc_end:num('#declFocEnd'),
+      p_foc2_reel:dlg.querySelector('#declFoc2Reel').value.trim()||null,p_foc2_end:num('#declFoc2End'),
+      p_note:dlg.querySelector('#declReason').value.trim()||null};
+    if(!body.p_note){err.textContent='Reason is required.';return;}
+    const sv=dlg.querySelector('#declSave');sv.disabled=true;sv.textContent='Saving…';
+    try{
+      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/edit_install_report`,{method:'POST',headers:wimsHdr({'Content-Profile':'wims'}),body:JSON.stringify(body)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(d.message||('HTTP '+r.status));
+      dlg.close(); showToast('✔ Declared materials updated — team balances adjusted');
+      if(btn){const tag=document.createElement('div');tag.style.cssText='font-size:11px;color:#0e6f52;font-weight:700;padding:4px 2px';tag.textContent='✔ Na-edit — buksan ulit ang JO/attachment para makita ang updated na deklarasyon';btn.parentElement.after(tag);}
+    }catch(e2){err.textContent=e2.message||'Failed';}
+    sv.disabled=false;sv.textContent='Save changes';
+  };
+  dlg.showModal();
+}
+async function wimsDeclHistory(installId){
+  let rows=[];
+  try{rows=await (await fetch(`${SUPA_URL}/rest/v1/install_edits?select=edited_at,editor_name,note,old_data,new_data&install_id=eq.${installId}&order=edited_at.desc`,{headers:wimsHdr({'Accept-Profile':'wims'})})).json();}catch(e){}
+  let dlg=document.getElementById('wimsDeclHist');
+  if(!dlg){dlg=document.createElement('dialog');dlg.id='wimsDeclHist';dlg.className='modal';document.body.appendChild(dlg);}
+  const esc=x=>String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const diff=(o,n)=>{const a=(o&&o.materials_used)||{},b=(n&&n.materials_used)||{};const ks=[...new Set([...Object.keys(a),...Object.keys(b)])];
+    const ch=ks.filter(k=>String(a[k]??'')!==String(b[k]??'')).map(k=>`${k}: ${a[k]??0} → ${b[k]??0}`);
+    ['foc_reel_no','foc_start_m','foc_end_m','foc2_reel_no','foc2_end_m'].forEach(k=>{if(String((o||{})[k]??'')!==String((n||{})[k]??''))ch.push(`${k}: ${(o||{})[k]??'—'} → ${(n||{})[k]??'—'}`);});
+    return ch.join(' · ')||'(walang field diff)';};
+  dlg.innerHTML=`<div class="modal-head"><div><span class="eyebrow">WIMS · DECLARED MATERIALS</span><h2>Edit history</h2></div></div>
+  <div style="max-height:50vh;overflow:auto">${(Array.isArray(rows)&&rows.length)?rows.map(r=>`<div style="border-bottom:1px solid #eef1ed;padding:8px 2px"><div style="font-weight:700;font-size:12px">${new Date(r.edited_at).toLocaleString()} · ${esc(r.editor_name||'—')}</div><div style="font-size:11px;color:#3a4a44">${esc(diff(r.old_data,r.new_data))}</div><div style="font-size:11px;color:#a4690f">Reason: ${esc(r.note||'—')}</div></div>`).join(''):'<div class="none" style="padding:14px">Walang edit history — orihinal na deklarasyon ng team.</div>'}</div>
+  <div class="modal-actions"><button type="button" class="secondary-btn" id="declHistClose">Close</button></div>`;
+  dlg.querySelector('#declHistClose').onclick=()=>dlg.close();
+  dlg.showModal();
+}
+document.addEventListener('click',e=>{
+  const ed=e.target.closest&&e.target.closest('[data-wimsdecl-edit]');
+  if(ed){wimsDeclOpen(ed.getAttribute('data-wimsdecl-edit'),ed);return;}
+  const hi=e.target.closest&&e.target.closest('[data-wimsdecl-history]');
+  if(hi){wimsDeclHistory(hi.getAttribute('data-wimsdecl-history'));}
+});
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
@@ -823,15 +908,19 @@ function openJobDetail(jobId){
   openModal($('#jobDetailModal'));
 }
 // ↩ Return a completed JO to its team (replace a photo, then re-complete). Server: qa.return_job_for_photos
-// sets status in-progress + the qa_return_* columns; Gate B: the team re-submits (RPC), the QA reviewer closes the return.
-async function jdReturnToTeam(jobId){
-  const j=findJob(jobId); if(!j||!j.team){ showToast('This JO has no team to return it to'); return; }
-  const raw=prompt('Which photo must the team replace? (required — the team sees this)');
-  if(raw===null) return;
+// sets status in-progress + the qa_return_* columns; Gate B (qa-06): the team re-submits (RPC), the QA reviewer closes the return.
+// Return a completed JO to its team (qa-05h RPC: head / inspector only, remarks required). Shared by the Dispatch JO detail
+// ("replace photo") and the QA Validation modal ("Return JO (backjob)", owner 2026-10-22). Returns true when the JO was returned.
+async function returnJobToTeam(jobId,o){
+  o=o||{};
+  const j=findJob(jobId)||(typeof compJobs!=='undefined'&&compJobs.find(x=>x.id===jobId))||null;
+  if(!j||!j.team){ showToast('This JO has no team to return it to'); return false; }
+  const raw=prompt(o.prompt||'Which photo must the team replace? (required — the team sees this)');
+  if(raw===null) return false;
   const remarks=String(raw).trim();
-  if(!remarks){ showToast('Remarks are required — the JO was not returned'); return; }
-  if(!window.dashAuthClient){ showToast('Not signed in — reload the page'); return; }
-  const btn=$('#jdReturnTeam'); if(btn){ btn.disabled=true; btn.textContent='Returning…'; }
+  if(!remarks){ showToast('Remarks are required — the JO was not returned'); return false; }
+  if(!window.dashAuthClient){ showToast('Not signed in — reload the page'); return false; }
+  const btn=o.button||null; if(btn){ btn.disabled=true; btn.textContent='Returning…'; }
   try{
     const {data,error}=await window.dashAuthClient.schema('qa').rpc('return_job_for_photos',{p_job_id:jobId,p_remarks:remarks});
     if(error) throw error;
@@ -842,17 +931,20 @@ async function jdReturnToTeam(jobId){
     Object.keys(upd).forEach(k=>{ if(row[k]!==undefined) upd[k]=row[k]; });
     if(row.history!=null) upd.history=row.history;
     upd.updatedAt=row.updated_at||now; upd.updated_at=row.updated_at||now;
-    const live=jobs.find(x=>x.id===jobId);
-    [j,live].forEach(o=>{ if(o) Object.assign(o,upd); });
+    const live=jobs.find(x=>x.id===jobId), comp=(typeof compJobs!=='undefined')?compJobs.find(x=>x.id===jobId):null;
+    [j,live,comp].forEach(x=>{ if(x) Object.assign(x,upd); });
     showToast(`JO returned to ${team}`);
     pushNotify({team,title:'↩ JO returned by QA',body:remarks.slice(0,120),url:'mobile.html'});
     renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline();
-    if($('#jdTitle').textContent.startsWith(jobId)) openJobDetail(jobId);
+    if($('#jdTitle')&&$('#jdTitle').textContent.startsWith(jobId)) openJobDetail(jobId);
+    return true;
   }catch(e){
     showToast('Return failed: '+(e&&e.message||e));
-    if(btn){ btn.disabled=false; btn.textContent='↩ Return to team (replace photo)'; }
+    if(btn){ btn.disabled=false; btn.textContent=o.buttonLabel||'↩ Return to team (replace photo)'; }
+    return false;
   }
 }
+async function jdReturnToTeam(jobId){ return returnJobToTeam(jobId,{button:$('#jdReturnTeam')}); }
 // Let the technician see/start this job order even while another load is active (serial-lock bypass).
 async function toggleJobLockBypass(jobId,on){
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
@@ -1247,6 +1339,7 @@ async function loadOrgMap(){
     (r.ok?await r.json():[]).forEach(o=>{ orgById[o.id]={code:o.code,name:o.name}; if(o.code==='AHBA') gcOrgId=o.id; });
   }catch(e){}
   try{ tlBuildOrgFilter(); }catch(e){}
+  try{ napViewNav(); }catch(e){}   // NAP VIEW needs gcOrgId (GC check)
 }
 // GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
 // Options: "AHBA + MSA-SLI" (all) · "AHBA" (GC only) · "MSA - SLI" (all subcons only) · each subcon by name.
@@ -1940,11 +2033,32 @@ function renderNotifPop(){
   const dot=$('#notifDot'); if(dot) dot.style.display=(list.length && newest>notifReadAt)?'':'none';
 }
 
-function switchPage(page){$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'Attendance · Time records',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);if(page==='teams')renderTeams($('#teamSearch')?.value||'');applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
+// HR tab (owner 2026-10-14): pinagsama ang Attendance at Payroll sa iisang "HR" na sidebar
+// tab. Ang 'hr' ay alias — bumubukas sa huling piniling sub-tab (default Attendance); ang
+// mismong access ay per-page pa rin (attendance/payroll grants, hindi ginalaw ang gating).
+let _hrLast='attendance';
+function hrSubTabs(page){
+  const u=window.dashUser||{};
+  const canPay=!!(window.FieldOpsHR&&FieldOpsHR.canOpen(u));   // parehong gate ng dating Payroll nav
+  const canAtt=!!(u.is_super||(Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('attendance')));
+  const btn=(k,icon,label)=>`<button type="button" class="secondary-btn" data-hrsub="${k}" style="${page===k?'background:#102925;color:#fff;border-color:#102925':''}">${icon} ${label}</button>`;
+  const html=`<div style="display:flex;gap:8px;margin:0 0 12px">${canAtt?btn('attendance','🕐','Attendance'):''}${canPay?btn('payroll','💰','Payroll'):''}</div>`;
+  ['hrTabsAttendance','hrTabsPayroll'].forEach(id=>{ const el=document.getElementById(id); if(!el) return; el.innerHTML=html; el.querySelectorAll('[data-hrsub]').forEach(b=>b.onclick=()=>switchPage(b.dataset.hrsub)); });
+}
+function switchPage(page){if(page==='hr'){const _u=window.dashUser||{};const _ca=!!(_u.is_super||(Array.isArray(_u.allowed_pages)&&_u.allowed_pages.includes('attendance')));const _cp=!!(window.FieldOpsHR&&FieldOpsHR.canOpen(_u));page=((_hrLast==='payroll'&&_cp)||!_ca)?'payroll':'attendance';}if(page==='attendance'||page==='payroll')_hrLast=page;$$('.page').forEach(p=>p.classList.remove('active'));$(`#${page}Page`).classList.add('active');$$('.nav-item').forEach(n=>{const on=n.dataset.page===page||(n.dataset.page==='hr'&&(page==='attendance'||page==='payroll'));n.classList.toggle('active',on);on?n.setAttribute('aria-current','page'):n.removeAttribute('aria-current')});const _agw=document.querySelector('.nav-item.active')?.closest('.nav-group');if(_agw&&_agw.classList.contains('collapsed'))navGrpSet(_agw.dataset.grpbody,true,false);const labels={overview:'Good morning, Allec',dispatch:'Dispatch operations',teams:'Field team monitoring',workorders:'Subscriber work orders',expenses:'Expense monitoring',attendance:'HR · Attendance · Time records',payroll:'HR · Payroll · AHBA GC',completed:'QA Validation',validation:'Validator · New job orders',history:'Billing Validation',remittance:'Remittance · Daily collection',access:'Access Control',subcon:'Subcontractors',timeline:'Dashboard',wims:'WIMS · Warehouse Inventory',slrtickets:'SLR Tickets · Technician repairs',qaaudit:'QA Audit · Field inspections',qafindings:'QA Findings · Rectifications',fms:'Fleet · Vehicle 201 files'};$('#pageTitle').textContent=labels[page]||'';if(page==='overview'){const u=window.dashUser;const nm=u?String(u.display_name||u.username).split(/\s+/)[0]:'there';$('#pageTitle').textContent='Good Day, '+nm;}if(page==='timeline'){renderTimeline();renderJobs();}if(page==='attendance')renderAttendance();if(page==='payroll')initHR();if(page==='attendance'||page==='payroll')hrSubTabs(page);if(page==='completed')renderCompleted();if(page==='validation')renderValidation();if(page==='history')renderHistory();if(page==='remittance')renderRemittance();if(page==='access')renderAccess();if(page==='subcon')renderSubcon();if(page==='wims')initWims();if(page==='qaaudit')initQA();if(page==='qafindings')initQAFindings();if(page==='fms')initFMS();if(page==='slrtickets')renderSlrTickets(true);if(page==='teams')renderTeams($('#teamSearch')?.value||'');applyViewOnlyLock(page);if(window.dashUser&&!window.dashUser.is_super&&Array.isArray(window.dashUser.allowed_pages)&&window.dashUser.allowed_pages.includes(page)&&!dashCanEdit(page)){const _t=$('#pageTitle');if(_t)_t.textContent+=' · 👁 View only';}closeSidebar();scrollTo(0,0)}
 
 // ---------- WIMS (embedded warehouse inventory; isolated in an iframe) ----------
 // Lazy-load the WIMS admin only when its tab is first opened.
 function initWims(){ const f=document.getElementById('wimsFrame'); if(f && !f.getAttribute('src')){ f.setAttribute('src','wims-admin-live.html?v='+APP_VERSION); } }
+// HR keeps the same authenticated client and retains unsaved work when navigating away.
+let _hrController=null;
+function initHR(){
+  const el=document.getElementById('hrRoot');if(!el)return;
+  if(!window.FieldOpsHR){el.textContent='Payroll module could not load. Please reload.';return;}
+  if(!_hrController)_hrController=FieldOpsHR.create({api:window.HrApi,console:window.ConsoleHR});
+  return _hrController.open(el,{client:window.dashAuthClient,user:window.dashUser,toast:showToast,ensureXLSX,ensureXLSXStyle});
+}
+function resetHR(){if(_hrController)_hrController.reset();}
 // ===== QA AUDIT (field inspections) — module in console-qa.js; mounted lazily when the page opens =====
 let _qaMount=null;
 function initQA(){
@@ -2465,7 +2579,10 @@ async function renderAccounts(){
     rows=teams.map(t=>({username:t.name,email:`${t.name.toLowerCase()}@ahbafield.app`,area:t.area,must_change:true,last_login:null,password_changed_at:null,role:'technician'}));
   }
   const lim=accessIsDispatcherOnly();
-  if(lim) rows=rows.filter(r=>(r.role||'technician')==='technician');   // dispatchers: technicians only
+  // dispatchers: technician role lang (dating gawi); ang 'techreset' grant = LAHAT ng
+  // FieldOps/mobile accounts (tech, sales, security, QA inspector) — console users ay
+  // hinding-hindi lalabas dito (dashboard_users ang mga iyon, hindi technicians).
+  if(lim && !hasTechResetGrant(window.dashUser)) rows=rows.filter(r=>(r.role||'technician')==='technician');
   $('#accountTotal').textContent=rows.length;
   $('#accountActive').textContent=rows.filter(r=>!r.must_change).length;
   $('#accountPending').textContent=rows.filter(r=>r.must_change).length;
@@ -2682,15 +2799,18 @@ async function exportGateLog(){
 // ---------- Completed jobs · proof photos · validation · export ----------
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
 let compJobs=[], compPhotos={};
-async function fetchCompleted(date){
-  // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and any
-  // past date loads. Prefer completed_at (fixed at completion); fall back to updated_at for
-  // older rows that have no completed_at yet — works regardless of backfill/deploy order.
+// QA Validation list (owner 2026-10-22): completed THAT DAY, or returned to the team (backjob, qa-05h) and not yet re-completed.
+// The day is filtered on the SERVER (Manila range) so we never hit the 1000-row cap; completed_at is KEPT on a return, so a returned
+// JO stays on its day; older rows without completed_at fall back to updated_at.
+function completedQuery(date){
   const s=(date+'T00:00:00+08:00').replace('+','%2B'), e=(date+'T23:59:59.999+08:00').replace('+','%2B');
-  const or=`or=(and(completed_at.gte.${s},completed_at.lte.${e}),and(completed_at.is.null,updated_at.gte.${s},updated_at.lte.${e}))`;
+  const day=`or(and(completed_at.gte.${s},completed_at.lte.${e}),and(completed_at.is.null,updated_at.gte.${s},updated_at.lte.${e}))`;
+  const state=`or(status.eq.completed,and(status.eq.in-progress,qa_returned_at.not.is.null,qa_return_resolved_at.is.null))`;
+  return `and=(${day},${state})&select=*&order=updated_at.desc&limit=2000`;
+}
+async function fetchCompleted(date){
   try{
-    const q=`status=eq.completed&${or}&select=*&order=updated_at.desc&limit=2000`;
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${completedQuery(date)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     if(!r.ok){ try{ fetchCompleted._err='HTTP '+r.status+' — '+(await r.text()).slice(0,140); }catch(_){ fetchCompleted._err='HTTP '+r.status; } return []; }
     fetchCompleted._err=''; return await r.json();
   }catch(e2){ fetchCompleted._err=String(e2&&e2.message||e2); return[]; }
@@ -2776,6 +2896,17 @@ async function openQaPhotoHistory(job,photo){
   dlg.querySelector('#qaHistoryRows').innerHTML=rows.length?rows.map(r=>`<section class="qa-history-item"><strong>${qaPhotoText(r.actor_label||r.actor_id||'Dispatcher')}</strong><span> · ${qaPhotoText(fmtWhen(r.corrected_at))}</span><p>${qaPhotoText(r.reason)}</p><div class="qa-correction-preview">${[['Original',r.old_url],['Replacement',r.new_url]].map(([label,url])=>url?`<a href="${qaPhotoText(url)}" target="_blank" rel="noopener"><strong>${label}</strong><img src="${qaPhotoText(url)}" alt="${label} photo"></a>`:'').join('')}</div></section>`).join(''):'<p>No dispatcher corrections recorded for this photo.</p>';
   dlg.querySelector('#qaHistoryClose').onclick=()=>dlg.close();dlg.showModal();
 }
+// Validation cell of the Completed (QA Validation) table — three states (owner 2026-10-22): Pending (+ Validate for editors),
+// Returned to team (remarks · by · when; no Validate while the team works on it), Validated. A re-completed return shows a re-submitted note.
+function completedValidationCell(j,canEdit){
+  const st=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo.returnState(j):'none';
+  if(j.validated) return `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`;
+  // Gate B (qa-06): the team re-submitted this cycle (qa_return_submitted_at ≥ qa_returned_at) but the return is still open → FOR QA CHECK;
+  // the QA reviewer closes it in QA Audit → Returned JOs. Pre-qa-06 servers never set the column, so this branch is simply skipped.
+  if(st==='returned'&&typeof qaReturnSubmitted==='function'&&qaReturnSubmitted(j)) return `<span class="vbadge no">📸 FOR QA CHECK</span><div style="font-size:8px;color:#1d4f8a;margin-top:2px">team re-submitted ${fmtWhen(j.qa_return_submitted_at)} — the QA reviewer verifies in QA Audit → Returned JOs</div>`;
+  if(st==='returned') return `<span class="vbadge ret">Returned to team</span><div style="font-size:8px;color:#c2503a;margin-top:2px">${esc(j.qa_return_remarks||'')}</div><div style="font-size:8px;color:#8a9894">${j.qa_returned_by?('by '+esc(j.qa_returned_by)):''}${j.qa_returned_at?((j.qa_returned_by?' · ':'')+fmtWhen(j.qa_returned_at)):''}</div>`;
+  return `<span class="vbadge no">Pending</span>${st==='resubmitted'?`<div style="font-size:8px;color:#1d4f8a;margin-top:2px">re-submitted ${fmtWhen(j.qa_return_resolved_at)}</div>`:''}${canEdit?` <button class="assign-btn" data-validate="${j.id}">Validate</button>`:''}`;
+}
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
   const _cb=$('#clearBtn'); if(_cb) _cb.style.display=dashCanEdit('completed')?'':'none';   // Clear photos = GC-only
@@ -2787,17 +2918,16 @@ async function renderCompleted(){
   try{ compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id)); }catch(e){ body.innerHTML='<tr><td colspan="7" class="empty-cell">Photos could not be loaded — retry this day.</td></tr>'; showToast('❌ '+e.message); return; }
   const totalPhotos=Object.values(compPhotos).reduce((a,b)=>a+b.length,0);
   const val=compJobs.filter(j=>j.validated).length;
-  $('#compTotal').textContent=compJobs.length;
+  const ret=compJobs.filter(j=>!j.validated&&typeof QaSubscriberInfo!=='undefined'&&QaSubscriberInfo.returnState(j)==='returned').length;
+  $('#compTotal').textContent=compJobs.filter(j=>j.status==='completed').length;
   $('#compValidated').textContent=val;
-  $('#compPending').textContent=compJobs.length-val;
+  $('#compPending').textContent=compJobs.length-val-ret;
+  const _cr=$('#compReturned'); if(_cr) _cr.textContent=ret;
   $('#compPhotos').textContent=totalPhotos;
   if(!compJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No completed jobs for this day.</td></tr>`;return}
   body.innerHTML=compJobs.map(j=>{
     const n=(compPhotos[j.id]||[]).length;
-    const vb=j.validated
-      ? `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`
-      : '<span class="vbadge no">Pending</span>';
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${(j.validated||!dashCanEdit('completed'))?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${completedValidationCell(j,dashCanEdit('completed'))}</td></tr>`;
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
@@ -2807,14 +2937,20 @@ async function openGallery(jobId){
   const j=compJobs.find(x=>x.id===jobId)||{};
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
+  const _SI=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo:null;
+  const _si=$('#photoSubInfo'); if(_si) _si.innerHTML=(_SI&&j.id)?_SI.render(j):'';   // full subscriber info (owner 2026-10-22) — the row is already in memory
   const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
+  const rb=$('#returnBtn'); if(rb){ rb.style.display='none'; rb.onclick=null; }
   openModal($('#photoModal'));
   try{
     const paths=(await fetchPhotosFor([jobId]))[jobId]||[];if(seq!==openGallery._seq)return;
     compPhotos[jobId]=paths;
     $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
     renderQaPhotoTiles($('#photoGrid'),j,paths);
-    vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':'';vb.onclick=()=>{validateJob(jobId);closeModals();};
+    const st=_SI?_SI.returnState(j):'none';
+    const actionable=!j.validated&&st!=='returned'&&dashCanEdit('completed');
+    vb.style.display=actionable?'':'none';vb.onclick=()=>{validateJob(jobId);closeModals();};
+    if(rb){ rb.style.display=actionable?'':'none'; rb.onclick=async()=>{ closeModals(); const ok=await returnJobToTeam(jobId,{prompt:'Ano ang kulang? (details / photos — the team sees this)'}); if(ok) renderCompleted(); }; }
   }catch(e){
     if(seq!==openGallery._seq)return;delete compPhotos[jobId];
     $('#photoSub').textContent='Current photos could not be loaded';$('#photoGrid').innerHTML='<div class="none">Reopen this JO to retry loading its current photos before QA validation.</div>';
@@ -3308,6 +3444,9 @@ function ordPopulatePlans(){
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
 function ordToggleAddonCount(){ const on=($('#ord_play')&&$('#ord_play').value)==='2-PLAY'; const w=$('#ord_addon_count_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_addon_count')) $('#ord_addon_count').value=''; }
+// Migration mirrors the SLI 1P/2P input, but a migration load may carry at most
+// TWO CPE — the dropdown offers 1 and 2 only, where SLI allows 3.
+function ordToggleMigCpe(){ const on=($('#ord_mig_play')&&$('#ord_mig_play').value)==='2-PLAY'; const w=$('#ord_mig_cpe_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_mig_cpe')) $('#ord_mig_cpe').value=''; }
 // IPTV Only: isang VAS Number input bawat piniling count (2 VAS = 2 espasyo).
 function iptvRenderVas(){
   const n=Number(($('#iptv_vas_count')||{}).value)||0;
@@ -3385,6 +3524,8 @@ async function editRejectedOrder(jobId){
     setv('source_of_sales',j.source_of_sales); setv('referral_name',j.referral_name); setv('special_note',note);
   } else if(type==='Migration'){
     setv('current_plan',j.current_plan); setv('mig_plan',j.plan); setv('mig_amount',j.amount_to_collect!=null?j.amount_to_collect:''); setv('mig_ref',j.ref_no); setv('mig_note',note);
+    if($('#ord_mig_play')) $('#ord_mig_play').value=j.play_type||'1-PLAY'; ordToggleMigCpe();
+    if($('#ord_mig_cpe')) $('#ord_mig_cpe').value=j.addon_count||'';
   } else { setv('ticket_no',j.ticket_no); setv('slr_note',note); }
   $$('#orderModal [data-cnt]').forEach(b=>b.textContent='keeping existing');
 }
@@ -3500,6 +3641,9 @@ async function submitOrderInner(e){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
+  if(ordType==='Migration'){
+    if(f.mig_play_type==='2-PLAY' && !t(f.mig_cpe_count)){ err('For a 2-PLAY migration, select how many CPE are included (maximum 2).'); return; }
+  }
   if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
   if(ordType==='Transfer'){
     if(!t(f.trf_ibas)){ err('IBAS Number is required for Transfer SDU–MDU.'); return; }
@@ -3549,7 +3693,10 @@ async function submitOrderInner(e){
       special_note:t(f.special_note)});
   } else if(ordType==='Migration'){
     Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
-      amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),special_note:t(f.mig_note)});
+      amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),
+      play_type:f.mig_play_type||'1-PLAY',
+      addon_count:(f.mig_play_type==='2-PLAY'&&t(f.mig_cpe_count)!==''?Number(t(f.mig_cpe_count)):null),
+      special_note:t(f.mig_note)});
   } else if(ordType==='Transfer'){
     // TRANSFER TO sa special_note para agad kitang-kita ng Dispatcher at ng technician
     // sa mga umiiral na card/detail view — ang malinis na value ay nasa new_address column.
@@ -4028,7 +4175,22 @@ function startSlrTicker(){
 // ---------- Dashboard login + role-based access ----------
 // 'photofix' = "QA Photo Fix" (owner 2026-10-13): not a page — an Access Control entry. Edit = may replace a JO proof photo (and open
 // its history); View = history only. Enforced server-side by qa.photo_actor_authority (qa-07d); GC organization only for now.
-const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['photofix','QA Photo Fix']];
+// 'napboard' = "NAP Board" (owner 2026-10-15): not a page — an Access Control entry. View or Edit = VIEW-ONLY access to the standalone
+// NAP Dashboard (/nap-dashboard.html, Board tab only). Enforced server-side by nap.is_viewer() (nap-14); GC organization only.
+// NAP VIEW (owner 2026-10-15): sidebar link (NOT a page) that opens the NAP Dashboard in a NEW browser tab. Shown only when
+// napViewVisible(): superadmin, or a GC console user (org = AHBA, same rule as isGcConsole / nap.is_viewer) with 'napboard' in
+// allowed_pages. Only a convenience: the dashboard enforces the real access (nap.is_viewer() / my_role). It is a real <a target=_blank>
+// (window.open with 'noopener' always returns null, so a blocked popup cannot be detected; a user-clicked anchor is never blocked and
+// also works in installed PWAs). The dashboard keeps its OWN Supabase session (storageKey 'ahba-nap-dashboard'), so the first time
+// the user signs in there with the same console account: one hint toast per user per browser session.
+const NAP_BOARD_URL='https://console.ahbadevt.com/nap-dashboard.html';
+function napViewVisible(u,gcId){ return !!(u&&(u.is_super||(gcId&&u.org_id===gcId&&Array.isArray(u.allowed_pages)&&u.allowed_pages.includes('napboard')))); }
+function napViewNav(){ const a=document.getElementById('napViewNav'); if(!a) return; const on=napViewVisible(window.dashUser,gcOrgId);
+  a.style.display=on?'':'none'; if(on) a.href=NAP_BOARD_URL; else a.removeAttribute('href');
+  if(!a._napWired){ a._napWired=1; a.addEventListener('click',()=>{ const u=window.dashUser; let k='napview_hint_'+((u&&u.username)||''), seen=false;
+    try{ seen=sessionStorage.getItem(k)==='1'; sessionStorage.setItem(k,'1'); }catch(e){ seen=!!napViewNav._hinted; } napViewNav._hinted=1;
+    if(!seen) showToast('Sign in with your console account (username@ahbadash.app)'); try{ closeSidebar(); }catch(e){} }); } }
+const PAGE_KEYS=[['overview','Overview'],['validation','Validator'],['timeline','Dashboard'],['teams','Field Teams'],['workorders','Work Orders'],['slrtickets','SLR Tickets'],['wims','WIMS'],['expenses','Expenses'],['attendance','Attendance'],['completed','Completed'],['remittance','Remittance'],['history','Load History'],['qaaudit','QA Audit'],['qafindings','QA Findings'],['fms','Fleet'],['payroll','Payroll'],['hrvalidate','HR Validation'],['photofix','QA Photo Fix'],['techreset','FieldOps PW Reset'],['napboard','NAP Board']];
 let dashAuth=null; window.dashUser=null;
 const dashEmailFor=u=>u.trim().toLowerCase()+'@ahbadash.app';
 const DH=()=>({apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'});
@@ -4053,7 +4215,7 @@ function startDashAuth(){
   dashAuth=window.supabase.createClient(SUPA_URL,SUPA_KEY);
   window.dashAuthClient=dashAuth;   // QA Audit module (console-qa.js) reuses the same authenticated client
   // keep the REST token + realtime auth in sync with the session (handles token refresh)
-  dashAuth.auth.onAuthStateChange((_e,session)=>{ window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); authReadyRefetch(window.__ahbaTok); });
+  dashAuth.auth.onAuthStateChange((_e,session)=>{ if(_e==='SIGNED_OUT')resetHR(); window.__ahbaTok = session?.access_token || null; setRealtimeAuth(window.__ahbaTok); authReadyRefetch(window.__ahbaTok); });
   dashAuth.auth.getSession().then(({data})=>{
     window.__ahbaTok = data.session?.access_token || null;
     const _last=Number(localStorage.getItem('ahba_dash_active')||0);
@@ -4143,14 +4305,17 @@ function applyViewOnlyLock(page){
 function applyAccess(u){
   let allowed = u.is_super ? PAGE_KEYS.map(p=>p[0]) : (Array.isArray(u.allowed_pages)?u.allowed_pages.slice():[]);
   // Dispatch Board is now inside the Dashboard — old 'dispatch' access grants the Dashboard.
+  if(window.FieldOpsHR&&FieldOpsHR.canOpen(u)&&!allowed.includes('payroll'))allowed.push('payroll');
+  allowed=allowed.filter(p=>p!=='hrvalidate'&&(p!=='payroll'||(window.FieldOpsHR&&FieldOpsHR.canOpen(u))));
   if(allowed.includes('dispatch') && !allowed.includes('timeline')) allowed.push('timeline');
   // Access Control: Superadmin sees the full panel; dispatchers see a limited view (reset technician PW only).
-  $$('.nav-item').forEach(n=>{ const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
+  $$('.nav-item').forEach(n=>{ if(n.id==='napViewNav') return; const pg=n.dataset.page; if(pg==='access'){ n.style.display=(u.is_super||hasDispatchAccess(u)||allowed.includes('techreset'))?'':'none'; } else if(pg==='subcon'){ n.style.display=u.is_super?'':'none'; } else if(pg==='hr'){ n.style.display=(u.is_super||allowed.includes('attendance')||allowed.includes('payroll'))?'':'none'; } else if(pg==='slrtickets'){ n.style.display=(u.is_super||allowed.includes('slrtickets')||allowed.includes('timeline'))?'':'none'; } else { n.style.display=allowed.includes(pg)?'':'none'; } });
   // Nav groups: itago ang header + wrapper kapag WALANG kahit isang kita na sub-tab
   // (hal. dispatcher na walang QA access, o subcon console na walang Field Ops Access).
   $$('.nav-group').forEach(g=>{ const any=[...g.querySelectorAll('.nav-item')].some(n=>n.style.display!=='none');
     g.style.display=any?'':'none';
     const h=document.querySelector(`.nav-group-head[data-grp="${g.dataset.grpbody}"]`); if(h) h.style.display=any?'':'none'; });
+  napViewNav();   // NAP VIEW link (GC check completes after loadOrgMap, which calls it again)
   navGrpBadges();
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   const _tanb=$('#teamAnalyzeBtn'); if(_tanb) _tanb.style.display=u.is_super?'':'none';   // 📊 superadmin only
@@ -4161,7 +4326,7 @@ function applyAccess(u){
   const rl=$('#roleLabel'); if(rl) rl.textContent=u.is_super?'Superadmin':(u.role_label||'Dashboard user');
   const av=$('.user-card .avatar'); if(av) av.textContent=(u.display_name||u.username).split(/\s+/).map(s=>s[0]).slice(0,2).join('').toUpperCase();
   const clr=$('#clearLoadsBtn'); if(clr) clr.style.display = hasDispatchAccess(u) ? 'inline-flex' : 'none';
-  let first=(allowed.filter(p=>p!=='photofix')[0]||'overview'); if(first==='dispatch')first='timeline';   // photofix is an entry, not a page
+  let first=(allowed.filter(p=>p!=='photofix'&&p!=='techreset'&&p!=='napboard')[0]||(allowed.includes('techreset')?'access':'overview')); if(first==='dispatch')first='timeline';   // photofix/techreset/napboard are entries, not pages; techreset-only users land on the Access (reset) view
   switchPage(first);
   renderAnnounceBar();
   startHealthWidget();
@@ -4186,11 +4351,18 @@ async function deleteAllLoads(){
     renderJobs(); renderOverview(); showToast('✓ All loads cleared (kept for Superadmin).');
   }catch(e){ showToast('Clear failed: '+e.message); }
 }
-function dashLogout(){ if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; closePopovers&&closePopovers(); showDashGate('#dashGate'); }
+function dashLogout(){ resetHR(); if(dashAuth) dashAuth.auth.signOut().catch(()=>{}); window.dashUser=null; try{ napViewNav(); }catch(e){} closePopovers&&closePopovers(); showDashGate('#dashGate'); }
 // Access Control page (superadmin)
 let accessUsers=[];
 // Dispatchers (non-super with dispatch access) get a limited Access Control: reset technician PW only.
-function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && hasDispatchAccess(u)); }
+// 'techreset' grant (owner 2026-10-14): hiwalay na Access Control entry — "FieldOps PW
+// Reset". Ang may hawak (hal. AHBA_QASHEAD) ay nakakakita ng LIMITED Access view na
+// nagre-reset ng password ng LAHAT ng FieldOps/mobile accounts (technicians table —
+// tech/sales/security/QA inspector), HINDI KAILANMAN ng console users. Ang server
+// (admin-reset Edge Function) ay matagal nang super-only ang dash-user reset, kaya
+// kahit pilitin ang UI ay 403 ang console-reset ng hindi-super.
+function hasTechResetGrant(u){ return !!(u && Array.isArray(u.allowed_pages) && u.allowed_pages.includes('techreset')); }
+function accessIsDispatcherOnly(){ const u=window.dashUser; return !!(u && !u.is_super && (hasDispatchAccess(u)||hasTechResetGrant(u))); }
 
 // ================= SUBCONTRACTORS · multi-tenant provisioning (superadmin) =================
 // Subcon console users get all operational pages EXCEPT Validator (QA is GC-only) + Access/Subcon.
@@ -4359,7 +4531,7 @@ function applyAccessScope(){
   const isSuper=!!(window.dashUser&&window.dashUser.is_super);
   const al=document.getElementById('acAuditLog'); if(al) al.style.display=isSuper?'':'none';   // reset history: superadmin only
   const sub=document.querySelector('#accessPage .page-toolbar p');
-  if(sub) sub.textContent=lim?'Reset technician passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
+  if(sub) sub.textContent=lim?'Reset FieldOps (mobile) account passwords only. Other account-management functions are available to Superadmin.':'Create users, assign roles/access, and reset passwords. Only Superadmin can access this.';
 }
 async function renderAccess(){
   applyAccessScope();
@@ -5024,7 +5196,7 @@ function init(){
   // Live shift clock (updates every second)
   updateShiftClock(); setInterval(updateShiftClock, 1000);
 
-  $$('.nav-item').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
+  $$('.nav-item').forEach(b=>{ if(b.id==='napViewNav') return; b.onclick=()=>switchPage(b.dataset.page); });   // NAP VIEW is a link, not a page
   initNavGroups();
   $$('[data-page-link]').forEach(b=>b.onclick=()=>switchPage(b.dataset.pageLink));
   // Dashboard sub-view toggle: Teams (timeline) | Loads (dispatch board)
@@ -5037,11 +5209,12 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); _prodFollow(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); ordToggleMigCpe(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
+  $('#ord_mig_play')?.addEventListener('change',ordToggleMigCpe);
   $('#iptv_vas_count')?.addEventListener('change',iptvRenderVas);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);
