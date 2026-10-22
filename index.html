@@ -394,6 +394,7 @@
           <div class="small-stat"><span>Completed (this day)</span><strong id="compTotal">0</strong></div>
           <div class="small-stat"><span>Validated</span><strong id="compValidated">0</strong></div>
           <div class="small-stat"><span>Pending validation</span><strong id="compPending">0</strong></div>
+          <div class="small-stat"><span>Returned to team</span><strong id="compReturned">0</strong></div>
           <div class="small-stat"><span>Proof photos</span><strong id="compPhotos">0</strong></div>
         </div>
         <article class="panel full-table">
@@ -788,8 +789,9 @@
 
   <dialog id="photoModal" class="modal">
     <div class="modal-head"><div><span class="eyebrow">PROOF PHOTOS</span><h2 id="photoTitle">Job photos</h2><p id="photoSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
+    <div id="photoSubInfo"></div>
     <div class="photo-grid" id="photoGrid"></div>
-    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
+    <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="returnBtn" style="display:none">↩ Return JO (backjob)</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
   </dialog>
 
   <dialog id="valModal" class="modal">
@@ -838,7 +840,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ahba-cloud.js?v=2026-10-22.3"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-10-22.3"></script><script src="qa-api.js?v=2026-10-22.3"></script><script src="console-qa.js?v=2026-10-22.3"></script><script src="console-qa-findings.js?v=2026-10-22.3"></script>
+  <script src="qa-core.js?v=2026-10-22.3"></script><script src="qa-subscriber-info.js?v=2026-10-22.3"></script><script src="qa-api.js?v=2026-10-22.3"></script><script src="console-qa.js?v=2026-10-22.3"></script><script src="console-qa-findings.js?v=2026-10-22.3"></script>
   <script src="fms-core.js?v=2026-10-22.3"></script><script src="fms-api.js?v=2026-10-22.3"></script><script src="console-fms.js?v=2026-10-22.3"></script>
 </body>
 </html>
