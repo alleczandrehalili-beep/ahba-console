@@ -904,14 +904,18 @@ function openJobDetail(jobId){
 }
 // ↩ Return a completed JO to its team (replace a photo, then re-complete). Server: qa.return_job_for_photos
 // sets status in-progress + the qa_return_* columns; a trigger resolves it when the team completes again.
-async function jdReturnToTeam(jobId){
-  const j=findJob(jobId); if(!j||!j.team){ showToast('This JO has no team to return it to'); return; }
-  const raw=prompt('Which photo must the team replace? (required — the team sees this)');
-  if(raw===null) return;
+// Return a completed JO to its team (qa-05h RPC: head / inspector only, remarks required). Shared by the Dispatch JO detail
+// ("replace photo") and the QA Validation modal ("Return JO (backjob)", owner 2026-10-22). Returns true when the JO was returned.
+async function returnJobToTeam(jobId,o){
+  o=o||{};
+  const j=findJob(jobId)||(typeof compJobs!=='undefined'&&compJobs.find(x=>x.id===jobId))||null;
+  if(!j||!j.team){ showToast('This JO has no team to return it to'); return false; }
+  const raw=prompt(o.prompt||'Which photo must the team replace? (required — the team sees this)');
+  if(raw===null) return false;
   const remarks=String(raw).trim();
-  if(!remarks){ showToast('Remarks are required — the JO was not returned'); return; }
-  if(!window.dashAuthClient){ showToast('Not signed in — reload the page'); return; }
-  const btn=$('#jdReturnTeam'); if(btn){ btn.disabled=true; btn.textContent='Returning…'; }
+  if(!remarks){ showToast('Remarks are required — the JO was not returned'); return false; }
+  if(!window.dashAuthClient){ showToast('Not signed in — reload the page'); return false; }
+  const btn=o.button||null; if(btn){ btn.disabled=true; btn.textContent='Returning…'; }
   try{
     const {data,error}=await window.dashAuthClient.schema('qa').rpc('return_job_for_photos',{p_job_id:jobId,p_remarks:remarks});
     if(error) throw error;
@@ -922,17 +926,20 @@ async function jdReturnToTeam(jobId){
     Object.keys(upd).forEach(k=>{ if(row[k]!==undefined) upd[k]=row[k]; });
     if(row.history!=null) upd.history=row.history;
     upd.updatedAt=row.updated_at||now; upd.updated_at=row.updated_at||now;
-    const live=jobs.find(x=>x.id===jobId);
-    [j,live].forEach(o=>{ if(o) Object.assign(o,upd); });
+    const live=jobs.find(x=>x.id===jobId), comp=(typeof compJobs!=='undefined')?compJobs.find(x=>x.id===jobId):null;
+    [j,live,comp].forEach(x=>{ if(x) Object.assign(x,upd); });
     showToast(`JO returned to ${team}`);
     pushNotify({team,title:'↩ JO returned by QA',body:remarks.slice(0,120),url:'mobile.html'});
     renderJobs(); if($('#timelinePage')?.classList.contains('active')) renderTimeline();
-    if($('#jdTitle').textContent.startsWith(jobId)) openJobDetail(jobId);
+    if($('#jdTitle')&&$('#jdTitle').textContent.startsWith(jobId)) openJobDetail(jobId);
+    return true;
   }catch(e){
     showToast('Return failed: '+(e&&e.message||e));
-    if(btn){ btn.disabled=false; btn.textContent='↩ Return to team (replace photo)'; }
+    if(btn){ btn.disabled=false; btn.textContent=o.buttonLabel||'↩ Return to team (replace photo)'; }
+    return false;
   }
 }
+async function jdReturnToTeam(jobId){ return returnJobToTeam(jobId,{button:$('#jdReturnTeam')}); }
 // Let the technician see/start this job order even while another load is active (serial-lock bypass).
 async function toggleJobLockBypass(jobId,on){
   const u=window.dashUser||{}; const who=u.display_name||u.username||'Console';
@@ -2910,14 +2917,19 @@ async function openGallery(jobId){
   const j=compJobs.find(x=>x.id===jobId)||{};
   $('#photoTitle').textContent=`${jobId} · ${j.subscriber||''}`;
   $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
+  const _si=$('#photoSubInfo'); if(_si) _si.innerHTML=(window.QaSubscriberInfo&&j.id)?window.QaSubscriberInfo.render(j):'';   // full subscriber info (owner 2026-10-22) — the row is already in memory
   const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
+  const rb=$('#returnBtn'); if(rb){ rb.style.display='none'; rb.onclick=null; }
   openModal($('#photoModal'));
   try{
     const paths=(await fetchPhotosFor([jobId]))[jobId]||[];if(seq!==openGallery._seq)return;
     compPhotos[jobId]=paths;
     $('#photoSub').textContent=`${j.team||''} · ${j.area||''}${j.primary_no?' · '+j.primary_no:''}${j.job_order_no?' · JO '+j.job_order_no:''} · ${paths.length} photo${paths.length===1?'':'s'}`;
     renderQaPhotoTiles($('#photoGrid'),j,paths);
-    vb.style.display=(j.validated||!dashCanEdit('completed'))?'none':'';vb.onclick=()=>{validateJob(jobId);closeModals();};
+    const st=window.QaSubscriberInfo?window.QaSubscriberInfo.returnState(j):'none';
+    const actionable=!j.validated&&st!=='returned'&&dashCanEdit('completed');
+    vb.style.display=actionable?'':'none';vb.onclick=()=>{validateJob(jobId);closeModals();};
+    if(rb){ rb.style.display=actionable?'':'none'; rb.onclick=async()=>{ closeModals(); const ok=await returnJobToTeam(jobId,{prompt:'Ano ang kulang? (details / photos — the team sees this)'}); if(ok) renderCompleted(); }; }
   }catch(e){
     if(seq!==openGallery._seq)return;delete compPhotos[jobId];
     $('#photoSub').textContent='Current photos could not be loaded';$('#photoGrid').innerHTML='<div class="none">Reopen this JO to retry loading its current photos before QA validation.</div>';

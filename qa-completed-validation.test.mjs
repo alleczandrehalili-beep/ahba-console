@@ -33,3 +33,23 @@ test('completedValidationCell: Pending (+Validate for editors), Returned to team
   assert.ok(re.includes('vbadge no') && re.includes('re-submitted WHEN(2026-10-22T03:00:00Z)') && re.includes('data-validate="ZZ-4"'));
   assert.ok(!c.completedValidationCell({ id: 'ZZ-5', status: 'completed', qa_return_remarks: '<script>' , qa_returned_at: '2026-10-22T01:00:00Z', qa_return_resolved_at: null }, true).includes('<script>'));
 });
+
+test('returnJobToTeam: empty remarks → no RPC; RPC error → toast, row untouched; success → row patched to returned and true', async () => {
+  const body = slice('async function returnJobToTeam(', '\n}\n// Let the technician see/start') + '\n}';
+  const calls = [], toasts = [];
+  const job = { id: 'ZZ-1', team: 'AHBA_TEST', status: 'completed' };
+  const mk = (promptValue, rpcResult) => {
+    const c = ctx({ findJob: () => null, compJobs: [job], jobs: [], prompt: () => promptValue, showToast: m => toasts.push(m), pushNotify: () => {}, renderJobs: () => {}, renderTimeline: () => {}, openJobDetail: () => {},
+      $: sel => sel === '#jdTitle' ? { textContent: '' } : null });
+    c.window.dashUser = { username: 'QA01' }; c.window.dashAuthClient = { schema: () => ({ rpc: async (name, args) => { calls.push([name, args]); return rpcResult; } }) };
+    vm.runInContext(body, c); return c;
+  };
+  assert.equal(await mk('   ', { data: null, error: null }).returnJobToTeam('ZZ-1', {}), false);
+  assert.equal(calls.length, 0); assert.match(toasts.at(-1), /Remarks are required/);
+  assert.equal(await mk('no modem photo', { data: null, error: { message: 'QA Head or inspector only' } }).returnJobToTeam('ZZ-1', {}), false);
+  assert.equal(job.status, 'completed'); assert.match(toasts.at(-1), /Return failed: QA Head or inspector only/);
+  assert.equal(await mk('no modem photo', { data: [{ status: 'in-progress', qa_returned_at: '2026-10-22T01:00:00Z', qa_returned_by: 'QA01', updated_at: '2026-10-22T01:00:00Z' }], error: null }).returnJobToTeam('ZZ-1', { prompt: 'Ano ang kulang?' }), true);
+  assert.deepEqual(calls.at(-1), ['return_job_for_photos', { p_job_id: 'ZZ-1', p_remarks: 'no modem photo' }]);
+  assert.equal(job.status, 'in-progress'); assert.equal(job.qa_return_remarks, 'no modem photo'); assert.equal(job.qa_returned_by, 'QA01'); assert.equal(job.qa_status, 'RETURNED TO TEAM');
+  assert.match(toasts.at(-1), /JO returned to AHBA_TEST/);
+});
