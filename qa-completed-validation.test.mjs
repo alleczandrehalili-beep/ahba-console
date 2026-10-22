@@ -22,13 +22,14 @@ test('completedQuery: that day (completed_at, updated_at fallback) AND (complete
 test('completedValidationCell: Pending (+Validate for editors), Returned to team (no Validate), Validated, re-submitted note', () => {
   const c = ctx(); vm.runInContext(slice('function completedValidationCell(', '\n}\n') + '\n}', c);
   const pend = c.completedValidationCell({ id: 'ZZ-1', status: 'completed' }, true);
-  assert.ok(pend.includes('vbadge no') && pend.includes('data-validate="ZZ-1"'));
-  assert.ok(!c.completedValidationCell({ id: 'ZZ-1', status: 'completed' }, false).includes('data-validate'));
+  assert.ok(pend.includes('vbadge no') && pend.includes('data-validate="ZZ-1"') && pend.includes('data-return="ZZ-1"'), 'Pending: Validate + Return JO for editors');
+  const ro = c.completedValidationCell({ id: 'ZZ-1', status: 'completed' }, false);
+  assert.ok(!ro.includes('data-validate') && !ro.includes('data-return'));
   const ret = c.completedValidationCell({ id: 'ZZ-2', status: 'in-progress', qa_returned_at: '2026-10-22T01:00:00Z', qa_return_resolved_at: null, qa_return_remarks: 'missing modem photo', qa_returned_by: 'QA Head' }, true);
   assert.ok(ret.includes('vbadge ret') && ret.includes('Returned to team') && ret.includes('missing modem photo') && ret.includes('by QA Head') && ret.includes('WHEN(2026-10-22T01:00:00Z)'));
-  assert.ok(!ret.includes('data-validate'));
+  assert.ok(!ret.includes('data-validate') && !ret.includes('data-return'));
   const val = c.completedValidationCell({ id: 'ZZ-3', validated: true, validated_by: 'QA01', validated_at: '2026-10-22T02:00:00Z' }, true);
-  assert.ok(val.includes('vbadge yes') && val.includes('by QA01') && !val.includes('data-validate'));
+  assert.ok(val.includes('vbadge yes') && val.includes('by QA01') && !val.includes('data-validate') && !val.includes('data-return'));
   const re = c.completedValidationCell({ id: 'ZZ-4', status: 'completed', qa_returned_at: '2026-10-22T01:00:00Z', qa_return_resolved_at: '2026-10-22T03:00:00Z', validated: false }, true);
   assert.ok(re.includes('vbadge no') && re.includes('re-submitted WHEN(2026-10-22T03:00:00Z)') && re.includes('data-validate="ZZ-4"'));
   assert.ok(!c.completedValidationCell({ id: 'ZZ-5', status: 'completed', qa_return_remarks: '<script>' , qa_returned_at: '2026-10-22T01:00:00Z', qa_return_resolved_at: null }, true).includes('<script>'));
