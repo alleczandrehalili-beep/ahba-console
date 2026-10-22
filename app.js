@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-16.1';
+const APP_VERSION='2026-10-22.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3401,6 +3401,9 @@ function ordPopulatePlans(){
   const ad=$('#ord_addon'); if(ad && !ad.options.length){ ad.innerHTML='<option value="">— None —</option>'+ORD_ADDONS.map(a=>`<option>${a}</option>`).join(''); }
 }
 function ordToggleAddonCount(){ const on=($('#ord_play')&&$('#ord_play').value)==='2-PLAY'; const w=$('#ord_addon_count_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_addon_count')) $('#ord_addon_count').value=''; }
+// Migration mirrors the SLI 1P/2P input, but a migration load may carry at most
+// TWO CPE — the dropdown offers 1 and 2 only, where SLI allows 3.
+function ordToggleMigCpe(){ const on=($('#ord_mig_play')&&$('#ord_mig_play').value)==='2-PLAY'; const w=$('#ord_mig_cpe_wrap'); if(w) w.style.display=on?'':'none'; if(!on&&$('#ord_mig_cpe')) $('#ord_mig_cpe').value=''; }
 // IPTV Only: isang VAS Number input bawat piniling count (2 VAS = 2 espasyo).
 function iptvRenderVas(){
   const n=Number(($('#iptv_vas_count')||{}).value)||0;
@@ -3478,6 +3481,8 @@ async function editRejectedOrder(jobId){
     setv('source_of_sales',j.source_of_sales); setv('referral_name',j.referral_name); setv('special_note',note);
   } else if(type==='Migration'){
     setv('current_plan',j.current_plan); setv('mig_plan',j.plan); setv('mig_amount',j.amount_to_collect!=null?j.amount_to_collect:''); setv('mig_ref',j.ref_no); setv('mig_note',note);
+    if($('#ord_mig_play')) $('#ord_mig_play').value=j.play_type||'1-PLAY'; ordToggleMigCpe();
+    if($('#ord_mig_cpe')) $('#ord_mig_cpe').value=j.addon_count||'';
   } else { setv('ticket_no',j.ticket_no); setv('slr_note',note); }
   $$('#orderModal [data-cnt]').forEach(b=>b.textContent='keeping existing');
 }
@@ -3593,6 +3598,9 @@ async function submitOrderInner(e){
     if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
+  if(ordType==='Migration'){
+    if(f.mig_play_type==='2-PLAY' && !t(f.mig_cpe_count)){ err('For a 2-PLAY migration, select how many CPE are included (maximum 2).'); return; }
+  }
   if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
   if(ordType==='Transfer'){
     if(!t(f.trf_ibas)){ err('IBAS Number is required for Transfer SDU–MDU.'); return; }
@@ -3642,7 +3650,10 @@ async function submitOrderInner(e){
       special_note:t(f.special_note)});
   } else if(ordType==='Migration'){
     Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
-      amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),special_note:t(f.mig_note)});
+      amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),
+      play_type:f.mig_play_type||'1-PLAY',
+      addon_count:(f.mig_play_type==='2-PLAY'&&t(f.mig_cpe_count)!==''?Number(t(f.mig_cpe_count)):null),
+      special_note:t(f.mig_note)});
   } else if(ordType==='Transfer'){
     // TRANSFER TO sa special_note para agad kitang-kita ng Dispatcher at ng technician
     // sa mga umiiral na card/detail view — ang malinis na value ay nasa new_address column.
@@ -5155,11 +5166,12 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); _prodFollow(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); ordToggleMigCpe(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
+  $('#ord_mig_play')?.addEventListener('change',ordToggleMigCpe);
   $('#iptv_vas_count')?.addEventListener('change',iptvRenderVas);
   $$('[data-action="add-expense"]').forEach(b=>b.onclick=()=>openModal($('#expenseModal')));
   $$('.close-modal').forEach(b=>b.onclick=closeModals);
