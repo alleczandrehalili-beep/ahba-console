@@ -2775,15 +2775,18 @@ async function exportGateLog(){
 // ---------- Completed jobs · proof photos · validation · export ----------
 const photoBase = p => `${SUPA_URL}/storage/v1/object/public/job-photos/${p}`;
 let compJobs=[], compPhotos={};
-async function fetchCompleted(date){
-  // Filter the day on the SERVER (Manila range) so we never hit the 1000-row cap and any
-  // past date loads. Prefer completed_at (fixed at completion); fall back to updated_at for
-  // older rows that have no completed_at yet — works regardless of backfill/deploy order.
+// QA Validation list (owner 2026-10-22): completed THAT DAY, or returned to the team (backjob, qa-05h) and not yet re-completed.
+// The day is filtered on the SERVER (Manila range) so we never hit the 1000-row cap; completed_at is KEPT on a return, so a returned
+// JO stays on its day; older rows without completed_at fall back to updated_at.
+function completedQuery(date){
   const s=(date+'T00:00:00+08:00').replace('+','%2B'), e=(date+'T23:59:59.999+08:00').replace('+','%2B');
-  const or=`or=(and(completed_at.gte.${s},completed_at.lte.${e}),and(completed_at.is.null,updated_at.gte.${s},updated_at.lte.${e}))`;
+  const day=`or(and(completed_at.gte.${s},completed_at.lte.${e}),and(completed_at.is.null,updated_at.gte.${s},updated_at.lte.${e}))`;
+  const state=`or(status.eq.completed,and(status.eq.in-progress,qa_returned_at.not.is.null,qa_return_resolved_at.is.null))`;
+  return `and=(${day},${state})&select=*&order=updated_at.desc&limit=2000`;
+}
+async function fetchCompleted(date){
   try{
-    const q=`status=eq.completed&${or}&select=*&order=updated_at.desc&limit=2000`;
-    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${q}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?${completedQuery(date)}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
     if(!r.ok){ try{ fetchCompleted._err='HTTP '+r.status+' — '+(await r.text()).slice(0,140); }catch(_){ fetchCompleted._err='HTTP '+r.status; } return []; }
     fetchCompleted._err=''; return await r.json();
   }catch(e2){ fetchCompleted._err=String(e2&&e2.message||e2); return[]; }
@@ -2869,6 +2872,14 @@ async function openQaPhotoHistory(job,photo){
   dlg.querySelector('#qaHistoryRows').innerHTML=rows.length?rows.map(r=>`<section class="qa-history-item"><strong>${qaPhotoText(r.actor_label||r.actor_id||'Dispatcher')}</strong><span> · ${qaPhotoText(fmtWhen(r.corrected_at))}</span><p>${qaPhotoText(r.reason)}</p><div class="qa-correction-preview">${[['Original',r.old_url],['Replacement',r.new_url]].map(([label,url])=>url?`<a href="${qaPhotoText(url)}" target="_blank" rel="noopener"><strong>${label}</strong><img src="${qaPhotoText(url)}" alt="${label} photo"></a>`:'').join('')}</div></section>`).join(''):'<p>No dispatcher corrections recorded for this photo.</p>';
   dlg.querySelector('#qaHistoryClose').onclick=()=>dlg.close();dlg.showModal();
 }
+// Validation cell of the Completed (QA Validation) table — three states (owner 2026-10-22): Pending (+ Validate for editors),
+// Returned to team (remarks · by · when; no Validate while the team works on it), Validated. A re-completed return shows a re-submitted note.
+function completedValidationCell(j,canEdit){
+  const st=(window.QaSubscriberInfo&&window.QaSubscriberInfo.returnState(j))||'none';
+  if(j.validated) return `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`;
+  if(st==='returned') return `<span class="vbadge ret">Returned to team</span><div style="font-size:8px;color:#c2503a;margin-top:2px">${esc(j.qa_return_remarks||'')}</div><div style="font-size:8px;color:#8a9894">${j.qa_returned_by?('by '+esc(j.qa_returned_by)):''}${j.qa_returned_at?((j.qa_returned_by?' · ':'')+fmtWhen(j.qa_returned_at)):''}</div>`;
+  return `<span class="vbadge no">Pending</span>${st==='resubmitted'?`<div style="font-size:8px;color:#1d4f8a;margin-top:2px">re-submitted ${fmtWhen(j.qa_return_resolved_at)}</div>`:''}${canEdit?` <button class="assign-btn" data-validate="${j.id}">Validate</button>`:''}`;
+}
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
   const _cb=$('#clearBtn'); if(_cb) _cb.style.display=dashCanEdit('completed')?'':'none';   // Clear photos = GC-only
@@ -2880,17 +2891,16 @@ async function renderCompleted(){
   try{ compPhotos=await fetchPhotosFor(compJobs.map(j=>j.id)); }catch(e){ body.innerHTML='<tr><td colspan="7" class="empty-cell">Photos could not be loaded — retry this day.</td></tr>'; showToast('❌ '+e.message); return; }
   const totalPhotos=Object.values(compPhotos).reduce((a,b)=>a+b.length,0);
   const val=compJobs.filter(j=>j.validated).length;
-  $('#compTotal').textContent=compJobs.length;
+  const ret=compJobs.filter(j=>!j.validated&&window.QaSubscriberInfo&&window.QaSubscriberInfo.returnState(j)==='returned').length;
+  $('#compTotal').textContent=compJobs.filter(j=>j.status==='completed').length;
   $('#compValidated').textContent=val;
-  $('#compPending').textContent=compJobs.length-val;
+  $('#compPending').textContent=compJobs.length-val-ret;
+  const _cr=$('#compReturned'); if(_cr) _cr.textContent=ret;
   $('#compPhotos').textContent=totalPhotos;
   if(!compJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No completed jobs for this day.</td></tr>`;return}
   body.innerHTML=compJobs.map(j=>{
     const n=(compPhotos[j.id]||[]).length;
-    const vb=j.validated
-      ? `<span class="vbadge yes">Validated</span><div style="font-size:8px;color:#8a9894;margin-top:2px">${j.validated_by?('by '+esc(j.validated_by)):''}${j.validated_at?((j.validated_by?' · ':'')+fmtWhen(j.validated_at)):''}</div>`
-      : '<span class="vbadge no">Pending</span>';
-    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${vb}${(j.validated||!dashCanEdit('completed'))?'':` <button class="assign-btn" data-validate="${j.id}">Validate</button>`}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${completedValidationCell(j,dashCanEdit('completed'))}</td></tr>`;
   }).join('');
   $$('#completedBody [data-gallery]').forEach(b=>b.onclick=()=>openGallery(b.dataset.gallery));
   $$('#completedBody [data-validate]').forEach(b=>b.onclick=()=>validateJob(b.dataset.validate));
