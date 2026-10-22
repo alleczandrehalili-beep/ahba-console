@@ -114,6 +114,9 @@ input[type=date],input[type=file]{font:inherit;padding:5px;border:1px solid var(
 .subbar .q{flex:1 1 220px}
 .subbar .rad{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
 .subbar .rad input{width:76px}
+.radpre button{font:inherit;font-size:12px;border:0;background:var(--panel);color:var(--ink);padding:6px 9px;cursor:pointer}
+.radpre button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.radcap{color:var(--issue);font-size:12px;margin:4px 0 0}
 .subnote{color:var(--muted);font-size:12px;margin:4px 0 0;overflow-wrap:anywhere}
 .hits{display:flex;flex-direction:column;gap:6px;margin:8px 0}
 .hits .btn{text-align:left;overflow-wrap:anywhere;width:100%}
@@ -181,6 +184,41 @@ tr.inb td{background:var(--bg)}
 .dk-row .dk-was{grid-column:2;font-size:11.5px;color:var(--muted)}
 .dk-reason{display:block;width:100%;margin-top:8px;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink)}
 .dk-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+/* ---------- phase 12: remarks per port, location edit, stencil rename + merge (NAP detail panel) ---------- */
+.p12-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.p12-bar .meta{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.p12-pan{margin-top:8px;border:1px solid var(--accent);border-radius:8px;padding:10px;background:var(--bg);min-width:0}
+.p12-pan h3{font-size:13px;margin:0 0 6px;font-weight:600}
+.p12-pan label{display:block;font-size:11.5px;color:var(--muted);margin-top:6px}
+.p12-pan input[type=text],.p12-pan input[type=search]{display:block;width:100%;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;margin-top:2px}
+.p12-pan input.p12-bad{border-color:var(--full)}
+.p12-pan .p12-mono{font-family:var(--mono)}
+.p12-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.p12-row>label{flex:1 1 130px;min-width:0}
+.p12-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.p12-map{width:100%;height:300px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--panel)}
+@media(max-width:560px){.p12-map{height:240px}}
+.p12-msg{font-size:12px;margin-top:6px;overflow-wrap:anywhere}
+.p12-msg.err{color:var(--full)}
+.p12-hits{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:220px;overflow:auto}
+.p12-hits .btn{text-align:left;width:100%;overflow-wrap:anywhere}
+.p12-hits .btn[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.p12-lines{margin:6px 0 0;padding-left:18px;font-size:12.5px}
+.p12-lines li{overflow-wrap:anywhere;margin-top:2px}
+.p12-rm{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.p12-rm .p12-np{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.p12-rm .p12-np b{font-family:var(--mono);font-weight:500}
+.p12-rm ul{list-style:none;margin:2px 0 0;padding:0;font-size:12.5px}
+.p12-rm li{overflow-wrap:anywhere;padding:2px 0}
+.p12-rm li b{font-family:var(--mono);font-weight:500;margin-right:4px}
+.p12-red{display:grid;grid-template-columns:34px minmax(0,1fr);gap:4px 8px;align-items:center;margin-top:6px}
+.p12-red b{font-family:var(--mono);font-weight:500}
+.p12-red input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
+.p12-red input.p12-chg{border-color:var(--accent)}
+.p12-red input.p12-bad{border-color:var(--full)}
+.p12-red .p12-e{grid-column:2;font-size:11.5px;color:var(--full)}
+.port.p12-hasrm{outline:2px dotted var(--accent);outline-offset:-2px}
+.p12-geo{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;font-family:var(--sans);font-weight:400}
 </style>
 </head>
 <body>
@@ -238,7 +276,8 @@ tr.inb td{background:var(--bg)}
         <div class="subbar">
           <input type="search" id="subQ" class="q" maxlength="200" placeholder="Search the subscriber address" aria-label="Search the subscriber address" autocomplete="off" enterkeyhint="search">
           <button class="btn pri" id="subGo" type="button">Search</button>
-          <label class="rad">Radius (m) <input type="number" id="subRad" min="50" max="500" step="10" aria-label="Radius in meters"></label>
+          <label class="rad">Radius (m) <input type="number" id="subRad" min="50" max="2000" step="10" aria-label="Radius in meters"></label>
+          <span class="seg radpre" id="radPre" role="group" aria-label="Radius presets"></span>
           <button class="btn" id="subClear" type="button" hidden>Remove pin</button>
         </div>
         <div class="hits" id="subHits" hidden></div>
@@ -258,7 +297,7 @@ tr.inb td{background:var(--bg)}
       </div>
 
       <div class="card">
-        <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><ul class="list inrad" id="inRad"></ul><div class="row" style="margin-top:8px"><button class="btn sm" id="radAdd" type="button" hidden>Add these to the basket</button></div></div>
+        <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><p class="radcap" id="radCap" role="status" aria-live="polite" hidden></p><ul class="list inrad" id="inRad"></ul><div class="row" style="margin-top:8px"><button class="btn sm" id="radAdd" type="button" hidden>Add these to the basket</button></div></div>
         <h2>Where should the team go?</h2>
         <div class="row">
           <div class="seg" id="mode">
@@ -415,11 +454,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-20.4"></script>
-<script src="nap-api.js?v=2026-10-20.4"></script>
+<script src="nap-core.js?v=2026-10-22.4"></script>
+<script src="nap-api.js?v=2026-10-22.4"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-20.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-22.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -500,6 +539,7 @@ async function boot() {
     if (!ACC.ok) { $('noAccessMsg').textContent = ACC.message; return show('noAccess'); }
     state.role = ACC.role;
     deskInit();   // phase 11: may this session desk-update ports? (async; the NAP detail shows "Edit ports" when yes)
+    p12Init();    // phase 12: may this session edit NAP locations? (async; the NAP detail shows "Edit location" when yes)
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
@@ -791,6 +831,7 @@ async function drawDetail(refresh) {
         '<div class="dk-slot"></div></div>';
     }).join('') + '</div>' + (ACC.canHistory ? '<div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>' : '');
   deskAfterDetail(b, ports);
+  p12AfterDetail(b);   // phase 12: stencil / location tools + port remarks
   if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -869,12 +910,14 @@ function drawRadius() {
   $('radAdd').hidden = !radHit.length || !ACC.canBasket; $('radAdd').disabled = !addN;
   $('radAdd').textContent = addN ? 'Add ' + fmtN(addN) + ' NAP' + (addN === 1 ? '' : 's') + ' within ' + state.radius + ' m to the basket' : 'All of these are in the basket';
   var r = radHit.slice().sort(function (a, b) { return (a.kind === 'installable' ? 0 : 1) - (b.kind === 'installable' ? 0 : 1) || a.distance_m - b.distance_m; });
-  $('radH').textContent = 'Within ' + state.radius + ' m of the subscriber (' + r.length + ')';
+  $('radH').textContent = 'Within ' + C.fmtRange(state.radius) + ' of the subscriber (' + r.length + ')';
+  var capMsg = C.rangeCapMsg(state.near.length, C.RANGE_PAGE); $('radCap').textContent = capMsg; $('radCap').hidden = !capMsg;
+  r = r.slice(0, C.RANGE_PAGE);   // range expansion: never render more than one server page of rows
   $('inRad').innerHTML = r.length ? r.map(function (b, i) {
     var pill = '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + esc(LBL[b.kind] || b.kind) + (b.kind === 'installable' ? ' · ' + esc(b.free) + ' free' : '') + '</span>';
     var age = b.age_days == null ? 'not yet visited' : b.age_days === 0 ? 'today' : b.age_days + ' days ago';
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + age + '</span></span><span style="text-align:right">' + pill + '<br><span class="meta">' + Math.round(b.distance_m) + ' m</span></span></button></li>';
-  }).join('') : '<li class="meta">No NAP within ' + state.radius + ' m. Increase the radius or click another location.</li>';
+  }).join('') : '<li class="meta">No NAP within ' + C.fmtRange(state.radius) + '. Increase the radius or click another location.</li>';
 }
 function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawBoardList(); drawDetail(refresh); }
 function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); }
@@ -889,7 +932,7 @@ async function fetchNear(withRadius) {
   $('radH').textContent = 'Looking for NAPs near the pin…';
   try {
     var parts = await Promise.all([
-      withRadius ? api.boxesNear({ lat: s.lat, lng: s.lng, radius: state.radius, limit: 500 }) : Promise.resolve(state.near),
+      withRadius ? api.boxesNear({ lat: s.lat, lng: s.lng, radius: state.radius, limit: C.RANGE_PAGE }) : Promise.resolve(state.near),
       api.nearest({ lat: s.lat, lng: s.lng, mode: state.mode, limit: 6 })]);
     if (tok !== nearTok || state.sub !== s) return;
     state.near = parts[0] || []; state.nearest = parts[1] || [];
@@ -897,18 +940,30 @@ async function fetchNear(withRadius) {
     markersDirty = true; drawBoard();
   } catch (e) { if (tok === nearTok) { $('radH').textContent = 'Cannot load the NAPs near the pin: ' + msgOf(e); } }
 }
-function clampRadius(v) { var n = Math.round(Number(v)); return isFinite(n) ? Math.min(500, Math.max(50, n)) : null; }
+// Range expansion: 50-2,000 m (default 150), quick presets, debounced re-query (300 ms); the circle and list redraw at once from what is loaded,
+// then the sequence token in fetchNear drops any stale answer.
+function clampRadius(v) { return C.clampRange(v); }
 try { var rawR = localStorage.getItem(RADIUS_KEY), savedR = rawR === null ? null : clampRadius(rawR); if (savedR != null) state.radius = savedR; } catch (e) {}
 $('subRad').value = state.radius;
-$('subRad').addEventListener('change', function () {
-  var n = clampRadius($('subRad').value === '' ? NaN : $('subRad').value);
+$('radPre').innerHTML = C.RANGE_PRESETS.map(function (m) { return '<button type="button" data-m="' + m + '">' + esc(C.fmtRange(m)) + '</button>'; }).join('');
+function syncRadPre() { Array.prototype.forEach.call($('radPre').querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', String(+b.dataset.m === state.radius)); }); }
+var radTimer = null;
+function applyRadius(n) {
   if (n == null) n = state.radius;
-  state.radius = n; $('subRad').value = n;
+  var changed = n !== state.radius;
+  state.radius = n; $('subRad').value = n; syncRadPre();
   try { localStorage.setItem(RADIUS_KEY, String(n)); } catch (e) {}
-  drawBoard(); fetchNear(true);
-});
+  if (!changed) return;
+  if (state.sub) fitSub = true;
+  drawBoard();
+  clearTimeout(radTimer);
+  if (state.sub) radTimer = setTimeout(function () { fetchNear(true); }, 300);
+}
+syncRadPre();
+$('subRad').addEventListener('change', function () { applyRadius(clampRadius($('subRad').value === '' ? NaN : $('subRad').value)); });
+$('radPre').addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (b) applyRadius(clampRadius(b.dataset.m)); });
 $('radAdd').onclick = function () { var r = bkAdd(radHit.map(function (b) { return b.box_id; })); toast('Added ' + fmtN(r.added) + ' to the basket.'); };
-$('subClear').onclick = function () { state.sub = null; state.near = []; state.nearest = []; nearTok++; fitSub = false; markersDirty = true; drawBoard(); };
+$('subClear').onclick = function () { clearTimeout(radTimer); state.sub = null; state.near = []; state.nearest = []; nearTok++; fitSub = false; markersDirty = true; drawBoard(); };
 
 // Address search through OpenStreetMap Nominatim: only on an explicit search, at most one request per 1100 ms, typed text only.
 var geo = { last: 0, busy: false, seq: 0, hits: [] };
@@ -1693,7 +1748,7 @@ async function loadGeo() {
     var acts = '';
     if (adm && h.result === 'proposed') acts = '<button class="btn sm pri" data-geo="accept" data-h="' + esc(h.id) + '">Accept</button> <button class="btn sm" data-geo="reject" data-h="' + esc(h.id) + '">Reject</button>';
     else if (adm && (h.result === 'applied' || h.result === 'moved' || h.result === 'accepted')) acts = '<button class="btn sm" data-geo="revert" data-h="' + esc(h.id) + '">Revert</button>';
-    return '<tr><td class="stencil">' + esc(h.boxes && h.boxes.stencil) + '</td><td>' + esc(coord(h.old_lat, h.old_lng)) + ' &rarr; ' + esc(coord(h.new_lat, h.new_lng)) + '</td><td>' + (h.distance_m == null ? '' : esc(Math.round(h.distance_m)) + ' m') + '</td><td>' + (h.accuracy_m == null ? '' : esc(Math.round(h.accuracy_m)) + ' m') + '</td><td><span class="pill ' + (GEO_CLS[h.result] || 'p-stale') + '">' + esc(h.result) + '</span></td><td>' + esc(new Date(h.created_at).toLocaleString()) + '</td><td>' + acts + '</td></tr>';
+    return '<tr><td class="stencil">' + esc(h.boxes && h.boxes.stencil) + p12GeoMeta(h) + '</td><td>' + esc(coord(h.old_lat, h.old_lng)) + ' &rarr; ' + esc(coord(h.new_lat, h.new_lng)) + '</td><td>' + (h.distance_m == null ? '' : esc(Math.round(h.distance_m)) + ' m') + '</td><td>' + (h.accuracy_m == null ? '' : esc(Math.round(h.accuracy_m)) + ' m') + '</td><td><span class="pill ' + (GEO_CLS[h.result] || 'p-stale') + '">' + esc(h.result) + '</span></td><td>' + esc(new Date(h.created_at).toLocaleString()) + '</td><td>' + acts + '</td></tr>';
   }).join('') || '<tr><td colspan="7" class="meta">No location changes yet.</td></tr>';
 }
 $('geoRows').addEventListener('click', async function (ev) {
@@ -1851,6 +1906,7 @@ function mmFromFile(file) {
         prev.results.some(function (r, i) { return r.i !== i + 1 || r.row !== res.rows[i].row; })) { mmMsg('The preview does not match the file; nothing can be applied. Try again.'); return; }
     mm.rows = res.rows; mm.prev = prev; mm.name = f.name;
     mmMsg(fmtN(res.rows.length) + ' rows read from ' + f.name + where + ' and checked. Review them, then press Apply.');
+    p12MasterWarn(prev, tok);   // phase 12: new rows whose stencil was renamed / merged away
     $('mmResult').innerHTML = ''; mmProg('');
     mmDraw();
   }, function (e) { if (tok === mm.seq) { $('mmFile').value = ''; mmMsg(''); toast(msgOf(e)); } });
@@ -2435,6 +2491,588 @@ async function showDeskAudit(a, el) {
       var before = p.old_status == null && !('old_status' in p) ? '?' : (p.old_status || 'no reading') + (p.old_tag_acct ? ' · ' + p.old_tag_acct : '');
       return '<tr><td>P' + esc(p.port) + '</td><td>' + esc(before) + '</td><td><b>' + esc(p.status) + (p.tag_acct ? ' · ' + esc(p.tag_acct) : '') + '</b></td></tr>';
     }).join('') + '</tbody></table></div>';
+}
+// =====================================================================================================================================
+
+// =====================================================================================================================================
+// ---------- phase 12: REMARKS per port, LOCATION edit, STENCIL copy / rename / merge (nap-21). Self-contained block. ----------
+// Who (the server is the real guard; these only decide what to show):
+//   remarks: read = board roles and NAP technicians (field role, also a session handed over from the phone); write = board roles.
+//   location: nap.my_location_access (board, and the QAS teams when location_edit_roles = 'board+field'); never a viewer or a handoff session.
+//   stencil: copy / rename = board roles (dispatcher, admin, super); merge = admin / super. Never viewers, technicians or handoff sessions.
+// Everything shown from the server or the user is escaped. Each save keeps one client_id while its values stay the same (a retry after a
+// network error cannot save twice) and is locked while busy. Async answers carry a token: an answer for another box / an older request is dropped.
+var P = C.p12;
+var P12 = { locOk: false, tok: 0, open: '', note: null, focus: null,
+            rmk: null,      // {box_id, rows, err, tok}
+            redit: null,    // {box_id, np, vals: {port: text}, busy, cid, err}
+            loc: null,      // {box_id, stencil, orig, lat, lng, method, acc, reason, busy, cid, err, gps}
+            ren: null,      // {box_id, stencil, nps, text, reason, busy, cid, err, dup, dupTok}
+            mg: null,       // {box_id, stencil, q, hits, hitsMsg, hitsTok, target, pv, pvErr, pvTok, reason, union, confirm, busy, cid, err}
+            map: null, mapEl: null, marker: null, origMk: null };
+function p12Board() { return !HANDOFF && ACC.ok && (ACC.role === 'dispatcher' || ACC.role === 'admin' || ACC.role === 'superadmin'); }
+function p12Admin() { return !HANDOFF && ACC.ok && (ACC.role === 'admin' || ACC.role === 'superadmin'); }
+function p12RemarkRead() { return ACC.ok && ACC.role !== 'viewer' && (p12Board() || ACC.role === 'field'); }
+function p12LocOn() { return P12.locOk && !HANDOFF && ACC.ok && ACC.role !== 'viewer'; }
+function p12Set(k) { var n = Number(state.settings && state.settings[k]); return isFinite(n) && n > 0 ? n : null; }
+async function p12Init() {
+  var tok = ++P12.tok, was = P12.locOk;
+  P12.locOk = false;
+  if (HANDOFF || !ACC.ok || ACC.role === 'viewer') return;
+  var v = false;
+  try { v = await api.myLocationAccess(); } catch (e) { v = false; }
+  if (tok !== P12.tok) return;
+  P12.locOk = v === true;
+  if (P12.locOk !== was && state.sel) drawDetail(false);
+}
+function p12Close() {
+  if ((P12.loc && P12.loc.busy) || (P12.ren && P12.ren.busy) || (P12.mg && P12.mg.busy)) return false;
+  if (P12.map) { try { P12.map.remove(); } catch (e) {} }
+  P12.map = null; P12.mapEl = null; P12.marker = null; P12.origMk = null;
+  P12.open = ''; P12.loc = null; P12.ren = null; P12.mg = null;
+  return true;
+}
+// the box rows the Board holds for one id: the selection, the known cache and the barangay list (so the list, map and KPIs follow a change)
+function p12Patch(id, fields) {
+  [state.sel, state.known[id]].concat(state.boxes.filter(function (bx) { return bx.box_id === id; })).forEach(function (x) { if (x && x.box_id === id) Object.assign(x, fields); });
+  markersDirty = true;
+}
+async function p12Fresh(id, stencil) {
+  try {
+    var rows = await api.searchBoxes(stencil, 5), fresh = (rows || []).filter(function (r) { return r.box_id === id; })[0];
+    if (fresh) { p12Patch(id, fresh); if (!state.known[id]) remember(fresh); return fresh; }
+  } catch (e) { /* the caller still redraws */ }
+  return null;
+}
+
+// ----- called at the end of every drawDetail -----
+function p12AfterDetail(b) {
+  var el = $('detail'); if (!el || !b) return;
+  // another box was selected: close the panels of the old one (a save in flight finishes first, its panel is just not shown here)
+  var pan = P12.loc || P12.ren || P12.mg, same = !pan || pan.box_id === b.box_id;
+  if (!same && p12Close()) same = true;
+  if (P12.redit && P12.redit.box_id !== b.box_id && !P12.redit.busy) P12.redit = null;
+  if (P12.note && P12.note.box_id !== b.box_id) P12.note = null;
+  var host = document.createElement('div'); host.className = 'p12'; host.setAttribute('data-p12', '1');
+  host.innerHTML = p12BarHtml(b) + (P12.note && P12.note.box_id === b.box_id ? '<div class="' + (P12.note.err ? 'warn' : 'okmsg') + '" style="margin:8px 0 0">' + P12.note.html + '</div>' : '') +
+    '<div data-p12-slot></div>';
+  var nps = el.querySelector('.nps');
+  if (nps) el.insertBefore(host, nps); else el.appendChild(host);
+  var slot = host.querySelector('[data-p12-slot]');
+  if (!same) { /* busy on another box */ }
+  else if (P12.open === 'loc' && P12.loc) p12LocRender(slot);
+  else if (P12.open === 'ren' && P12.ren) p12RenRender(slot);
+  else if (P12.open === 'mg' && P12.mg) p12MgRender(slot);
+  // remarks section (after the NAP numbers, before the history)
+  if (p12RemarkRead()) {
+    var sec = document.createElement('div'); sec.className = 'p12-rm'; sec.setAttribute('data-p12-rm', '1');
+    var hist = el.querySelector('#hist');
+    if (hist) el.insertBefore(sec, hist); else el.appendChild(sec);
+    if (!P12.rmk || P12.rmk.box_id !== b.box_id) p12LoadRemarks(b); else p12RmRender(sec, b);
+  }
+  p12Refocus();
+}
+function p12BarHtml(b) {
+  var btn = [];
+  if (p12Board()) btn.push('<button class="btn sm" type="button" data-p12="copy">Copy stencil</button>', '<button class="btn sm" type="button" data-p12="ren"' + (P12.open === 'ren' ? ' aria-pressed="true"' : '') + '>Rename stencil</button>');
+  if (p12Admin()) btn.push('<button class="btn sm" type="button" data-p12="mg"' + (P12.open === 'mg' ? ' aria-pressed="true"' : '') + '>Merge into another NAP</button>');
+  if (p12LocOn()) btn.push('<button class="btn sm" type="button" data-p12="loc"' + (P12.open === 'loc' ? ' aria-pressed="true"' : '') + '>Edit location</button>');
+  if (!btn.length) return '';
+  var where = b.lat == null || b.lng == null ? 'No coordinates yet' : 'Location ' + Number(b.lat).toFixed(6) + ', ' + Number(b.lng).toFixed(6);
+  return '<div class="p12-bar">' + btn.join('') + '<span class="meta">' + esc(where) + '</span></div>';
+}
+// focus survives a redraw of the panel (drawDetail rebuilds the whole detail): the last focused input is focused again
+document.addEventListener('focusin', function (ev) { var t = ev.target; if (t && t.getAttribute && t.getAttribute('data-p12f')) P12.focus = { key: t.getAttribute('data-p12f'), at: Date.now(), pos: t.selectionStart }; });
+function p12Refocus() {
+  var f = P12.focus; if (!f || Date.now() - f.at > 600000) return;
+  if (document.activeElement && document.activeElement !== document.body) return;
+  var t = document.querySelector('[data-p12f="' + CSS.escape(f.key) + '"]');
+  if (t && !t.disabled) { try { t.focus({ preventScroll: true }); if (f.pos != null && t.setSelectionRange) t.setSelectionRange(f.pos, f.pos); } catch (e) {} }
+}
+
+// ----- remarks -----
+async function p12LoadRemarks(b) {
+  var tok = (P12.rmk && P12.rmk.tok || 0) + 1;
+  P12.rmk = { box_id: b.box_id, rows: null, err: '', tok: tok };
+  var rows = null, err = '';
+  try { rows = await api.portRemarks(b.box_id); } catch (e) { err = msgOf(e); }
+  if (!P12.rmk || P12.rmk.tok !== tok || P12.rmk.box_id !== b.box_id) return;
+  P12.rmk.rows = rows || []; P12.rmk.err = err; P12.rmk.missing = !!(rows && rows.missing);
+  var sec = document.querySelector('[data-p12-rm]');
+  if (sec && state.sel && state.sel.box_id === b.box_id) { p12RmRender(sec, state.sel); p12Refocus(); }
+}
+function p12RmRender(sec, b) {
+  var r = P12.rmk, board = p12Board();
+  if (!r || r.rows == null) { sec.innerHTML = '<h2>Port remarks</h2><div class="meta">Loading…</div>'; return; }
+  if (r.missing) { sec.innerHTML = board ? '<h2>Port remarks</h2><div class="meta">Port remarks need the phase 12 database update.</div>' : ''; return; }
+  if (r.err) { sec.innerHTML = '<h2>Port remarks</h2><div class="meta err">Cannot load the remarks: ' + esc(r.err) + '</div>'; return; }
+  var nps = (b.np_numbers || []).map(Number);
+  r.rows.forEach(function (x) { if (nps.indexOf(Number(x.np)) < 0) nps.push(Number(x.np)); });
+  nps.sort(function (x, y) { return x - y; });
+  if (!r.rows.length && !board) { sec.innerHTML = ''; return; }
+  sec.innerHTML = '<h2>Port remarks</h2>' + (r.rows.length ? '' : '<div class="meta">No remarks yet.</div>') + nps.map(function (np) {
+    var list = r.rows.filter(function (x) { return Number(x.np) === np; });
+    var editing = P12.redit && P12.redit.box_id === b.box_id && P12.redit.np === np;
+    return '<div data-p12-rnp="' + np + '"><div class="p12-np"><b>NP' + np + '</b>' + (board && !editing ? '<button class="btn sm" type="button" data-p12-redit="' + np + '">' + (list.length ? 'Edit remarks' : 'Add remarks') + '</button>' : '') + '</div>' +
+      (editing ? p12RemarkEditorHtml(np, list) : list.length ? '<ul>' + list.map(function (x) {
+        return '<li><b>P' + esc(x.port) + '</b>' + esc(x.remark) + ' <span class="meta">· ' + esc(x.remark_by || '') + (x.remark_at ? ' · ' + esc(new Date(x.remark_at).toLocaleString()) : '') + '</span></li>';
+      }).join('') + '</ul>' : '') + '</div>';
+  }).join('');
+  // mark the ports that carry a remark in the port grid above
+  var el = $('detail');
+  r.rows.forEach(function (x) {
+    var npEl = el.querySelector('[data-dk-np="' + CSS.escape(String(x.np)) + '"]'); if (!npEl) return;
+    npEl.querySelectorAll('.ports .port').forEach(function (c) {
+      if (c.firstChild && c.firstChild.nodeType === 3 && c.firstChild.nodeValue === 'P' + x.port) { c.classList.add('p12-hasrm'); c.title = c.title + ' · Remark: ' + x.remark; }
+    });
+  });
+  if (P12.redit && P12.redit.box_id === b.box_id) p12RemarkRefresh(sec);
+}
+function p12RemarkEditorHtml(np, list) {
+  var e = P12.redit, rows = '';
+  for (var n = 1; n <= 8; n++) {
+    var was = list.filter(function (x) { return Number(x.port) === n; })[0];
+    rows += '<b>P' + n + '</b><input type="text" maxlength="240" autocomplete="off" placeholder="Remark for P' + n + '" aria-label="NP' + np + ' P' + n + ' remark" data-p12-rv="' + n + '" data-p12f="rv-' + np + '-' + n + '" value="' + esc(e.vals[n] == null ? (was ? was.remark : '') : e.vals[n]) + '">' +
+      '<div class="p12-e" data-p12-re="' + n + '"></div>';
+  }
+  return '<div class="p12-pan" role="group" aria-label="Edit NP' + np + ' remarks"><div class="meta">Short notes for the teams (at most ' + P.REMARK_MAX + ' characters each); the QAS teams see them read-only on the phone and here. Leave a box empty to remove its remark.</div>' +
+    '<div class="p12-red">' + rows + '</div><div class="p12-acts"><button class="btn sm pri" type="button" data-p12-rsave>Save remarks</button><button class="btn sm" type="button" data-p12-rcancel>Cancel</button>' +
+    '<span class="meta" data-p12-rsum role="status" aria-live="polite"></span></div><div class="p12-msg err" data-p12-rerr role="alert"></div></div>';
+}
+function p12RemarkChanges() {
+  var e = P12.redit, cur = {}, edits = {};
+  (P12.rmk && P12.rmk.rows || []).forEach(function (x) { if (Number(x.np) === e.np) cur[e.np + ':' + x.port] = x.remark; });
+  for (var n = 1; n <= 8; n++) if (e.vals[n] != null) edits[e.np + ':' + n] = e.vals[n];
+  return P.remarkDiff(cur, edits);
+}
+function p12RemarkRefresh(sec) {
+  var e = P12.redit; if (!e || !sec) return;
+  var ch = p12RemarkChanges(), chg = {}, bad = false;
+  ch.forEach(function (x) { chg[x.port] = true; });
+  for (var n = 1; n <= 8; n++) {
+    var inp = sec.querySelector('[data-p12-rv="' + n + '"]'); if (!inp) continue;
+    var m = P.remarkError(inp.value); if (m) bad = true;
+    inp.classList.toggle('p12-chg', !!chg[n]); inp.classList.toggle('p12-bad', !!m); inp.disabled = e.busy;
+    sec.querySelector('[data-p12-re="' + n + '"]').textContent = m;
+  }
+  var sum = sec.querySelector('[data-p12-rsum]'), save = sec.querySelector('[data-p12-rsave]');
+  if (sum) sum.textContent = e.busy ? 'Saving…' : ch.length ? ch.length + ' remark' + (ch.length === 1 ? '' : 's') + ' will change.' : 'No change yet.';
+  if (save) save.disabled = e.busy || bad || !ch.length;
+  var c = sec.querySelector('[data-p12-rcancel]'); if (c) c.disabled = e.busy;
+  var er = sec.querySelector('[data-p12-rerr]'); if (er) er.textContent = e.err || '';
+}
+async function p12RemarkSave() {
+  var e = P12.redit; if (!e || e.busy) return;
+  var ch = p12RemarkChanges(); if (!ch.length || ch.some(function (x) { return P.remarkError(x.remark); })) return;
+  if (!e.cid) e.cid = P.newClientId();
+  e.busy = true; e.err = ''; p12RemarkRefresh(document.querySelector('[data-p12-rm]'));
+  var res;
+  try { res = await api.setPortRemark(P.remarkPayload({ clientId: e.cid, boxId: e.box_id, items: ch })); }
+  catch (x) {
+    e.busy = false; e.err = 'Not saved: ' + msgOf(x);
+    if (/NAP_FORBIDDEN/.test(String(x && (x.code || x.message) || ''))) { P12.redit = null; toast(e.err); if (state.sel) drawDetail(false); return; }
+    toast(e.err); p12RemarkRefresh(document.querySelector('[data-p12-rm]')); return;
+  }
+  e.busy = false;
+  if (P12.redit === e) P12.redit = null;
+  var n = Number(res && res.changed || 0);
+  toast(n ? 'Saved ' + n + ' remark' + (n === 1 ? '' : 's') + ' on NP' + e.np + '.' : 'Nothing changed.');
+  P12.rmk = null;   // reload from the server
+  if (state.sel && state.sel.box_id === e.box_id) drawDetail(false);
+}
+
+// ----- location editor -----
+function p12LocCenter(b) {
+  if (b.lat != null && b.lng != null) return { lat: Number(b.lat), lng: Number(b.lng), zoom: 18 };
+  var pts = state.boxes.filter(function (x) { return x.lat != null && x.lng != null && (x.barangay || '') === (b.barangay || ''); });
+  if (pts.length) return { lat: pts.reduce(function (s, x) { return s + Number(x.lat); }, 0) / pts.length, lng: pts.reduce(function (s, x) { return s + Number(x.lng); }, 0) / pts.length, zoom: 16 };
+  if (LMAP) { var c = LMAP.getCenter(); return { lat: c.lat, lng: c.lng, zoom: Math.max(15, LMAP.getZoom()) }; }
+  return { lat: 14.6645, lng: 121.0195, zoom: 15 };
+}
+function p12LocOpen(b) {
+  if (!p12LocOn() || !p12Close()) return;
+  var orig = b.lat != null && b.lng != null ? { lat: Number(b.lat), lng: Number(b.lng) } : null;
+  P12.open = 'loc'; P12.note = null;
+  P12.loc = { box_id: b.box_id, stencil: b.stencil, orig: orig, lat: orig ? orig.lat : null, lng: orig ? orig.lng : null, method: '', acc: null, reason: '', busy: false, cid: null, err: '', gps: '' };
+  if (typeof L !== 'undefined') {
+    try {
+      var c = p12LocCenter(b);
+      P12.mapEl = document.createElement('div'); P12.mapEl.className = 'p12-map'; P12.mapEl.setAttribute('aria-label', 'Map: drag the pin or click where the NAP is');
+      P12.map = L.map(P12.mapEl, { zoomControl: true, attributionControl: true }).setView([c.lat, c.lng], c.zoom);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(P12.map);
+      if (orig) P12.origMk = L.circleMarker([orig.lat, orig.lng], { radius: 6, color: '#7d8a96', weight: 2, fillOpacity: 0.3, interactive: false }).addTo(P12.map);
+      P12.map.on('click', function (ev) { if (P12.loc && !P12.loc.busy) p12LocSet(ev.latlng.lat, ev.latlng.lng, 'map', null); });
+    } catch (e) { P12.map = null; P12.mapEl = null; }
+  }
+  drawDetail(false);
+  if (orig) p12LocMarker();
+}
+function p12LocMarker() {
+  var l = P12.loc; if (!P12.map || !l || l.lat == null || l.lng == null) return;
+  if (!P12.marker) {
+    P12.marker = L.marker([l.lat, l.lng], { draggable: true, autoPan: true, title: l.stencil }).addTo(P12.map);
+    P12.marker.on('dragend', function () { if (!P12.loc || P12.loc.busy) return; var ll = P12.marker.getLatLng(); p12LocSet(ll.lat, ll.lng, 'map', null); });
+  } else P12.marker.setLatLng([l.lat, l.lng]);
+}
+// one change of the proposed point: method = how it was found ('map', 'gps', 'typed')
+function p12LocSet(lat, lng, method, acc, keepInputs) {
+  var l = P12.loc; if (!l) return;
+  l.lat = Number(lat); l.lng = Number(lng); l.method = method; l.acc = method === 'gps' ? acc : null; l.cid = null; l.err = '';
+  p12LocMarker();
+  if (P12.map && method !== 'map') { try { P12.map.panTo([l.lat, l.lng]); } catch (e) {} }
+  var slot = document.querySelector('[data-p12-slot]');
+  if (!keepInputs && slot) { var a = slot.querySelector('[data-p12-lat]'), o = slot.querySelector('[data-p12-lng]'); if (a) a.value = l.lat.toFixed(7); if (o) o.value = l.lng.toFixed(7); }
+  p12LocRefresh(slot);
+}
+function p12LocRender(slot) {
+  var l = P12.loc;
+  slot.innerHTML = '<div class="p12-pan" role="group" aria-label="Edit the NAP location"><h3>Edit location of <span class="p12-mono">' + esc(l.stencil) + '</span></h3>' +
+    '<div class="meta">Drag the pin or click the map where the NAP is, type or paste the coordinates, or use your GPS at the NAP. ' +
+    (l.orig ? 'The grey dot is the saved location.' : 'This NAP has no coordinates yet.') + '</div>' +
+    (P12.mapEl ? '<div data-p12-mapslot></div>' : '<div class="meta err">The map cannot load here: type the coordinates or use your GPS.</div>') +
+    '<div class="p12-row"><label>Latitude<input type="text" inputmode="decimal" autocomplete="off" data-p12-lat data-p12f="lat" placeholder="14.6512345" value="' + (l.lat == null ? '' : esc(Number(l.lat).toFixed(7))) + '"></label>' +
+    '<label>Longitude<input type="text" inputmode="decimal" autocomplete="off" data-p12-lng data-p12f="lng" placeholder="121.0345678" value="' + (l.lng == null ? '' : esc(Number(l.lng).toFixed(7))) + '"></label>' +
+    '<button class="btn sm" type="button" data-p12-gps>Use my GPS</button></div>' +
+    '<div class="meta" style="margin-top:4px">Paste "lat, lng" (for example from Google Maps) into either box.</div>' +
+    '<div class="p12-msg" data-p12-gpsmsg role="status" aria-live="polite"></div>' +
+    '<label>Reason <span data-p12-rlab></span><input type="text" maxlength="200" autocomplete="off" data-p12-lreason data-p12f="lreason" placeholder="e.g. Pin was on the wrong street; checked on site" value="' + esc(l.reason) + '"></label>' +
+    '<div class="p12-msg" data-p12-readout></div>' +
+    '<div class="p12-acts"><button class="btn sm pri" type="button" data-p12-lsave>Save location</button><button class="btn sm" type="button" data-p12-lcancel>Cancel</button></div>' +
+    '<div class="p12-msg err" data-p12-lerr role="alert"></div></div>';
+  if (P12.mapEl) {
+    slot.querySelector('[data-p12-mapslot]').replaceWith(P12.mapEl);
+    setTimeout(function () { if (P12.map) { P12.map.invalidateSize(); } }, 0);
+  }
+  p12LocRefresh(slot);
+}
+function p12LocRefresh(slot) {
+  var l = P12.loc; if (!l || !slot) return;
+  var accMax = p12Set('geo_acc_max_m') || 30, v = P.locValidate({ lat: l.lat, lng: l.lng, method: l.method, accuracyM: l.acc, reason: l.reason, accMaxM: accMax });
+  var gm = slot.querySelector('[data-p12-gpsmsg]'); if (gm) { gm.textContent = l.gps || ''; gm.classList.toggle('err', /must be|cannot|denied|failed|not available|timed out/i.test(l.gps || '')); }
+  var rl = slot.querySelector('[data-p12-rlab]'); if (rl) rl.textContent = l.method === 'gps' ? '(optional for GPS)' : '(required)';
+  var ro = slot.querySelector('[data-p12-readout]'), txt = '';
+  if (!l.method) txt = 'Move the pin, type the coordinates or use your GPS.';
+  else if (v.errors.coords) txt = v.errors.coords;
+  else {
+    var d = l.orig ? C.haversineM(l.orig.lat, l.orig.lng, l.lat, l.lng) : null;
+    var band = P.locBand({ hasCoords: !!l.orig, distanceM: d, isAdmin: isAdminRole(), refineM: p12Set('gps_flag_m'), moveMaxM: p12Set('geo_move_max_m') });
+    txt = (l.orig ? 'Moves the NAP ' + P.fmtDistance(d) + '. ' : 'First coordinates for this NAP. ') + (l.method === 'gps' && l.acc != null ? 'GPS ±' + Math.round(l.acc) + ' m. ' : '') +
+      ({ applied: 'It will be saved at once.', unchanged: 'Less than 3 m: nothing will change.', moved: 'It will be saved and listed for the admin\'s review (more than 50 m).',
+         proposed: 'More than 300 m: it will be SENT TO AN ADMIN for review; the NAP stays where it is until accepted.' })[band];
+  }
+  if (ro) { ro.textContent = txt; ro.classList.toggle('err', !!(l.method && v.errors.coords)); }
+  var la = slot.querySelector('[data-p12-lat]'), lo = slot.querySelector('[data-p12-lng]');
+  if (la) la.classList.toggle('p12-bad', !!(l.method && v.errors.coords)); if (lo) lo.classList.toggle('p12-bad', !!(l.method && v.errors.coords));
+  var er = slot.querySelector('[data-p12-lerr]'); if (er) er.textContent = l.err || (l.method && (v.errors.reason || v.errors.accuracy) && (l.reason || l.method === 'gps') ? (v.errors.accuracy || v.errors.reason) : '');
+  var sv = slot.querySelector('[data-p12-lsave]'); if (sv) sv.disabled = l.busy || !v.ok;
+  slot.querySelectorAll('.p12-pan input, .p12-pan button').forEach(function (x) { if (!x.hasAttribute('data-p12-lsave')) x.disabled = l.busy || (x.hasAttribute('data-p12-gps') && l.gpsBusy); });
+  if (P12.marker) { try { if (l.busy) P12.marker.dragging.disable(); else P12.marker.dragging.enable(); } catch (e) {} }
+}
+function p12LocTyped(slot) {
+  var l = P12.loc; if (!l || l.busy) return;
+  var a = slot.querySelector('[data-p12-lat]').value, o = slot.querySelector('[data-p12-lng]').value;
+  var la = Number(String(a).trim()), lo = Number(String(o).trim());
+  l.lat = String(a).trim() === '' || !isFinite(la) ? NaN : la; l.lng = String(o).trim() === '' || !isFinite(lo) ? NaN : lo;
+  l.method = 'typed'; l.acc = null; l.cid = null; l.err = '';
+  if (P.inQC(l.lat, l.lng)) p12LocMarker();
+  p12LocRefresh(slot);
+}
+function p12LocGps() {
+  var l = P12.loc; if (!l || l.busy || l.gpsBusy) return;
+  var slot = document.querySelector('[data-p12-slot]');
+  if (!navigator.geolocation) { l.gps = 'GPS is not available in this browser.'; p12LocRefresh(slot); return; }
+  l.gpsBusy = true; l.gps = 'Getting your GPS position…'; p12LocRefresh(slot);
+  var mine = l, accMax = p12Set('geo_acc_max_m') || 30;
+  navigator.geolocation.getCurrentPosition(function (p) {
+    if (P12.loc !== mine) return;
+    mine.gpsBusy = false;
+    var acc = p.coords.accuracy, m = P.accuracyError(acc, accMax);
+    if (m) { mine.gps = m; p12LocRefresh(document.querySelector('[data-p12-slot]')); return; }
+    if (!P.inQC(p.coords.latitude, p.coords.longitude)) { mine.gps = 'Your GPS position is outside Quezon City: it cannot be used for this NAP.'; p12LocRefresh(document.querySelector('[data-p12-slot]')); return; }
+    mine.gps = 'GPS position ±' + Math.round(acc) + ' m.';
+    p12LocSet(p.coords.latitude, p.coords.longitude, 'gps', acc);
+  }, function (err) {
+    if (P12.loc !== mine) return;
+    mine.gpsBusy = false;
+    mine.gps = err && err.code === 1 ? 'Location permission denied: allow location for this site, or move the pin on the map.' : err && err.code === 3 ? 'GPS timed out. Try again under open sky.' : 'GPS failed. Try again, or move the pin on the map.';
+    p12LocRefresh(document.querySelector('[data-p12-slot]'));
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+async function p12LocSave() {
+  var l = P12.loc; if (!l || l.busy) return;
+  var accMax = p12Set('geo_acc_max_m') || 30, v = P.locValidate({ lat: l.lat, lng: l.lng, method: l.method, accuracyM: l.acc, reason: l.reason, accMaxM: accMax });
+  if (!v.ok) return;
+  if (!l.cid) l.cid = P.newClientId();
+  l.busy = true; l.err = ''; p12LocRefresh(document.querySelector('[data-p12-slot]'));
+  var res;
+  try { res = await api.setBoxLocation(P.locPayload({ clientId: l.cid, boxId: l.box_id, lat: l.lat, lng: l.lng, method: l.method, accuracyM: l.acc, reason: l.reason })); }
+  catch (x) {
+    l.busy = false; l.err = 'Not saved: ' + msgOf(x); toast(l.err);
+    if (/NAP_FORBIDDEN/.test(String(x && (x.code || x.message) || ''))) { P12.locOk = false; p12Close(); if (state.sel) drawDetail(false); return; }
+    p12LocRefresh(document.querySelector('[data-p12-slot]')); return;
+  }
+  l.busy = false;
+  var msg = P.locResultText(res), box = l.box_id;
+  p12Close();
+  P12.note = { box_id: box, html: esc(msg), err: res && res.result === 'proposed' };
+  toast(msg);
+  if (res && (res.result === 'applied' || res.result === 'moved') && res.lat != null) {
+    p12Patch(box, { lat: Number(res.lat), lng: Number(res.lng) });
+    if (state.sel && state.sel.box_id === box) { drawBoard(false); return; }
+  }
+  if (state.sel && state.sel.box_id === box) drawDetail(false);
+}
+
+// ----- stencil: copy, rename -----
+function p12Copy(text) {
+  var done = function () { toast('Copied: ' + text); };
+  var fallback = function () {
+    var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove(); if (ok) done(); else toast('Cannot copy here. The stencil is: ' + text);
+  };
+  try { if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, fallback); return; } } catch (e) { /* fallback below */ }
+  fallback();
+}
+function p12RenOpen(b) {
+  if (!p12Board() || !p12Close()) return;
+  P12.open = 'ren'; P12.note = null;
+  P12.ren = { box_id: b.box_id, stencil: b.stencil, nps: (b.np_numbers || []).slice(), text: b.stencil, reason: '', busy: false, cid: null, err: '', dup: null, dupTok: 0 };
+  P12.focus = { key: 'rtext', at: Date.now(), pos: null };
+  drawDetail(false);
+}
+function p12RenRender(slot) {
+  var r = P12.ren;
+  slot.innerHTML = '<div class="p12-pan" role="group" aria-label="Rename the stencil"><h3>Rename <span class="p12-mono">' + esc(r.stencil) + '</span></h3>' +
+    '<div class="meta">Use this when the stencil was typed wrong or repainted. Everything stays with this NAP (ports, audits, dispatch items, photos). To move this NAP\'s data into another existing NAP, use Merge (admin).</div>' +
+    '<label>New stencil<input type="text" class="p12-mono" maxlength="120" autocomplete="off" spellcheck="false" data-p12-rtext data-p12f="rtext" value="' + esc(r.text) + '"></label>' +
+    '<div class="p12-msg" data-p12-rchk role="status" aria-live="polite"></div>' +
+    '<label>Reason (required)<input type="text" maxlength="200" autocomplete="off" data-p12-rreason data-p12f="rreason" placeholder="e.g. Stencil repainted on site" value="' + esc(r.reason) + '"></label>' +
+    '<div class="p12-acts"><button class="btn sm pri" type="button" data-p12-rnsave>Rename</button><button class="btn sm" type="button" data-p12-rncancel>Cancel</button></div>' +
+    '<div class="p12-msg err" data-p12-rnerr role="alert"></div></div>';
+  p12RenRefresh(slot);
+}
+function p12RenRefresh(slot) {
+  var r = P12.ren; if (!r || !slot) return;
+  var chk = P.renameCheck({ stencil: r.stencil, np_numbers: r.nps }, r.text), reasonBad = P.locReasonError('map', r.reason);
+  var m = slot.querySelector('[data-p12-rchk]'), dupHit = r.dup && r.dup.text === chk.stencil;
+  var t = chk.same ? '' : !chk.ok ? chk.message : (chk.stencil + (chk.message ? ': ' + chk.message : '')) + (dupHit ? ' ' + r.dup.msg : '');
+  if (m) { m.textContent = t; m.classList.toggle('err', (!chk.ok && !chk.same) || !!dupHit); }
+  var inp = slot.querySelector('[data-p12-rtext]'); if (inp) inp.classList.toggle('p12-bad', !chk.ok && !chk.same);
+  var sv = slot.querySelector('[data-p12-rnsave]'); if (sv) sv.disabled = r.busy || !chk.ok || !!reasonBad || !!dupHit;
+  slot.querySelectorAll('.p12-pan input, [data-p12-rncancel]').forEach(function (x) { x.disabled = r.busy; });
+  var er = slot.querySelector('[data-p12-rnerr]'); if (er) er.textContent = r.err || (r.reason && reasonBad ? reasonBad : '');
+}
+var p12DupTimer = null;
+function p12RenDupCheck() {
+  var r = P12.ren; if (!r) return;
+  clearTimeout(p12DupTimer);
+  var chk = P.renameCheck({ stencil: r.stencil, np_numbers: r.nps }, r.text); if (!chk.ok) return;
+  var tok = ++r.dupTok, want = chk.stencil, mine = r;
+  p12DupTimer = setTimeout(async function () {
+    var rows = [];
+    try { rows = await api.searchBoxes(want, 5); } catch (e) { rows = []; }
+    if (P12.ren !== mine || mine.dupTok !== tok) return;
+    var hit = (rows || []).filter(function (x) { return x.stencil === want && x.box_id !== mine.box_id; })[0];
+    mine.dup = hit ? { text: want, box_id: hit.box_id, msg: 'This stencil already exists (' + (hit.barangay || 'UNASSIGNED') + '). Pick another one, or ask an admin to merge this NAP into it.' } : null;
+    p12RenRefresh(document.querySelector('[data-p12-slot]'));
+  }, 350);
+}
+async function p12RenSave() {
+  var r = P12.ren; if (!r || r.busy) return;
+  var chk = P.renameCheck({ stencil: r.stencil, np_numbers: r.nps }, r.text);
+  if (!chk.ok || P.locReasonError('map', r.reason) || (r.dup && r.dup.text === chk.stencil)) return;
+  if (!r.cid) r.cid = P.newClientId();
+  r.busy = true; r.err = ''; p12RenRefresh(document.querySelector('[data-p12-slot]'));
+  var res;
+  try { res = await api.renameBox({ client_id: r.cid, box_id: r.box_id, new_stencil: chk.stencil, reason: r.reason.replace(/\s+/g, ' ').trim() }); }
+  catch (x) { r.busy = false; r.err = 'Not renamed: ' + msgOf(x); toast(r.err); p12RenRefresh(document.querySelector('[data-p12-slot]')); return; }
+  r.busy = false;
+  var box = r.box_id, old = r.stencil;
+  p12Close();
+  if (res && res.changed) {
+    p12Patch(box, { stencil: res.new_stencil, np_numbers: res.np_numbers || chk.stencil && C.stencilNps(chk.stencil) });
+    P12.note = { box_id: box, html: 'Renamed <span class="p12-mono">' + esc(old) + '</span> &rarr; <b class="p12-mono">' + esc(res.new_stencil) + '</b>. Search and the dispatch lists use the new stencil now.' };
+    toast('Renamed to ' + res.new_stencil);
+    portsCache = null; histCache = null; P12.rmk = null;
+    await p12Fresh(box, res.new_stencil);
+    if (state.sel && state.sel.box_id === box) { drawBoard(true); return; }
+  }
+  if (state.sel && state.sel.box_id === box) drawDetail(false);
+}
+
+// ----- merge (admin / super) -----
+function p12MgOpen(b) {
+  if (!p12Admin() || !p12Close()) return;
+  P12.open = 'mg'; P12.note = null;
+  P12.mg = { box_id: b.box_id, stencil: b.stencil, q: '', hits: [], hitsMsg: 'Type at least 3 characters of the target stencil, or paste it.', hitsTok: 0, target: null, pv: null, pvErr: '', pvTok: 0,
+             reason: '', union: false, confirm: '', busy: false, cid: null, err: '' };
+  P12.focus = { key: 'mq', at: Date.now(), pos: null };
+  drawDetail(false);
+}
+function p12MgRender(slot) {
+  var g = P12.mg, pv = g.pv, ready = pv && g.target && pv.to && pv.to.box_id === g.target.box_id;
+  var blocked = ready ? P.mergeBlocked(pv) : [];
+  slot.innerHTML = '<div class="p12-pan" role="group" aria-label="Merge this NAP into another NAP"><h3>Merge <span class="p12-mono">' + esc(g.stencil) + '</span> into another NAP</h3>' +
+    '<div class="meta">For a NAP that is in the master twice. Everything of this NAP (audits, photos, port readings, remarks, dispatch items, location history) moves to the NAP you pick; this NAP is then deactivated. Admin only; it can only be undone by hand.</div>' +
+    '<div class="p12-row"><label>Target NAP (search)<input type="search" class="p12-mono" maxlength="80" autocomplete="off" spellcheck="false" data-p12-mq data-p12f="mq" placeholder="QCY003 LP114" value="' + esc(g.q) + '"></label>' +
+    '<button class="btn sm" type="button" data-p12-paste>Paste stencil</button></div>' +
+    '<div class="p12-hits" data-p12-hits>' + (g.hits.length ? g.hits.map(function (h, i) {
+      return '<button class="btn sm" type="button" data-p12-hit="' + i + '" aria-pressed="' + (g.target && g.target.box_id === h.box_id) + '"><span class="stencil">' + esc(h.stencil) + '</span> <span class="meta">' + esc(h.barangay || 'UNASSIGNED') + ' · ' + esc(h.street || '') + '</span></button>';
+    }).join('') : '<div class="meta">' + esc(g.hitsMsg || '') + '</div>') + '</div>' +
+    (g.target ? '<div style="margin-top:8px"><b>Preview</b>: <span class="p12-mono">' + esc(g.stencil) + '</span> &rarr; <span class="p12-mono">' + esc(g.target.stencil) + '</span></div>' +
+      (g.pvErr ? '<div class="p12-msg err">' + esc(g.pvErr) + '</div>' : !ready ? '<div class="meta">Loading the preview…</div>' :
+        '<ul class="p12-lines">' + P.mergeLines(pv).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+        (blocked.length ? '<div class="warn" style="margin-top:6px">' + blocked.map(esc).join('<br>') + '</div>' :
+          (pv.needs_np_union ? '<label style="display:flex;gap:6px;align-items:flex-start;color:var(--ink)"><input type="checkbox" data-p12-union' + (g.union ? ' checked' : '') + '> <span>I understand that ' + esc(pv.to.stencil) + ' will then have NP' + esc((pv.np_union || []).join(', NP')) + ' (' + esc(pv.total_ports_after) + ' ports).</span></label>' : '') +
+          '<label>Reason (required)<input type="text" maxlength="200" autocomplete="off" data-p12-mreason data-p12f="mreason" placeholder="e.g. Same NAP listed twice in the master" value="' + esc(g.reason) + '"></label>' +
+          '<label>Type the target stencil to confirm<input type="text" class="p12-mono" maxlength="120" autocomplete="off" spellcheck="false" data-p12-mconfirm data-p12f="mconfirm" placeholder="' + esc(pv.to.stencil) + '" value="' + esc(g.confirm) + '"></label>')) : '') +
+    '<div class="p12-acts">' + (ready && !blocked.length ? '<button class="btn sm pri" type="button" data-p12-mgo>Merge into ' + esc(g.target.stencil) + '</button>' : '') + '<button class="btn sm" type="button" data-p12-mcancel>Cancel</button></div>' +
+    '<div class="p12-msg err" data-p12-merr role="alert"></div></div>';
+  p12MgRefresh(slot);
+}
+function p12MgOk() {
+  var g = P12.mg, pv = g && g.pv;
+  return !!(g && g.target && pv && pv.to && pv.to.box_id === g.target.box_id && pv.ok && !P.mergeBlocked(pv).length && (!pv.needs_np_union || g.union) &&
+            !P.locReasonError('map', g.reason) && P.confirmOk(g.confirm, pv.to.stencil));
+}
+function p12MgRefresh(slot) {
+  var g = P12.mg; if (!g || !slot) return;
+  var go = slot.querySelector('[data-p12-mgo]'); if (go) go.disabled = g.busy || !p12MgOk();
+  slot.querySelectorAll('.p12-pan input, .p12-pan button').forEach(function (x) { if (!x.hasAttribute('data-p12-mgo')) x.disabled = g.busy; });
+  var c = slot.querySelector('[data-p12-mconfirm]'); if (c) c.classList.toggle('p12-bad', !!g.confirm && g.pv && g.pv.to && !P.confirmOk(g.confirm, g.pv.to.stencil));
+  var er = slot.querySelector('[data-p12-merr]'); if (er) er.textContent = g.busy ? 'Merging…' : g.err || '';
+}
+var p12FindTimer = null;
+function p12MgSearch(now) {
+  var g = P12.mg; if (!g) return;
+  clearTimeout(p12FindTimer);
+  var q = C.normStencil(g.q), tok = ++g.hitsTok, mine = g;
+  if (q.length < 3) { g.hits = []; g.hitsMsg = 'Type at least 3 characters of the target stencil, or paste it.'; p12MgRedraw(); return; }
+  g.hitsMsg = 'Searching…';
+  p12FindTimer = setTimeout(async function () {
+    var rows = null, err = '';
+    try { rows = await api.searchBoxes(q, 12); } catch (e) { err = msgOf(e); }
+    if (P12.mg !== mine || mine.hitsTok !== tok) return;
+    mine.hits = (rows || []).filter(function (x) { return x.box_id !== mine.box_id; });
+    mine.hitsMsg = err ? 'Cannot search: ' + err : mine.hits.length ? '' : 'No other active NAP matches "' + q + '".';
+    p12MgRedraw();
+  }, now ? 0 : FIND_MS);
+}
+function p12MgRedraw() { var slot = document.querySelector('[data-p12-slot]'); if (slot && P12.open === 'mg') { p12MgRender(slot); p12Refocus(); } }
+async function p12MgPick(h) {
+  var g = P12.mg; if (!g || g.busy) return;
+  g.target = { box_id: h.box_id, stencil: h.stencil }; g.pv = null; g.pvErr = ''; g.union = false; g.confirm = ''; g.cid = null; g.err = '';
+  var tok = ++g.pvTok, mine = g;
+  p12MgRedraw();
+  var pv = null, err = '';
+  try { pv = await api.mergeBoxesPreview(g.box_id, h.box_id); } catch (e) { err = msgOf(e); }
+  if (P12.mg !== mine || mine.pvTok !== tok) return;
+  mine.pv = pv; mine.pvErr = err ? 'Cannot preview: ' + err : '';
+  p12MgRedraw();
+}
+async function p12MgGo() {
+  var g = P12.mg; if (!g || g.busy || !p12MgOk()) return;
+  if (!g.cid) g.cid = P.newClientId();
+  g.busy = true; g.err = ''; p12MgRefresh(document.querySelector('[data-p12-slot]'));
+  var res;
+  try { res = await api.mergeBoxes({ client_id: g.cid, box_from: g.box_id, box_to: g.target.box_id, reason: g.reason.replace(/\s+/g, ' ').trim(), confirm: true, allow_np_union: !!(g.pv && g.pv.needs_np_union && g.union) }); }
+  catch (x) { g.busy = false; g.err = 'Not merged: ' + msgOf(x); toast(g.err); p12MgRefresh(document.querySelector('[data-p12-slot]')); return; }
+  g.busy = false;
+  var from = g.box_id, fromSt = g.stencil, to = g.target.box_id, toSt = g.target.stencil, mv = (res && res.moved) || {};
+  p12Close();
+  // the source is deactivated: it leaves every Board list (box_status hides it); select the target
+  state.boxes = state.boxes.filter(function (x) { return x.box_id !== from; });
+  delete state.known[from]; markersDirty = true; portsCache = null; histCache = null; P12.rmk = null;
+  var fresh = await p12Fresh(to, toSt);
+  state.sel = fresh || state.known[to] || state.sel;
+  P12.note = { box_id: to, html: 'Merged <span class="p12-mono">' + esc(fromSt) + '</span> into <b class="p12-mono">' + esc(toSt) + '</b>: ' + esc(Number(mv.audits || 0)) + ' audits, ' +
+    esc(Number(mv.dispatch_items || 0)) + ' dispatch items, ' + esc(Number(mv.ports_moved || 0) + Number(mv.ports_compared || 0)) + ' port rows. ' + esc(fromSt) + ' is now deactivated.' };
+  toast('Merged into ' + toSt);
+  drawBoard(true);
+}
+
+// ----- events (one delegated listener set on the detail panel) -----
+$('detail').addEventListener('click', function (ev) {
+  var t = ev.target, b = state.sel; if (!b || !t.closest) return;
+  var a = t.closest('[data-p12]');
+  if (a && a.getAttribute('data-p12') !== '1') {
+    var k = a.getAttribute('data-p12');
+    if (k === 'copy') { p12Copy(b.stencil); return; }
+    if (P12.open === k) { if (p12Close()) drawDetail(false); return; }
+    if (k === 'loc') p12LocOpen(b); else if (k === 'ren') p12RenOpen(b); else if (k === 'mg') p12MgOpen(b);
+    return;
+  }
+  var re = t.closest('[data-p12-redit]');
+  if (re) { if (P12.redit && P12.redit.busy) return; P12.redit = { box_id: b.box_id, np: Number(re.getAttribute('data-p12-redit')), vals: {}, busy: false, cid: null, err: '' }; P12.focus = { key: 'rv-' + P12.redit.np + '-1', at: Date.now(), pos: null }; drawDetail(false); return; }
+  if (t.closest('[data-p12-rsave]')) { p12RemarkSave(); return; }
+  if (t.closest('[data-p12-rcancel]')) { if (P12.redit && !P12.redit.busy) { P12.redit = null; drawDetail(false); } return; }
+  if (t.closest('[data-p12-gps]')) { p12LocGps(); return; }
+  if (t.closest('[data-p12-lsave]')) { p12LocSave(); return; }
+  if (t.closest('[data-p12-lcancel]') || t.closest('[data-p12-rncancel]') || t.closest('[data-p12-mcancel]')) { if (p12Close()) drawDetail(false); return; }
+  if (t.closest('[data-p12-rnsave]')) { p12RenSave(); return; }
+  if (t.closest('[data-p12-mgo]')) { p12MgGo(); return; }
+  var hit = t.closest('[data-p12-hit]');
+  if (hit && P12.mg) { var h = P12.mg.hits[Number(hit.getAttribute('data-p12-hit'))]; if (h) p12MgPick(h); return; }
+  if (t.closest('[data-p12-paste]') && P12.mg && !P12.mg.busy) {
+    var g = P12.mg, put = function (txt) { if (P12.mg !== g) return; g.q = C.normStencil(txt).slice(0, 80); P12.focus = { key: 'mq', at: Date.now(), pos: null }; p12MgRedraw(); p12MgSearch(true); };
+    try { if (navigator.clipboard && navigator.clipboard.readText) { navigator.clipboard.readText().then(put, function () { toast('Cannot read the clipboard here: paste into the search box (Ctrl+V).'); }); return; } } catch (e) {}
+    toast('Cannot read the clipboard here: paste into the search box (Ctrl+V).');
+  }
+});
+function p12Input(ev) {
+  var t = ev.target; if (!t || !t.closest || !t.closest('.p12-pan')) return;
+  var slot = t.closest('[data-p12-slot]');
+  if (t.hasAttribute('data-p12-rv') && P12.redit && !P12.redit.busy) { P12.redit.vals[Number(t.getAttribute('data-p12-rv'))] = t.value; P12.redit.cid = null; P12.redit.err = ''; p12RemarkRefresh(t.closest('[data-p12-rm]')); return; }
+  if (!slot) return;
+  if ((t.hasAttribute('data-p12-lat') || t.hasAttribute('data-p12-lng')) && P12.loc) { if (ev.type === 'input') p12LocTyped(slot); return; }
+  if (t.hasAttribute('data-p12-lreason') && P12.loc && !P12.loc.busy) { P12.loc.reason = t.value; P12.loc.cid = null; P12.loc.err = ''; p12LocRefresh(slot); return; }
+  if (t.hasAttribute('data-p12-rtext') && P12.ren && !P12.ren.busy) { P12.ren.text = t.value; P12.ren.cid = null; P12.ren.err = ''; p12RenRefresh(slot); p12RenDupCheck(); return; }
+  if (t.hasAttribute('data-p12-rreason') && P12.ren && !P12.ren.busy) { P12.ren.reason = t.value; P12.ren.cid = null; P12.ren.err = ''; p12RenRefresh(slot); return; }
+  if (t.hasAttribute('data-p12-mq') && P12.mg && !P12.mg.busy) { if (ev.type === 'input') { P12.mg.q = t.value; p12MgSearch(false); } return; }
+  if (t.hasAttribute('data-p12-mreason') && P12.mg && !P12.mg.busy) { P12.mg.reason = t.value; P12.mg.cid = null; P12.mg.err = ''; p12MgRefresh(slot); return; }
+  if (t.hasAttribute('data-p12-mconfirm') && P12.mg && !P12.mg.busy) { P12.mg.confirm = t.value; p12MgRefresh(slot); return; }
+  if (t.hasAttribute('data-p12-union') && P12.mg && !P12.mg.busy) { P12.mg.union = t.checked; P12.mg.cid = null; p12MgRefresh(slot); return; }
+}
+$('detail').addEventListener('input', p12Input);
+$('detail').addEventListener('change', p12Input);
+// pasting "lat, lng" (or a Maps link) into either coordinate box fills both; pasting a stencil into the merge search normalizes it
+$('detail').addEventListener('paste', function (ev) {
+  var t = ev.target; if (!t || !t.hasAttribute) return;
+  var txt = (ev.clipboardData && ev.clipboardData.getData('text')) || '';
+  if ((t.hasAttribute('data-p12-lat') || t.hasAttribute('data-p12-lng')) && P12.loc && !P12.loc.busy) {
+    var c = P.parseCoords(txt);
+    if (c && !c.outside) { ev.preventDefault(); P12.loc.gps = c.swapped ? 'The pasted pair was longitude first: swapped.' : ''; p12LocSet(c.lat, c.lng, 'typed', null); }
+  } else if (t.hasAttribute('data-p12-mq') && P12.mg && !P12.mg.busy && txt) {
+    ev.preventDefault(); P12.mg.q = C.normStencil(txt).slice(0, 80); t.value = P12.mg.q; p12MgSearch(true);
+  }
+});
+$('detail').addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Enter' || !ev.target.closest || ev.target.tagName !== 'INPUT' || !ev.target.closest('.p12-pan')) return;
+  ev.preventDefault();
+  var p = ev.target.closest('.p12-pan'), b = p.querySelector('[data-p12-rsave],[data-p12-lsave],[data-p12-rnsave],[data-p12-mgo]');
+  if (ev.target.hasAttribute('data-p12-mq')) { p12MgSearch(true); return; }
+  if (b && !b.disabled) b.click();
+});
+// the Pagbabago ng lokasyon (geo review) list: how and why a phase 12 edit was made, by whom
+function p12GeoMeta(h) {
+  if (!h || (!h.method && !h.actor)) return '';
+  var m = { map: 'map pin', gps: 'GPS', typed: 'typed', merge: 'merge' }[h.method] || h.method || '';
+  return '<div class="p12-geo">' + esc([m, h.actor ? 'by ' + h.actor : '', h.reason ? '"' + h.reason + '"' : ''].filter(Boolean).join(' · ')) + '</div>';
+}
+// NAP Master import: a NEW row whose stencil was renamed or merged away would ADD a second NAP: warn (never blocks)
+async function p12MasterWarn(prev, tok) {
+  var list = ((prev && prev.results) || []).filter(function (r) { return r && r.status === 'new' && r.stencil; }).map(function (r) { return r.stencil; });
+  if (!list.length) return;
+  var rows = [];
+  try { rows = await api.renamedStencils(list); } catch (e) { rows = []; }
+  if (tok !== mm.seq || !rows.length) return;
+  var d = document.createElement('div'); d.className = 'warn'; d.style.marginTop = '10px';
+  d.innerHTML = '<b>' + esc(rows.length) + ' new stencil' + (rows.length === 1 ? ' was' : 's were') + ' renamed or merged before.</b> Importing ' + (rows.length === 1 ? 'it' : 'them') + ' would ADD a second NAP with the old stencil. Use the current stencil in the file instead:' +
+    rows.slice(0, 20).map(function (r) { return '<div><span class="stencil">' + esc(r.old_stencil) + '</span> is now <span class="stencil">' + esc(r.current_stencil) + '</span> (' + esc(r.action === 'merge_out' ? 'merged' : 'renamed') + (r.active === false ? ', deactivated' : '') + ')</div>'; }).join('') +
+    (rows.length > 20 ? '<div>… and ' + esc(rows.length - 20) + ' more</div>' : '');
+  $('mmWarn').appendChild(d);
 }
 // =====================================================================================================================================
 

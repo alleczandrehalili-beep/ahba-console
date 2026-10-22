@@ -244,6 +244,19 @@
       .filter(function (b) { return b.distance_m <= radiusM; })
       .sort(function (a, b) { return a.distance_m - b.distance_m; });
   }
+  // ---- Range expansion (radius presets, clamp, labels, phone steps). Pure; the server (nap.boxes_near) allows 1..5000 m, <= 500 rows.
+  var RANGE_PRESETS = [150, 300, 500, 1000, 2000], RANGE_MIN = 50, RANGE_MAX = 2000, RANGE_DEFAULT = 150, RANGE_PAGE = 300;
+  var PHONE_RANGES = [{ m: 1500, n: 60 }, { m: 3000, n: 100 }, { m: 5000, n: 100 }];
+  function clampRange(v) { var n = Math.round(Number(v)); return v === '' || v == null || !isFinite(n) ? null : Math.min(RANGE_MAX, Math.max(RANGE_MIN, n)); }
+  function fmtRange(m) {
+    var n = Math.round(Number(m));
+    if (!isFinite(n)) return '';
+    return n < 1000 ? n + ' m' : String(Math.round(n / 100) / 10).replace(/\.0$/, '') + ' km';
+  }
+  function rangeCapped(count, limit) { return limit > 0 && count >= limit; }
+  function rangeCapMsg(count, limit) { return rangeCapped(count, limit) ? 'Showing the nearest ' + limit + ': reduce the range to see all.' : ''; }
+  function phoneRange(i) { var k = Math.min(PHONE_RANGES.length - 1, Math.max(0, Math.floor(Number(i)) || 0)); return { step: k, m: PHONE_RANGES[k].m, n: PHONE_RANGES[k].n, label: 'Within ' + fmtRange(PHONE_RANGES[k].m), last: k === PHONE_RANGES.length - 1 }; }
+  function nextPhoneRange(i) { return phoneRange((Math.floor(Number(i)) || 0) + 1); }
   function parseLatLng(text) {
     var m = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(String(text == null ? '' : text));
     if (!m) return null;
@@ -783,6 +796,161 @@
              reasonError: reasonError, diff: diff, validate: validate, payload: payload, newClientId: newClientId, duplicateText: duplicateText, SOURCE_DESK: 'desk', LABEL: 'Desk update' };
   })();
   // ======================================================================================================================
+  // ======================================================================================================================
+  // ---------- phase 12: REMARKS per port, LOCATION edit, STENCIL rename + merge (nap-21). Self-contained block; NapCore.p12 ----------
+  // Same rules as the server (change both together): remark = whitespace collapsed, trimmed, at most 200 characters, '' = clear;
+  // coordinates inside Quezon City (lat 14.60..14.80, lng 120.90..121.20); GPS accuracy <= geo_acc_max_m (30); map / typed need a reason
+  // (3..200); the bands of nap.set_box_location; the master import's stencil pattern.
+  var P12 = (function () {
+    var REMARK_MAX = 200, REASON_MIN = 3, REASON_MAX = 200;
+    var QC = { latMin: 14.60, latMax: 14.80, lngMin: 120.90, lngMax: 121.20 };
+    var BANDS = { minMoveM: 3, refineM: 50, moveMaxM: 300, accMaxM: 30 };
+    function str(v) { return String(v == null ? '' : v); }
+
+    // ----- remarks -----
+    function remarkNorm(t) { return str(t).replace(/\s+/g, ' ').trim(); }
+    function remarkError(t) { var n = remarkNorm(t).length; return n > REMARK_MAX ? 'At most ' + REMARK_MAX + ' characters (' + n + ' entered).' : ''; }
+    // rows [{np, port, remark}] -> {'np:port': remark}
+    function remarkMap(rows) { var m = {}; (rows || []).forEach(function (r) { if (r && r.remark != null && r.remark !== '') m[Number(r.np) + ':' + Number(r.port)] = String(r.remark); }); return m; }
+    // current = remarkMap of the box; edits = {'np:port': text}. Returns the ports whose (normalized) remark changes, in NP / port order.
+    function remarkDiff(current, edits) {
+      var cur = current || {}, out = [];
+      Object.keys(edits || {}).forEach(function (k) {
+        var mt = /^(\d{1,4}):([1-8])$/.exec(k); if (!mt) return;
+        var next = remarkNorm(edits[k]), was = cur[k] == null ? '' : remarkNorm(cur[k]);
+        if (next !== was) out.push({ np: Number(mt[1]), port: Number(mt[2]), remark: next });
+      });
+      return out.sort(function (a, b) { return a.np - b.np || a.port - b.port; });
+    }
+    function remarkPayload(o) {
+      return { client_id: o.clientId, box_id: o.boxId, items: (o.items || []).slice(0, 8).map(function (x) { return { np: Number(x.np), port: Number(x.port), remark: remarkNorm(x.remark) }; }) };
+    }
+    // 'P1: text; P5: text' for one NAP number (or every port when np is null: 'NP1 P1: text; ...')
+    function remarkText(rows, np) {
+      return (rows || []).filter(function (r) { return r && r.remark && (np == null || Number(r.np) === Number(np)); })
+        .sort(function (a, b) { return a.np - b.np || a.port - b.port; })
+        .map(function (r) { return (np == null ? 'NP' + r.np + ' ' : '') + 'P' + r.port + ': ' + remarkNorm(r.remark); }).join('; ');
+    }
+
+    // ----- location -----
+    function num(v) { if (v === '' || v == null || typeof v === 'boolean') return NaN; var n = typeof v === 'number' ? v : Number(String(v).trim()); return isFinite(n) ? n : NaN; }
+    function inQC(lat, lng) { lat = num(lat); lng = num(lng); return lat >= QC.latMin && lat <= QC.latMax && lng >= QC.lngMin && lng <= QC.lngMax; }
+    // 'lat, lng' as typed or pasted ('14.65, 121.03', '14.65 121.03', '(14.65,121.03)', a Google Maps '@14.65,121.03,17z' link);
+    // a pair given lng-first is swapped when only that reading falls in QC. Returns {lat, lng} or null.
+    function parseCoords(text) {
+      var t = str(text).trim(), mt = /@(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/.exec(t);
+      if (!mt) mt = /^\(?\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?$/.exec(t);
+      if (!mt) return null;
+      var a = parseFloat(mt[1]), b = parseFloat(mt[2]);
+      if (inQC(a, b)) return { lat: a, lng: b };
+      if (inQC(b, a)) return { lat: b, lng: a, swapped: true };
+      return { lat: a, lng: b, outside: true };
+    }
+    function coordsError(lat, lng) {
+      var a = num(lat), b = num(lng);
+      if (!isFinite(a) || !isFinite(b)) return 'Enter both latitude and longitude as decimal numbers.';
+      if (!inQC(a, b)) return 'That point is outside Quezon City (lat ' + QC.latMin.toFixed(2) + ' to ' + QC.latMax.toFixed(2) + ', lng ' + QC.lngMin.toFixed(2) + ' to ' + QC.lngMax.toFixed(2) + ').';
+      return '';
+    }
+    function accuracyError(acc, max) {
+      var m = max == null ? BANDS.accMaxM : Number(max), a = num(acc);
+      if (!isFinite(a) || a < 0) return 'The GPS accuracy is unknown. Wait for a GPS fix.';
+      if (a > m) return 'GPS accuracy is ' + Math.round(a) + ' m; it must be ' + m + ' m or better. Go under open sky, wait a moment, then try again.';
+      return '';
+    }
+    function locReasonError(method, reason) {
+      var t = str(reason).replace(/\s+/g, ' ').trim();
+      if (t.length > REASON_MAX) return 'The reason is too long (at most ' + REASON_MAX + ' characters).';
+      if (method !== 'gps' && t.length < REASON_MIN) return 'Enter the reason for the new location (at least ' + REASON_MIN + ' characters).';
+      return '';
+    }
+    // {ok, errors: {coords, accuracy, reason, method}} for the editor; o = {lat, lng, method, accuracyM, reason, accMaxM}
+    function locValidate(o) {
+      o = o || {};
+      var e = { method: ['map', 'gps', 'typed'].indexOf(o.method) >= 0 ? '' : 'Choose how the location was found.',
+                coords: coordsError(o.lat, o.lng), accuracy: o.method === 'gps' ? accuracyError(o.accuracyM, o.accMaxM) : '', reason: locReasonError(o.method, o.reason) };
+      return { ok: !e.method && !e.coords && !e.accuracy && !e.reason, errors: e };
+    }
+    function round7(v) { return Math.round(num(v) * 1e7) / 1e7; }
+    function locPayload(o) {
+      var p = { client_id: o.clientId, box_id: o.boxId, lat: round7(o.lat), lng: round7(o.lng), method: o.method };
+      if (o.method === 'gps') p.accuracy_m = Math.round(num(o.accuracyM) * 10) / 10;
+      var r = str(o.reason).replace(/\s+/g, ' ').trim(); if (r) p.reason = r;
+      return p;
+    }
+    // what the server will decide (mirrors nap.set_box_location): applied | unchanged | moved | proposed
+    function locBand(o) {
+      o = o || {};
+      var c = {}; for (var k in BANDS) c[k] = o[k] != null ? o[k] : BANDS[k];
+      if (!o.hasCoords) return 'applied';
+      var d = num(o.distanceM); if (!isFinite(d)) return 'applied';
+      if (d < c.minMoveM) return 'unchanged';
+      if (d <= c.refineM) return 'applied';
+      if (o.isAdmin || d <= c.moveMaxM) return 'moved';
+      return 'proposed';
+    }
+    function fmtDistance(m) { var d = num(m); if (!isFinite(d)) return ''; return d < 1000 ? Math.round(d) + ' m' : (Math.round(d / 100) / 10) + ' km'; }
+    // the user-facing sentence for a server answer {result, distance_m, stencil}
+    function locResultText(r) {
+      r = r || {};
+      var d = r.distance_m == null ? '' : ' (' + fmtDistance(r.distance_m) + ')', s = r.stencil ? r.stencil + ': ' : '';
+      if (r.result === 'applied') return s + 'location saved' + d + '.';
+      if (r.result === 'moved') return s + 'location saved' + d + '. It moved more than 50 m, so it is listed for the admin\'s review (the admin can revert it).';
+      if (r.result === 'proposed') return s + 'the new location is ' + (d ? d.slice(2, -1) + ' away' : 'far') + ': sent to the admin for review. The NAP stays at its old location until an admin accepts it.';
+      if (r.result === 'unchanged') return s + 'less than 3 m from the saved location: nothing changed.';
+      return s + 'saved.';
+    }
+
+    // ----- stencil -----
+    var STENCIL_RE = MASTER_STENCIL;
+    function stencilError(s) {
+      var t = normStencil(s);
+      if (!t) return 'Enter the stencil.';
+      if (t.length > 120) return 'The stencil is too long.';
+      if (!STENCIL_RE.test(t)) return 'The stencil must look like QCY003 LP114 NP6-7-8.';
+      return '';
+    }
+    // box = {stencil, np_numbers}; text = the new stencil as typed. {ok, stencil, same, message, added, removed}
+    function renameCheck(box, text) {
+      var t = normStencil(text), m = stencilError(t), cur = (box && box.np_numbers || []).map(Number);
+      if (m) return { ok: false, stencil: t, same: false, message: m, added: [], removed: [] };
+      if (box && t === box.stencil) return { ok: false, stencil: t, same: true, message: 'This is already the stencil.', added: [], removed: [] };
+      var next = stencilNps(t) || [];
+      var added = next.filter(function (n) { return cur.indexOf(n) < 0; }), removed = cur.filter(function (n) { return next.indexOf(n) < 0; });
+      var note = (added.length ? 'Adds NP' + added.join(', NP') + '. ' : '') + (removed.length ? 'Removes NP' + removed.join(', NP') + ' (only possible when it has no readings, remarks or audits). ' : '');
+      return { ok: true, stencil: t, same: false, message: note.trim(), added: added, removed: removed };
+    }
+    function confirmOk(typed, target) { return !!target && normStencil(typed) === normStencil(target); }
+    function n0(v) { return Number(v || 0); }
+    // lines of plain text for the merge preview (the dashboard escapes them)
+    function mergeLines(pv) {
+      if (!pv || !pv.from || !pv.to) return [];
+      var c = pv.counts || {}, out = [];
+      out.push('Moves from ' + pv.from.stencil + ' into ' + pv.to.stencil + ': ' + n0(c.audits) + ' audit' + (n0(c.audits) === 1 ? '' : 's') + ' (' + n0(c.photos) + ' photo' + (n0(c.photos) === 1 ? '' : 's') + '), ' +
+        n0(c.ports_checked) + ' port reading' + (n0(c.ports_checked) === 1 ? '' : 's') + ', ' + n0(c.remarks) + ' remark' + (n0(c.remarks) === 1 ? '' : 's') + ', ' +
+        (n0(c.dispatch_open) + n0(c.dispatch_other)) + ' dispatch item' + (n0(c.dispatch_open) + n0(c.dispatch_other) === 1 ? '' : 's') + ', ' + n0(c.geo_history) + ' location change' + (n0(c.geo_history) === 1 ? '' : 's') + '.');
+      if (n0(c.dispatch_open) && n0(c.target_dispatch_open)) out.push('Both NAPs have an open dispatch item: the target\'s is kept, the other one is cancelled.');
+      if (pv.needs_np_union) out.push('NAP numbers: ' + pv.to.stencil + ' will have NP' + (pv.np_union || []).join(', NP') + ' (' + n0(pv.total_ports_after) + ' ports).' +
+        (pv.suggested_stencil ? ' You can rename it to ' + pv.suggested_stencil + ' afterwards.' : ''));
+      var cf = pv.conflicts || [];
+      if (cf.length) out.push(cf.length + ' port' + (cf.length === 1 ? ' is' : 's are') + ' on both NAPs: the newer reading wins (' +
+        cf.slice(0, 6).map(function (x) { return 'NP' + x.np + ' P' + x.port + ' from ' + (x.winner === 'from' ? pv.from.stencil : pv.to.stencil); }).join(', ') + (cf.length > 6 ? ', …' : '') + ').');
+      var ca = pv.coords_after || {};
+      out.push('Location after the merge: ' + (ca.lat == null ? 'none' : Number(ca.lat).toFixed(6) + ', ' + Number(ca.lng).toFixed(6)) + ' (from ' + (pv.coords_from === 'from' ? pv.from.stencil : pv.to.stencil) + ').');
+      out.push(pv.from.stencil + ' is then deactivated ("Merged into ' + pv.to.stencil + '") and keeps its stencil for the history.');
+      return out;
+    }
+    var BLOCKED = { same_box: 'Pick two different NAPs.', target_inactive: 'The target NAP is deactivated: merge into an active NAP.', source_already_merged: 'This NAP was already merged into another NAP.' };
+    function mergeBlocked(pv) { return ((pv && pv.blocked) || []).map(function (k) { return BLOCKED[k] || k; }); }
+    // errors the server sends, in one sentence for the screens (NAP_ codes stripped elsewhere)
+    return { REMARK_MAX: REMARK_MAX, REASON_MIN: REASON_MIN, REASON_MAX: REASON_MAX, QC: QC, BANDS: BANDS,
+             remarkNorm: remarkNorm, remarkError: remarkError, remarkMap: remarkMap, remarkDiff: remarkDiff, remarkPayload: remarkPayload, remarkText: remarkText,
+             inQC: inQC, parseCoords: parseCoords, coordsError: coordsError, accuracyError: accuracyError, locReasonError: locReasonError, locValidate: locValidate,
+             locPayload: locPayload, locBand: locBand, fmtDistance: fmtDistance, locResultText: locResultText,
+             stencilError: stencilError, renameCheck: renameCheck, confirmOk: confirmOk, mergeLines: mergeLines, mergeBlocked: mergeBlocked,
+             newClientId: function () { return DESK.newClientId(); } };
+  })();
+  // ======================================================================================================================
 
   // ---------- .xlsx exports off the page (2026-10-20.4): a Web Worker builds the workbook, page by page ----------
   // The NAP Master and Audits .xlsx exports used to build the whole workbook on the page (2-12 s frozen tab, 0.5-0.7 GB at the peak). Now
@@ -935,6 +1103,7 @@
   }
 
   return {
+    p12: P12,
     desk: DESK, AUDIT_KINDS: AUDIT_KINDS, AUDIT_KIND_LABEL: AUDIT_KIND_LABEL, AUDIT_PAGE: AUDIT_PAGE, AUDIT_EXPORT_PAGE: AUDIT_EXPORT_PAGE, AUDIT_EXPORT_MAX: AUDIT_EXPORT_MAX,
     AUDIT_STREET_MIN: AUDIT_STREET_MIN, AUDIT_MAXLEN: AUDIT_MAXLEN, auditFilterDefaults: auditFilterDefaults, auditFilterParams: auditFilterParams, auditNewFilters: auditNewFilters,
     auditFilterSummary: auditFilterSummary, auditCursor: auditCursor, auditExportName: auditExportName, fmtManila: fmtManila, AUDIT_EXPORT_COLS: AUDIT_EXPORT_COLS,
@@ -947,6 +1116,7 @@
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,
     parseStencil: parseStencil, boxStatus: boxStatus, haversineM: haversineM, nearest: nearest, validateAudit: validateAudit, gpsFlag: gpsFlag,
     normStencil: normStencil, parseDueDate: parseDueDate, manilaToday: manilaToday, isPastDue: isPastDue, parseDispatchRows: parseDispatchRows, parseDispatchText: parseDispatchText, geoDecision: geoDecision, within: within, parseLatLng: parseLatLng,
+    RANGE_PRESETS: RANGE_PRESETS, RANGE_MIN: RANGE_MIN, RANGE_MAX: RANGE_MAX, RANGE_DEFAULT: RANGE_DEFAULT, RANGE_PAGE: RANGE_PAGE, PHONE_RANGES: PHONE_RANGES, clampRange: clampRange, fmtRange: fmtRange, rangeCapped: rangeCapped, rangeCapMsg: rangeCapMsg, phoneRange: phoneRange, nextPhoneRange: nextPhoneRange,
     boxTotal: boxTotal, jobNapQuery: jobNapQuery, matchJobBox: matchJobBox, fullNapOutcome: fullNapOutcome, validateDeactRecord: validateDeactRecord, DASH_TABS: DASH_TABS, NO_ACCESS_MSG: NO_ACCESS_MSG, dashAccess: dashAccess,
     FIELD_NO_ACCESS_MSG: FIELD_NO_ACCESS_MSG, SIGNIN_ERR_MSG: SIGNIN_ERR_MSG, signInEmails: signInEmails, isFieldEmail: isFieldEmail, teamOfEmail: teamOfEmail,
     handoffToken: handoffToken, checkHandoff: checkHandoff, handoffMsLeft: handoffMsLeft,

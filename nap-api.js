@@ -382,6 +382,50 @@
   var createBase = create;
   create = function (client) { var api = createBase(client), d = deskApi(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
   // ======================================================================================================================
+  // ======================================================================================================================
+  // ---------- phase 12: REMARKS per port, LOCATION edit, STENCIL rename + merge (nap-21). Self-contained block: adds methods to every api ----------
+  function p12Api(client) {
+    var nap = function () { return client.schema('nap'); };
+    function missingFn(err) { return /PGRST202|could not find the function|does not exist|42883/i.test(String((err && err.message) || '') + ' ' + String((err && err.code) || '')) && !/^NAP_/.test(String((err && err.message) || '')); }
+    return {
+      // true when the server lets this session edit NAP coordinates (nap.my_location_access). A database without nap-21 = false (button hidden).
+      myLocationAccess: function () {
+        return Promise.resolve(nap().rpc('my_location_access')).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) return false; throw fail(r.error, r.status); }
+          return !!(r && r.data === true);
+        });
+      },
+      // the remarks of one active box: [{np, port, remark, remark_by, remark_at}] (board + NAP technicians). Without nap-21: [] and .missing = true.
+      portRemarks: function (boxId) {
+        return Promise.resolve(nap().rpc('port_remarks', { p_box_id: boxId })).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) { var none = []; none.missing = true; return none; } throw fail(r.error, r.status); }
+          return (r && r.data) || [];
+        });
+      },
+      // payload = NapCore.p12.remarkPayload(...) -> {ok, changed, unchanged, items: [{np, port, remark, old_remark, remark_by, remark_at}], replay}
+      setPortRemark: function (payload) { return unwrap(nap().rpc('set_port_remark', { p_payload: payload })); },
+      // payload = NapCore.p12.locPayload(...) -> {ok, result: applied | moved | proposed | unchanged, needs_review, distance_m, lat, lng, history_id, replay}
+      setBoxLocation: function (payload) { return unwrap(nap().rpc('set_box_location', { p_payload: payload })); },
+      // {client_id, box_id, new_stencil, reason} -> {ok, changed, old_stencil, new_stencil, np_numbers, replay}
+      renameBox: function (payload) { return unwrap(nap().rpc('rename_box', { p_payload: payload })); },
+      // read only: what merging box `from` INTO box `to` would move (counts, NP union, conflicts, coordinates, blocked)
+      mergeBoxesPreview: function (fromId, toId) { return unwrap(nap().rpc('merge_boxes_preview', { p_from: fromId, p_to: toId })); },
+      // admin / super: {client_id, box_from, box_to, reason, confirm: true, allow_np_union} -> {ok, moved: {...}, np_numbers, coords_from, replay}
+      mergeBoxes: function (payload) { return unwrap(nap().rpc('merge_boxes', { p_payload: payload })); },
+      // board: which of these stencils were renamed / merged away -> [{old_stencil, box_id, current_stencil, action, at, active}]; without nap-21: []
+      renamedStencils: function (stencils) {
+        var list = (stencils || []).slice(0, 5000);
+        if (!list.length) return Promise.resolve([]);
+        return Promise.resolve(nap().rpc('renamed_stencils', { p_stencils: list })).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) return []; throw fail(r.error, r.status); }
+          return (r && r.data) || [];
+        });
+      }
+    };
+  }
+  var createBase12 = create;
+  create = function (client) { var api = createBase12(client), d = p12Api(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
+  // ======================================================================================================================
 
   return { create: create, BUCKET: BUCKET, isAuthError: isAuthError, signInFirst: signInFirst, guardAuth: guardAuth };
 });
