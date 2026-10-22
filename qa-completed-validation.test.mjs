@@ -53,3 +53,10 @@ test('returnJobToTeam: empty remarks → no RPC; RPC error → toast, row untouc
   assert.equal(job.status, 'in-progress'); assert.equal(job.qa_return_remarks, 'no modem photo'); assert.equal(job.qa_returned_by, 'QA01'); assert.equal(job.qa_status, 'RETURNED TO TEAM');
   assert.match(toasts.at(-1), /JO returned to AHBA_TEST/);
 });
+
+test('QA Validation modal: the photo grid comes BEFORE the collapsible subscriber block, and the dialog scrolls', () => {
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const grid = html.indexOf('id="photoGrid"'), info = html.indexOf('id="photoSubInfo"'), details = html.indexOf('<details class="qa-sub-details"');
+  assert.ok(grid > 0 && info > grid && details > grid && details < info, 'photos first, then the details block');
+  assert.ok(/#photoModal\{max-height:92vh;overflow:auto\}/.test(html), 'the modal itself scrolls');
+});
