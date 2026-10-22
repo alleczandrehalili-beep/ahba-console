@@ -54,6 +54,13 @@ test('returnJobToTeam: empty remarks → no RPC; RPC error → toast, row untouc
   assert.match(toasts.at(-1), /JO returned to AHBA_TEST/);
 });
 
+test('QA Validation modal: the photo grid comes BEFORE the collapsible subscriber block, and the dialog scrolls', () => {
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  const grid = html.indexOf('id="photoGrid"'), info = html.indexOf('id="photoSubInfo"'), details = html.indexOf('<details class="qa-sub-details"');
+  assert.ok(grid > 0 && info > grid && details > grid && details < info, 'photos first, then the details block');
+  assert.ok(/#photoModal\{max-height:92vh;overflow:auto\}/.test(html), 'the modal itself scrolls');
+});
+
 test('Gate B (Phase 1 branch): an open return the team already re-submitted shows FOR QA CHECK, never Returned to team, and no Validate', () => {
   const c = ctx({ qaReturnSubmitted: j => !!j.qa_return_submitted_at }); vm.runInContext(slice('function completedValidationCell(', '\n}\n') + '\n}', c);
   const html = c.completedValidationCell({ id: 'ZZ-6', status: 'completed', qa_returned_at: '2026-10-22T01:00:00Z', qa_return_resolved_at: null, qa_return_submitted_at: '2026-10-22T02:00:00Z' }, true);

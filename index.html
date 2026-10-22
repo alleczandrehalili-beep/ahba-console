@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-10-22.5" />
+  <link rel="stylesheet" href="styles.css?v=2026-10-22.6" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -58,6 +58,7 @@
     .board-column.drop-hover{outline:2px dashed var(--green,#18a57b);outline-offset:-2px;background:#e7f4ed}
     .board-column[data-drop="pending"] .column-head strong:after{content:" ⤺";color:#9aa6a2;font-weight:400}
     #jobDetailModal.modal{width:min(720px,calc(100% - 30px))}#jobDetailModal{max-height:92vh;overflow:auto}
+    #photoModal{max-height:92vh;overflow:auto}#photoModal .photo-grid{max-height:48vh}
     #jdHistory{white-space:pre-wrap;font:11px/1.6 'DM Sans',sans-serif;color:#566b66;background:#f8f9f7;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:170px;overflow:auto;margin:6px 0}
     /* Dashboard login gate */
     .dash-gate{position:fixed;inset:0;z-index:1000;background:linear-gradient(150deg,#071f1d,#0c3a34);display:flex;align-items:center;justify-content:center;padding:20px}
@@ -789,8 +790,8 @@
 
   <dialog id="photoModal" class="modal">
     <div class="modal-head"><div><span class="eyebrow">PROOF PHOTOS</span><h2 id="photoTitle">Job photos</h2><p id="photoSub"></p></div><button type="button" class="icon-btn close-modal"><i data-icon="close"></i></button></div>
-    <div id="photoSubInfo"></div>
     <div class="photo-grid" id="photoGrid"></div>
+    <details class="qa-sub-details" open><summary>Subscriber — full info</summary><div id="photoSubInfo"></div></details>
     <div class="modal-actions"><button type="button" class="secondary-btn close-modal">Close</button><button type="button" class="secondary-btn" id="returnBtn" style="display:none">↩ Return JO (backjob)</button><button type="button" class="primary-btn" id="validateBtn">Mark as validated</button></div>
   </dialog>
 
@@ -828,19 +829,19 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-10-22.5"></script>
-  <script src="qa-photo-corrections.js?v=2026-10-22.5"></script>
-  <script src="hr-core.js?v=2026-10-22.5"></script>
-  <script src="hr-api.js?v=2026-10-22.5"></script>
-  <script src="hr-attendance-import.js?v=2026-10-22.5"></script>
-  <script src="hr-sheets.js?v=2026-10-22.5"></script>
-  <script src="console-hr.js?v=2026-10-22.5"></script>
-  <script src="hr-entry.js?v=2026-10-22.5"></script>
-  <script src="app.js?v=2026-10-22.5"></script>
+  <script src="qa-wims-export.js?v=2026-10-22.6"></script>
+  <script src="qa-photo-corrections.js?v=2026-10-22.6"></script>
+  <script src="hr-core.js?v=2026-10-22.6"></script>
+  <script src="hr-api.js?v=2026-10-22.6"></script>
+  <script src="hr-attendance-import.js?v=2026-10-22.6"></script>
+  <script src="hr-sheets.js?v=2026-10-22.6"></script>
+  <script src="console-hr.js?v=2026-10-22.6"></script>
+  <script src="hr-entry.js?v=2026-10-22.6"></script>
+  <script src="app.js?v=2026-10-22.6"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-10-22.5"></script>
+  <script src="ahba-cloud.js?v=2026-10-22.6"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-10-22.5"></script><script src="qa-subscriber-info.js?v=2026-10-22.5"></script><script src="qa-api.js?v=2026-10-22.5"></script><script src="console-qa.js?v=2026-10-22.5"></script><script src="console-qa-findings.js?v=2026-10-22.5"></script>
-  <script src="fms-core.js?v=2026-10-22.5"></script><script src="fms-api.js?v=2026-10-22.5"></script><script src="console-fms.js?v=2026-10-22.5"></script>
+  <script src="qa-core.js?v=2026-10-22.6"></script><script src="qa-subscriber-info.js?v=2026-10-22.6"></script><script src="qa-api.js?v=2026-10-22.6"></script><script src="console-qa.js?v=2026-10-22.6"></script><script src="console-qa-findings.js?v=2026-10-22.6"></script>
+  <script src="fms-core.js?v=2026-10-22.6"></script><script src="fms-api.js?v=2026-10-22.6"></script><script src="console-fms.js?v=2026-10-22.6"></script>
 </body>
 </html>
