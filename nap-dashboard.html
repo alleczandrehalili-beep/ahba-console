@@ -238,6 +238,36 @@ tr.inb td{background:var(--bg)}
 .p12-red .p12-e{grid-column:2;font-size:11.5px;color:var(--full)}
 .port.p12-hasrm{outline:2px dotted var(--accent);outline-offset:-2px}
 .p12-geo{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere;font-family:var(--sans);font-weight:400}
+/* ---------- phase 14: NAP stages (chips, legend, map letters), PDS ports, the Ports tab (self-contained; colours from NapCore.p14) ---------- */
+.p14-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:1px 8px 1px 2px;border-radius:99px;color:#fff;white-space:nowrap;margin-right:4px;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.p14-chip i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;background:rgba(255,255,255,.92);color:#111;font-size:10.5px;font-weight:700}
+.p14-sq{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:3px;margin-right:5px;vertical-align:-2px;color:#fff;font-size:9px;font-weight:700;font-style:normal}
+.p14-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);margin-top:4px}
+.p14-legend b{color:var(--ink);font-weight:600}
+/* merged 2026-10-24.3: the status + stage legends stay reachable on the expanded map (compact, shown with the controls, hidden with them) */
+body.mapx .bcard-map>.legend,body.mapx .bcard-map>.p14-legend{display:flex;flex:0 1 auto;min-height:0;font-size:11px;gap:2px 10px;margin-top:4px;max-height:12%;overflow:auto}
+body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
+.p14-letter{pointer-events:none!important;display:flex;align-items:center;justify-content:center;width:16px!important;height:16px!important;margin:-8px 0 0 -8px!important;border-radius:3px;color:#fff;font:700 10px/1 var(--sans);box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px rgba(0,0,0,.45)}
+.p14-city{color:var(--muted);font-size:12.5px;margin:-4px 0 8px;overflow-wrap:anywhere}
+.p14-st{margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.p14-st .p14-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;min-width:0}
+.p14-st .meta{overflow-wrap:anywhere}
+.p14-pan{border:1px solid var(--accent);border-radius:8px;padding:8px;background:var(--bg);display:flex;flex-direction:column;gap:6px;min-width:0}
+.p14-pan label{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);min-width:0}
+.p14-pan input[type=text],.p14-pan select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
+.p14-pan input.p14-bad{border-color:var(--full)}
+.p14-msg{font-size:12px;overflow-wrap:anywhere}
+.p14-msg.err{color:var(--full)}
+.port.p14-pds{outline:2px solid var(--full);outline-offset:-2px;position:relative}
+.port.p14-pds::after{content:'PDS';position:absolute;top:-6px;right:-3px;background:var(--full);color:#fff;font:700 8px/1 var(--sans);padding:2px 3px;border-radius:3px}
+.p14-pdsl{margin-top:6px;font-size:12px;display:flex;flex-direction:column;gap:4px}
+.p14-pdsl .p14-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.p14-tag{font-size:10.5px;font-weight:700;color:#fff;background:var(--full);border-radius:4px;padding:1px 5px;letter-spacing:.02em}
+.p14-ports td{font-size:12.5px;white-space:nowrap}
+.p14-ports td.rm{white-space:normal;min-width:10em;overflow-wrap:anywhere}
+.p14-ports td.mono{font-family:var(--mono)}
+#v-ports .filters label{flex:1 1 150px}
+#v-ports .filters .ckl{flex-direction:row;align-items:center;gap:6px;flex:0 1 auto;font-size:12.5px;color:var(--ink)}
 </style>
 </head>
 <body>
@@ -268,6 +298,7 @@ tr.inb td{background:var(--bg)}
           <button class="tab" role="tab" id="tb-audits" aria-selected="false">Audits</button>
           <button class="tab" role="tab" id="tb-dispatch" aria-selected="false">Dispatch</button>
           <button class="tab" role="tab" id="tb-master" aria-selected="false">NAP Master</button>
+          <button class="tab" role="tab" id="tb-ports" aria-selected="false" hidden>Ports</button>
           <button class="tab" role="tab" id="tb-pilot" aria-selected="false" hidden>Pilot</button>
         </div>
         <button class="btn sm" id="exportCsv">Export CSV</button>
@@ -283,6 +314,7 @@ tr.inb td{background:var(--bg)}
           <label>District<select id="fDist"></select></label>
           <label>Barangay<select id="fBrgy"></select></label>
           <label>Dwelling<select id="fDwell"></select></label>
+          <label id="fStageL" hidden>Stage<select id="fStage" aria-label="Stage filter"></select></label>
         </div>
         <p class="scope" id="cityLine"></p>
         <details class="brgys" id="brgyBox"><summary id="brgySum">All barangays</summary>
@@ -471,6 +503,29 @@ tr.inb td{background:var(--bg)}
         <div id="mmResult"></div>
       </div>
     </section>
+    <!-- ---------- phase 14: the Ports tab (board roles: dispatcher / admin / super; the server answers NAP_FORBIDDEN to anyone else) ---------- -->
+    <section id="v-ports" hidden>
+      <div class="card" id="p14PdsCard"><h2>PDS queue</h2>
+        <p class="hint" style="margin:0 0 8px">Ports marked <b>PDS</b> (IBAS account status PDS: pending / permanent disconnection). A PDS port is never counted free. Check the account in IBAS / Blacklisting first; then an admin presses <b>Validate and release</b> (opens the Edit ports form on the Board with the port set to Released; the PDS mark is cleared after that save) or <b>Not PDS</b> (clears the mark, the port keeps its status).</p>
+        <div class="tablewrap"><table class="p14-ports"><thead><tr><th>NAP</th><th>Barangay</th><th>NP</th><th>Port</th><th>Status</th><th>Account</th><th>Marked</th><th>Note</th><th></th></tr></thead><tbody id="p14QRows"></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="p14QMore" type="button" hidden>Load more</button><button class="btn sm" id="p14QReload" type="button">Reload</button><span class="meta" id="p14QCount" role="status" aria-live="polite"></span></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h2>Ports</h2>
+        <div class="filters" id="p14Filters">
+          <label>District<select id="p14Dist" aria-label="District"></select></label>
+          <label>Barangay<select id="p14Brgy" aria-label="Barangay"></select></label>
+          <label>Stage<select id="p14Stage" aria-label="Stage"></select></label>
+          <label>Port status<select id="p14Status" aria-label="Port status"></select></label>
+          <label>NAP stencil or 13-digit account<input type="search" id="p14Q" maxlength="80" placeholder="contains… or 1878702…" autocomplete="off" enterkeyhint="search" aria-label="NAP stencil or account number"></label>
+          <label class="ckl"><input type="checkbox" id="p14Pds"> PDS only</label>
+        </div>
+        <div class="row"><button class="btn sm" id="p14Clear" type="button">Clear filters</button><span class="meta" id="p14Sum" role="status" aria-live="polite"></span></div>
+        <p class="meta err" id="p14Err" role="alert" hidden style="margin:8px 0 0"></p>
+        <div class="tablewrap" style="margin-top:8px"><table class="p14-ports"><thead><tr><th>NAP</th><th>Barangay</th><th>NP</th><th>Port</th><th>Status</th><th>Account</th><th>PDS</th><th>Remark</th><th>Last checked</th><th>Stage</th></tr></thead><tbody id="p14Rows"></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="p14More" type="button" hidden>Load more</button><span class="meta" id="p14Count" role="status" aria-live="polite"></span></div>
+        <p class="hint">One row per port that was ever read (or has a remark). Ports never checked have no row yet. Account numbers are shown to NAP dispatchers and admins only.</p>
+      </div>
+    </section>
   </div>
 </div>
 <div class="bkbar" id="bkBar" hidden role="region" aria-label="Basket">
@@ -482,11 +537,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-24.1"></script>
-<script src="nap-api.js?v=2026-10-24.1"></script>
+<script src="nap-core.js?v=2026-10-24.3"></script>
+<script src="nap-api.js?v=2026-10-24.3"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-24.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-24.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -546,6 +601,7 @@ function applyAccess() {
   $('blSelRow').hidden = !ACC.canBasket; $('blCkH').hidden = !ACC.canBasket;
   if (!ACC.canBasket) { $('bkBar').hidden = true; document.body.classList.remove('has-bk'); }
   document.body.classList.toggle('view-only', ACC.viewOnly);
+  p14ApplyAccess();   // phase 14: the Ports tab (board roles)
 }
 
 async function boot() {
@@ -568,6 +624,7 @@ async function boot() {
     state.role = ACC.role;
     deskInit();   // phase 11: may this session desk-update ports? (async; the NAP detail shows "Edit ports" when yes)
     p12Init();    // phase 12: may this session edit NAP locations? (async; the NAP detail shows "Edit location" when yes)
+    p14Init();    // phase 14: stage / PDS / remark rights + the stage legend, filter and summary
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
@@ -820,11 +877,11 @@ function mapNavInit() {
   if (keep && !$('v-board').hidden) mapExpand(true, { restore: true });
 }
 function markerStyle(b) {
-  var sel = isSel(b), dim = !!(state.filter && state.filter !== b.kind), unv = b.kind === 'unverified';
+  var sel = isSel(b), dim = p14Dim(b), unv = b.kind === 'unverified' && !b.stage;   // phase 14: the kind and the stage filter dim
   var hl = !!radIds[b.box_id], out = !!state.sub && !hl;   // inside / outside the subscriber radius
-  return { radius: sel || hl ? 9 : unv ? 3 : 5, fillColor: KCOL[b.kind], color: sel ? '#111' : hl ? '#7a2fbf' : '#fff', weight: sel || hl ? 3 : 1, fillOpacity: dim ? .12 : out ? .35 : unv ? .55 : .95, opacity: dim ? .3 : 1, interactive: !dim };
+  return { radius: sel || hl ? 9 : unv ? 3 : b.stage ? 6 : 5, fillColor: p14Fill(b) || KCOL[b.kind], color: sel ? '#111' : hl ? '#7a2fbf' : '#fff', weight: sel || hl ? 3 : 1, fillOpacity: dim ? .12 : out ? .35 : unv ? .55 : .95, opacity: dim ? .3 : 1, interactive: !dim };
 }
-function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' free' : ''); }
+function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + p14Tip(b) + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' free' : ''); }
 function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
 function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
 function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
@@ -855,7 +912,7 @@ function drawMap() {
     if (vis !== m._vis) { if (vis) boxLayer.addLayer(m); else boxLayer.removeLayer(m); m._vis = vis; }
     if (!vis) return;
     if (inBrgy(b)) pts.push(m.getLatLng());
-    var sig = (state.filter && state.filter !== b.kind ? 'd' : 'n') + (isSel(b) ? 's' : '') + (radIds[b.box_id] ? 'h' : state.sub ? 'o' : '');
+    var sig = (p14Dim(b) ? 'd' : 'n') + (b.stage || '') + (isSel(b) ? 's' : '') + (radIds[b.box_id] ? 'h' : state.sub ? 'o' : '');
     if (sig !== m._sig) { var st = markerStyle(b); m.options.interactive = st.interactive; m.setStyle(st); if (sig.indexOf('s') > 0 || sig.indexOf('h') > 0) m.bringToFront(); m._sig = sig; }
   });
   lineLayer.clearLayers(); pinLayer.clearLayers();
@@ -927,7 +984,7 @@ async function drawDetail(refresh) {
     portsCache = { box_id: b.box_id, ports: ports };
   }
   var nps = {}; ports.forEach(function (p) { (nps[p.np] = nps[p.np] || []).push(p); });
-  el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></div><div class="nps">' +
+  el.innerHTML = '<div class="row" style="justify-content:space-between"><div><div class="stencil">' + esc(b.stencil) + '</div><div class="meta">' + esc(b.street || '') + ' · ' + esc(b.dwelling || '') + ' · Converge: ' + (b.converge_available == null ? '?' : b.converge_available) + ' available</div></div><span>' + p14Chip(b) + '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind) + '">' + LBL[b.kind] + '</span></span></div><div class="nps">' +
     Object.keys(nps).map(function (np) {
       var list = nps[np], tags = list.filter(function (p) { return (ACC.canTagAcct || deskOn()) && p.tag_acct; }).map(function (p) { return '<div class="meta">P' + p.port + ' has an acct label <b style="font-family:var(--mono);color:var(--ink)">' + esc(p.tag_acct) + '</b></div>'; }).join('');
       var untagged = list.filter(function (p) { return p.status === S.AWO; }).map(function (p) { return 'P' + p.port; });
@@ -940,6 +997,7 @@ async function drawDetail(refresh) {
     }).join('') + '</div>' + (ACC.canHistory ? '<div class="hist" id="hist"><h2>Last 5 audits</h2><div class="meta">Loading…</div></div>' : '');
   deskAfterDetail(b, ports);
   p12AfterDetail(b);   // phase 12: stencil / location tools + port remarks
+  p14AfterDetail(b, ports);   // phase 14: stage row + Set / Move stage, PDS marks of the ports
   if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -1027,7 +1085,7 @@ function drawRadius() {
     return '<li><button class="item ' + (isSel(b) ? 'sel' : '') + '" data-id="' + esc(b.box_id) + '"><span class="rank">' + (i + 1) + '</span><span><span class="stencil">' + esc(b.stencil) + '</span><br><span class="meta">' + esc(b.street || '') + ' · ' + age + '</span></span><span style="text-align:right">' + pill + '<br><span class="meta">' + Math.round(b.distance_m) + ' m</span></span></button></li>';
   }).join('') : '<li class="meta">No NAP within ' + C.fmtRange(state.radius) + '. Increase the radius or click another location.</li>';
 }
-function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawBoardList(); drawDetail(refresh); }
+function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawBoardList(); drawDetail(refresh); p14Board(); }
 function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
 
 // Subscriber pin: set by map click, a pasted lat,lng, or an address search. Never stored. Its coordinates go to our own database only
@@ -1045,6 +1103,7 @@ async function fetchNear(withRadius) {
     if (tok !== nearTok || state.sub !== s) return;
     state.near = parts[0] || []; state.nearest = parts[1] || [];
     state.near.forEach(function (b) { remember(b); }); state.nearest.forEach(function (b) { remember(b, true); });
+    p14FillStages(state.near.concat(state.nearest));   // phase 14: boxes_near / nearest_installable carry no stage
     markersDirty = true; drawBoard();
   } catch (e) { if (tok === nearTok) { $('radH').textContent = 'Cannot load the NAPs near the pin: ' + msgOf(e); } }
 }
@@ -1158,7 +1217,8 @@ $('findHits').addEventListener('click', async function (ev) {
   state.sel = state.known[b.box_id] || b; drawBoard(); focusSel();
 });
 function tab(name) {
-  if (ACC.tabs.indexOf(name) < 0) name = 'board';   // a view-only account never opens another tab
+  if (name === 'ports' ? !p14PortsOn() : ACC.tabs.indexOf(name) < 0) name = 'board';   // a view-only account never opens another tab (phase 14: Ports = board roles)
+  p14Tab(name);
   ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
   if (name !== 'board' && mapx.on) mapExpand(false);
@@ -1815,16 +1875,16 @@ async function loadAging(reset) {
   if (tok !== ag.tok) return;
   ag.busy = false; ag.rows = ag.rows.concat(rows); ag.offset += rows.length;
   rows.forEach(function (b) { remember(b); });
-  var row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) : null;
+  var row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) + p14AgingExtra(ag.brgy) : null;
   ag.done = !rows.length || (expected != null ? ag.rows.length >= expected : rows.length < AG_PAGE);
   drawAging();
 }
 function drawAging() {
-  var all = ag.rows, row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) : all.length;
+  var all = ag.rows, row = summaryRow(ag.brgy), expected = row ? Number(row.stale || 0) + Number(row.unverified || 0) + p14AgingExtra(ag.brgy) : all.length;
   $('agHint').textContent = 'Stale and not-yet-visited NAPs of ' + (ag.brgy || 'the barangay selected on the Board') + ', oldest first (all dwellings). Choose another barangay on the Board. ' +
     'Ticked NAPs go to the basket; the box in the header ticks the ' + fmtN(all.length) + ' rows loaded so far' + (ag.done ? '' : ' (Show more loads ' + AG_PAGE + ' more)') + '.';
   $('agRows').innerHTML = all.map(function (b) {
-    return '<tr' + (inBk(b.box_id) ? ' class="inb"' : '') + '><td class="ck"><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (inBk(b.box_id) ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') + '</td><td><span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
+    return '<tr' + (inBk(b.box_id) ? ' class="inb"' : '') + '><td class="ck"><input type="checkbox" data-ag="' + esc(b.box_id) + '" aria-label="Add ' + esc(b.stencil) + ' to the basket"' + (inBk(b.box_id) ? ' checked' : '') + '></td><td class="stencil">' + esc(b.stencil) + '</td><td>' + esc(b.barangay || '') + '</td><td>' + esc(b.street || '') + (b.lat == null ? ' <span class="meta">(no coordinates)</span>' : '') + '</td><td>' + p14Chip(b) + '<span class="pill ' + (b.kind === 'stale' ? 'p-stale' : 'p-unv') + '">' + esc(LBL[b.kind]) + '</span></td><td>' + (b.kind === 'stale' ? esc(b.age_days) + ' days' : 'Not yet visited') + '</td></tr>';
   }).join('') || '<tr><td colspan="6" class="meta">' + (ag.busy ? 'Loading…' : ag.err ? 'Cannot load: ' + esc(ag.err) : 'No stale or unverified NAPs in ' + esc(ag.brgy || 'this barangay') + '.') + '</td></tr>';
   $('agCount').textContent = (ag.busy && all.length ? 'Loading… ' : '') + fmtN(all.length) + ' of ' + fmtN(Math.max(expected, all.length)) + (ag.err && all.length ? ' · cannot load more: ' + ag.err : '');
   $('agMore').hidden = ag.done && !ag.err;
@@ -1916,7 +1976,7 @@ async function mxRun(kind) {
     var n, off = 0, name;
     if (kind === 'csv') {
       mxMsg('Exporting ' + label + '…');
-      var rows = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, cancelled: cancelled, onPage: function (k) { if (!job.cancel) mxMsg('Exporting ' + label + '… ' + fmtN(k) + ' rows'); } });
+      var rows = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, withStages: true, cancelled: cancelled, onPage: function (k) { if (!job.cancel) mxMsg('Exporting ' + label + '… ' + fmtN(k) + ' rows'); } });
       mxMsg('Building the file (' + fmtN(rows.length) + ' rows)…');
       await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
       if (job.cancel) throw CANCEL();
@@ -1959,7 +2019,7 @@ async function mxXlsx(scope, label, inc, job) {
     };
     mxMsg('Exporting ' + label + '…');
     try {
-      var n = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, cancelled: function () { return job.cancel; },
+      var n = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, withStages: true, cancelled: function () { return job.cancel; },
         onPage: function (k) { fetched = k; say(); },
         onRows: async function (rows) {
           if (!job.x) await openX(C.masterExportCols(rows));
@@ -2200,14 +2260,14 @@ $('bkBarRev').onclick = function () { goBasket(true); };
 $('bkBarAssign').onclick = function () { goBasket(false); };
 
 // --- Board list: the selected barangay's boxes in the current view (dwelling filter + the status box picked above), paged on screen ---
-function boardView() { return visibleBoxes().filter(function (b) { return !state.filter || b.kind === state.filter; }); }
+function boardView() { return visibleBoxes().filter(function (b) { return (!state.filter || b.kind === state.filter) && p14StageOk(b); }); }
 function ageText(b) { return b.kind === 'unverified' || b.age_days == null ? 'not yet visited' : b.age_days === 0 ? 'today' : b.age_days + ' days ago'; }
-function kindPill(b) { return '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind === 'inactive' ? 'full' : esc(b.kind)) + '">' + esc(LBL[b.kind] || (b.kind === 'inactive' ? 'Deactivated' : b.kind || '?')) + '</span>'; }
+function kindPill(b) { return p14Chip(b) + '<span class="pill p-' + (b.kind === 'installable' ? 'ok' : b.kind === 'unverified' ? 'unv' : b.kind === 'inactive' ? 'full' : esc(b.kind)) + '">' + esc(LBL[b.kind] || (b.kind === 'inactive' ? 'Deactivated' : b.kind || '?')) + '</span>'; }
 function drawBoardList() {
-  var view = boardView(), n = view.length, key = state.brgy + '|' + state.bf.dwelling + '|' + (state.filter || '');
+  var view = boardView(), n = view.length, key = state.brgy + '|' + state.bf.dwelling + '|' + (state.filter || '') + '|' + p14StageKey();
   if (key !== bl.key) { bl.key = key; bl.shown = BL_PAGE; }
   var inN = 0; view.forEach(function (b) { if (inBk(b.box_id)) inN++; });
-  var what = (state.filter ? LBL[state.filter] + ' only' : 'all statuses') + (state.bf.dwelling ? ', ' + state.bf.dwelling + ' only' : '');
+  var what = (state.filter ? LBL[state.filter] + ' only' : 'all statuses') + (state.bf.dwelling ? ', ' + state.bf.dwelling + ' only' : '') + p14StageWhat();
   $('blH').textContent = state.brgy ? 'NAPs in ' + state.brgy + ' (' + fmtN(n) + ')' : 'NAPs';
   var ck = ACC.canBasket;
   $('blHint').textContent = !state.brgy ? 'Choose a barangay above.' : !n ? 'No NAPs in this view (' + what + ').' :
@@ -2552,6 +2612,7 @@ async function deskSave(slot) {
     deskRefresh(slot); toast(e.err); return;
   }
   e.busy = false;
+  p14AfterDesk(e, res);   // phase 14: "Validate and release" clears the PDS mark once the desk update saved
   var n = Number(res && res.changed || 0), dup = C.desk.duplicateText(res && res.duplicate_acct);
   if (DK.edit === e) DK.edit = null;
   DK.note = dup ? { box_id: e.box_id, html: '<b>Saved, but check:</b> ' + esc(dup) } : null;
@@ -2724,7 +2785,7 @@ async function p12LoadRemarks(b) {
   if (sec && state.sel && state.sel.box_id === b.box_id) { p12RmRender(sec, state.sel); p12Refocus(); }
 }
 function p12RmRender(sec, b) {
-  var r = P12.rmk, board = p12Board();
+  var r = P12.rmk, board = p12Board() || p14RemarkOk();   // phase 14: NAP technicians write remarks when port_remark_roles allows
   if (!r || r.rows == null) { sec.innerHTML = '<h2>Port remarks</h2><div class="meta">Loading…</div>'; return; }
   if (r.missing) { sec.innerHTML = board ? '<h2>Port remarks</h2><div class="meta">Port remarks need the phase 12 database update.</div>' : ''; return; }
   if (r.err) { sec.innerHTML = '<h2>Port remarks</h2><div class="meta err">Cannot load the remarks: ' + esc(r.err) + '</div>'; return; }
@@ -3196,6 +3257,505 @@ async function p12MasterWarn(prev, tok) {
     (rows.length > 20 ? '<div>… and ' + esc(rows.length - 20) + ' more</div>' : '');
   $('mmWarn').appendChild(d);
 }
+// =====================================================================================================================================
+
+// =====================================================================================================================================
+// ---------- phase 14: NAP STAGES, PDS ports, the Ports tab, technician remarks (nap-23). Self-contained block. ----------
+// Who (the server is the real guard; these only decide what to show), from nap.my_stage_access (null = a database without nap-23: nothing):
+//   stage: every Board reader SEES it (chip, legend, map letter, filter); Set stage (NAP without one) = board + NAP technicians (setting
+//          stage_set_roles); Move stage (change / clear) = admin / super, reason required.
+//   PDS:   mark = board + NAP technicians (pds_mark_roles) on a port with a 13-digit account; clear / "Validate and release" = admin / super.
+//   remarks: NAP technicians write them too when port_remark_roles allows (the phase 12 editor).
+//   Ports tab: dispatcher / admin / super (account numbers). Never written from a session handed over from the phone (view-only Board).
+// Labels / colours / letters / rules: NapCore.p14 (the single source). Everything from the server or the user is escaped. Saves keep one
+// client_id while their values stay the same and are locked while busy; answers for another box / an older request are dropped (tokens).
+var Q = C.p14;
+var P14S = { acc: null, r: Q.rights(null), tok: 0, stageF: '', sum: [], sumOk: false, sumTok: 0, legend: false, styled: false,
+             info: {}, infoTok: 0,      // box_id -> {stage, stage_by, stage_at, stage_note} (nap.box_stages), loaded for the NAP detail
+             flags: null,               // {box_id, rows, err, tok, missing}: the PDS marks of the selected box (nap.port_flags)
+             sd: null,                  // stage editor {box_id, stencil, mode, cur, next, reason, busy, cid, err}
+             pd: null,                  // PDS editor {box_id, key: 'np:port' or '', on, note, busy, cid, err}
+             release: null,             // {box_id, np, port}: "Validate and release" waiting for its desk update
+             pend: null,                // {box_id, np, port}: open the desk editor once this box's detail has its ports
+             letters: null, lettersHooked: false, fillTok: 0,
+             pt: { f: Q.portsDefaults(), rows: [], cursor: null, done: true, busy: false, seq: 0, err: '', init: false, timer: null },
+             q: { rows: [], cursor: null, done: true, busy: false, seq: 0, err: '', open: '', note: '', cid: null, saving: false } };
+function p14PortsOn() { return !HANDOFF && ACC.ok && (ACC.role === 'dispatcher' || ACC.role === 'admin' || ACC.role === 'superadmin'); }
+function p14Writer() { return !HANDOFF && ACC.ok && ACC.role !== 'viewer'; }
+function p14RemarkOk() { return p14Writer() && ACC.role === 'field' && P14S.r.remark; }
+function p14Styles() {
+  if (P14S.styled) return; P14S.styled = true;
+  var st = document.createElement('style');
+  st.textContent = Q.STAGES.map(function (s) { return '.p14-L-' + s.letter + '{background:' + s.color + '}'; }).join('\n');
+  document.head.appendChild(st);
+}
+async function p14Init() {
+  var tok = ++P14S.tok;
+  p14Styles();
+  P14S.acc = null; P14S.r = Q.rights(null);
+  p14LoadSummary();
+  if (!p14Writer()) return;
+  var a = null;
+  try { a = await api.myStageAccess(); } catch (e) { a = null; }
+  if (tok !== P14S.tok) return;
+  P14S.acc = a; P14S.r = Q.rights(a);
+  if (state.sel) drawDetail(false);   // the Set stage / PDS / remark controls appear
+}
+function p14ApplyAccess() {
+  var on = p14PortsOn() && P14S.sumOk;   // board roles, and only on a database with nap-23
+  $('tb-ports').hidden = !on;
+  if (!on && !$('v-ports').hidden) tab('board');
+}
+function p14Tab(name) {
+  $('v-ports').hidden = name !== 'ports';
+  $('tb-ports').setAttribute('aria-selected', String(name === 'ports'));
+  if (name === 'ports') p14PortsOpen();
+}
+$('tb-ports').onclick = function () { tab('ports'); };
+
+// ----- stage summary (per barangay; every Board reader) -----
+async function p14LoadSummary() {
+  var tok = ++P14S.sumTok, rows = [];
+  try { rows = await api.stageSummary(); } catch (e) { rows = []; rows.missing = false; }
+  if (tok !== P14S.sumTok) return;
+  P14S.sumOk = !rows.missing; P14S.sum = rows.missing ? [] : rows;
+  p14ApplyAccess();
+  p14Board();
+}
+function p14SumRow(name) { return P14S.sum.filter(function (r) { return r.barangay === name; })[0] || null; }
+function p14AgingExtra(name) { var r = p14SumRow(name); return r ? Number(r.for_nap_audit || 0) : 0; }
+
+// ----- small renderers used by the main code (one line each there) -----
+function p14Fill(b) { return b && b.stage ? Q.color(b.stage) : null; }
+function p14StageOk(b) { return Q.stageMatch(b, P14S.stageF); }
+function p14Dim(b) { return !!(state.filter && state.filter !== b.kind) || !p14StageOk(b); }
+function p14StageKey() { return P14S.stageF; }
+function p14StageWhat() { var f = P14S.stageF; return !f ? '' : ', ' + (f === 'any' ? 'with a stage' : f === 'none' ? 'without a stage' : Q.stage(f).short + ' only'); }
+function p14Chip(b) {
+  var s = b && b.stage ? Q.stage(b.stage) : null; if (!s) return '';
+  return '<span class="p14-chip" style="background:' + esc(s.color) + '" title="Stage: ' + esc(s.label) + '"><i aria-hidden="true">' + esc(s.letter) + '</i>' + esc(s.short) + '</span>';
+}
+function p14Tip(b) { var s = b && b.stage ? Q.stage(b.stage) : null; return s ? '<b>' + esc(s.label) + '</b><br>' : ''; }
+
+// ----- the Board: stage filter, legend, city line, map letters (called at the end of drawBoard) -----
+function p14Board() {
+  var lab = $('fStageL'); if (!lab) return;
+  lab.hidden = !P14S.sumOk;
+  if (!P14S.sumOk) { if (P14S.stageF) { P14S.stageF = ''; } return; }
+  var c = Q.stageCounts(visibleBoxes()), f = P14S.stageF;
+  $('fStage').innerHTML = '<option value="">All</option><option value="any"' + (f === 'any' ? ' selected' : '') + '>With a stage (' + fmtN(c.any) + ')</option>' +
+    Q.STAGES.map(function (s) { return '<option value="' + esc(s.code) + '"' + (f === s.code ? ' selected' : '') + '>' + esc(s.letter + ' · ' + s.label) + ' (' + fmtN(c[s.code]) + ')</option>'; }).join('') +
+    '<option value="none"' + (f === 'none' ? ' selected' : '') + '>No stage (' + fmtN(c.none) + ')</option>';
+  p14Legend(); p14City(); p14Letters();
+}
+$('fStage').addEventListener('change', function () { P14S.stageF = Q.filterOk(this.value) ? this.value : ''; fitPending = false; drawBoard(); });
+function p14Legend() {
+  if (P14S.legend) return;
+  var lg = document.querySelector('#v-board .legend'); if (!lg) return;
+  P14S.legend = true;
+  var d = document.createElement('div'); d.className = 'p14-legend'; d.setAttribute('data-p14-legend', '1');
+  d.innerHTML = '<span><b>Stage</b> (shown instead of the status colour; letter on the map from zoom 15):</span>' + Q.STAGES.map(function (s) {
+    return '<span title="' + esc(Q.effect(s.code)) + '"><i class="p14-sq" style="background:' + esc(s.color) + '">' + esc(s.letter) + '</i>' + esc(s.label) + '</span>';
+  }).join('');
+  lg.parentNode.insertBefore(d, lg.nextSibling);
+}
+function p14City() {
+  var line = $('cityLine'); if (!line) return;
+  var el = document.getElementById('p14City');
+  if (!el) { el = document.createElement('p'); el.id = 'p14City'; el.className = 'p14-city'; line.parentNode.insertBefore(el, line.nextSibling); }
+  var names = {}; districtRows().forEach(function (r) { names[r.barangay] = true; });
+  var t = { for_nap_audit: 0, full_nap: 0, not_rfs: 0, rehab: 0, pds_ports: 0 };
+  P14S.sum.forEach(function (r) { if (names[r.barangay]) for (var k in t) t[k] += Number(r[k] || 0); });
+  var any = t.for_nap_audit + t.full_nap + t.not_rfs + t.rehab + t.pds_ports;
+  el.hidden = !any;
+  el.textContent = any ? 'Stages: ' + fmtN(t.for_nap_audit) + ' for NAP audit · ' + fmtN(t.full_nap) + ' full NAP (thermal) · ' + fmtN(t.not_rfs) + ' not RFS · ' + fmtN(t.rehab) + ' for rehab / repair · ' + fmtN(t.pds_ports) + ' PDS port' + (t.pds_ports === 1 ? '' : 's') + ' (NOT RFS and FOR REHAB are never installable)' : '';
+}
+// letters on the staged markers: only from zoom 15, only the markers in view, at most 400 (the canvas circles carry the colour anyway)
+function p14Letters() {
+  if (!LMAP || typeof L === 'undefined' || !P14S.sumOk) return;
+  if (!P14S.letters) P14S.letters = L.layerGroup().addTo(LMAP);
+  if (!P14S.lettersHooked) { P14S.lettersHooked = true; LMAP.on('zoomend moveend', p14Letters); }
+  P14S.letters.clearLayers();
+  if (LMAP.getZoom() < 15) return;
+  var bnd = LMAP.getBounds().pad(0.1), list = [];
+  mapMarkers.forEach(function (m) { var b = m._b; if (m._vis && b && b.stage && Q.isCode(b.stage) && !p14Dim(b) && bnd.contains(m.getLatLng())) list.push(m); });
+  if (list.length > 400) return;
+  list.forEach(function (m) {
+    var s = Q.stage(m._b.stage);
+    L.marker(m.getLatLng(), { icon: L.divIcon({ className: 'p14-letter p14-L-' + s.letter, html: esc(s.letter), iconSize: [16, 16] }), interactive: false, keyboard: false, zIndexOffset: -100 }).addTo(P14S.letters);
+  });
+}
+function p14Uniq(list) { var seen = {}; return (list || []).filter(function (x) { if (!x || seen[x]) return false; seen[x] = true; return true; }); }
+// boxes_near / nearest_installable rows carry no stage: read it once for those boxes
+async function p14FillStages(rows) {
+  if (!P14S.sumOk) return;
+  var ids = p14Uniq((rows || []).filter(function (b) { return b && b.box_id && !Object.prototype.hasOwnProperty.call(b, 'stage') && !(state.known[b.box_id] && Object.prototype.hasOwnProperty.call(state.known[b.box_id], 'stage')); }).map(function (b) { return b.box_id; }));
+  if (!ids.length) return;
+  var tok = ++P14S.fillTok, got = [];
+  try { got = await api.boxStages(ids); } catch (e) { return; }
+  if (tok !== P14S.fillTok || got.missing) return;
+  var by = {}; got.forEach(function (g) { by[g.box_id] = g.stage; });
+  (rows || []).forEach(function (b) { if (b && ids.indexOf(b.box_id) >= 0) b.stage = by[b.box_id] || null; });
+  ids.forEach(function (id) { if (state.known[id]) state.known[id].stage = by[id] || null; });
+  markersDirty = true; drawBoard();
+}
+
+// ----- the NAP detail: stage row + Set / Move stage, PDS marks of the ports (called at the end of drawDetail) -----
+function p14AfterDetail(b, ports) {
+  var el = $('detail'); if (!el || !b) return;
+  if (P14S.sd && P14S.sd.box_id !== b.box_id && !P14S.sd.busy) P14S.sd = null;
+  if (P14S.pd && P14S.pd.box_id !== b.box_id && !P14S.pd.busy) P14S.pd = null;
+  if (!P14S.sumOk && !P14S.acc) return;   // a database without nap-23: nothing
+  var sec = document.createElement('div'); sec.className = 'p14-st'; sec.setAttribute('data-p14-st', '1');
+  sec.innerHTML = p14StageHtml(b);
+  var anchor = el.querySelector('[data-p12]') || el.querySelector('.nps');
+  if (anchor) el.insertBefore(sec, anchor); else el.appendChild(sec);
+  if (b.stage && !P14S.info[b.box_id]) p14LoadInfo(b);
+  // PDS: marks on the port grid + the PDS list / controls under the NAP numbers (board and NAP technicians; never a console viewer)
+  if (ACC.role === 'viewer') return;
+  var pdsSec = document.createElement('div'); pdsSec.className = 'p14-pdsl'; pdsSec.setAttribute('data-p14-pds', '1');
+  var nps = el.querySelector('.nps');
+  if (nps && nps.nextSibling) el.insertBefore(pdsSec, nps.nextSibling); else el.appendChild(pdsSec);
+  if (!P14S.flags || P14S.flags.box_id !== b.box_id) p14LoadFlags(b); else p14PdsRender(pdsSec, b, ports);
+  // "Validate and release" from the Ports tab: open the desk editor of that port, prefilled to Released
+  if (P14S.pend && P14S.pend.box_id === b.box_id && portsCache && portsCache.box_id === b.box_id) { var pe = P14S.pend; P14S.pend = null; setTimeout(function () { p14Release(pe); }, 0); }
+}
+function p14StageHtml(b) {
+  var s = b.stage ? Q.stage(b.stage) : null, inf = P14S.info[b.box_id], ctl = p14Writer() ? Q.stageControl(P14S.r, b) : '';
+  var who = s && inf && inf.stage === b.stage ? [inf.stage_by ? 'set by ' + inf.stage_by : '', inf.stage_at ? new Date(inf.stage_at).toLocaleString() : '', inf.stage_note ? '"' + inf.stage_note + '"' : ''].filter(Boolean).join(' · ') : '';
+  var e = P14S.sd && P14S.sd.box_id === b.box_id ? P14S.sd : null;
+  var h = '<div class="p14-row"><b>Stage</b>' + (s ? p14Chip(b) + '<span class="meta">' + esc(s.label) + '</span>' : '<span class="meta">No stage (status from the port readings: ' + esc(LBL[b.kind] || b.kind || '?') + ')</span>') +
+    (ctl && !e ? ' <button class="btn sm" type="button" data-p14-sd="' + esc(ctl) + '">' + (ctl === 'set' ? 'Set stage' : 'Move stage') + '</button>' : '') + '</div>' +
+    (who ? '<div class="meta">' + esc(who) + '</div>' : '') +
+    (s ? '<div class="meta">' + esc(Q.effect(s.code)) + (s.blocks ? ' Computed status: ' + esc(LBL[b.kind] || b.kind || '?') + '.' : '') + '</div>' : '') +
+    (s && !ctl && p14Writer() && P14S.acc ? '<div class="meta">Only an admin can move a NAP out of its stage (after checking IBAS / Blacklisting).</div>' : '');
+  if (e) h += p14StageEditorHtml(b, e);
+  return h;
+}
+function p14StageEditorHtml(b, e) {
+  var opts = Q.STAGES.filter(function (s) { return s.code !== e.cur; }).map(function (s) { return '<option value="' + esc(s.code) + '"' + (e.next === s.code ? ' selected' : '') + '>' + esc(s.letter + ' · ' + s.label) + '</option>'; }).join('');
+  if (e.mode === 'move') opts += '<option value="__clear"' + (e.next === '__clear' ? ' selected' : '') + '>No stage (clear it)</option>';
+  var err = e.next != null ? Q.stageError(e.cur, e.next === '__clear' ? '' : e.next, e.reason) : '';
+  var nx = e.next && e.next !== '__clear' ? Q.stage(e.next) : null;
+  return '<div class="p14-pan" role="group" aria-label="' + (e.mode === 'set' ? 'Set the stage' : 'Move the stage') + ' of ' + esc(b.stencil) + '">' +
+    '<label>' + (e.mode === 'set' ? 'Stage' : 'Move to') + '<select data-p14-sn data-p12f="p14-sn"><option value=""' + (e.next ? '' : ' selected') + ' disabled>Choose…</option>' + opts + '</select></label>' +
+    (nx ? '<div class="meta">' + esc(Q.effect(nx.code)) + '</div>' : e.next === '__clear' ? '<div class="meta">The NAP goes back to the status from its port readings.</div>' : '') +
+    '<label>Reason ' + (e.mode === 'move' ? '(required: what was checked in IBAS / Blacklisting)' : '(optional)') + '<input type="text" maxlength="240" autocomplete="off" data-p14-sr data-p12f="p14-sr" value="' + esc(e.reason) + '"' + (err && /reason/i.test(err) && e.reason ? ' class="p14-bad"' : '') + '></label>' +
+    (e.mode === 'set' ? '<div class="meta">Once set, only an admin can change or clear it.</div>' : '') +
+    '<div class="p12-acts"><button class="btn sm pri" type="button" data-p14-ssave' + (e.busy || !e.next || err ? ' disabled' : '') + '>' + (e.busy ? 'Saving…' : 'Save stage') + '</button>' +
+    '<button class="btn sm" type="button" data-p14-scancel' + (e.busy ? ' disabled' : '') + '>Cancel</button><span class="p14-msg' + (e.err ? ' err' : '') + '" role="status" aria-live="polite">' + esc(e.err || (e.next ? err : '')) + '</span></div></div>';
+}
+async function p14LoadInfo(b) {
+  var tok = ++P14S.infoTok, rows = [];
+  try { rows = await api.boxStages([b.box_id]); } catch (e) { return; }
+  if (tok !== P14S.infoTok || rows.missing) return;
+  P14S.info[b.box_id] = rows[0] || { stage: null };
+  if (state.sel && state.sel.box_id === b.box_id) { var sec = document.querySelector('[data-p14-st]'); if (sec) sec.innerHTML = p14StageHtml(state.sel); }
+}
+function p14StageRedraw() { var b = state.sel, sec = document.querySelector('[data-p14-st]'); if (b && sec) { sec.innerHTML = p14StageHtml(b); p12Refocus(); } }
+async function p14StageSave() {
+  var e = P14S.sd; if (!e || e.busy) return;
+  var next = e.next === '__clear' ? '' : e.next, err = Q.stageError(e.cur, next, e.reason);
+  if (err) { e.err = err; p14StageRedraw(); return; }
+  if (!e.cid) e.cid = Q.newClientId();
+  e.busy = true; e.err = ''; p14StageRedraw();
+  var res;
+  try { res = await api.setBoxStage(Q.stagePayload({ clientId: e.cid, boxId: e.box_id, stage: next || null, reason: e.reason })); }
+  catch (x) {
+    e.busy = false; e.err = 'Not saved: ' + msgOf(x);
+    if (/NAP_FORBIDDEN/.test(String(x && (x.code || x.message) || ''))) { P14S.sd = null; toast(e.err); p14Init(); if (state.sel) drawDetail(false); return; }
+    toast(e.err); p14StageRedraw(); return;
+  }
+  e.busy = false;
+  if (P14S.sd === e) P14S.sd = null;
+  P14S.info[e.box_id] = { stage: res.stage || null, stage_by: res.stage_by, stage_at: res.stage_at, stage_note: res.reason };
+  p12Patch(e.box_id, { stage: res.stage || null });
+  toast(res.changed === false ? 'Nothing changed.' : res.stage ? 'Stage of ' + e.stencil + ': ' + Q.label(res.stage) + '.' : 'Stage of ' + e.stencil + ' cleared.');
+  await p12Fresh(e.box_id, e.stencil);   // the box's kind / free count follow the stage rule: read its fresh row
+  p14LoadSummary();
+  if (state.sel && state.sel.box_id === e.box_id) drawBoard(false);
+}
+
+// ----- PDS -----
+async function p14LoadFlags(b) {
+  var tok = (P14S.flags && P14S.flags.tok || 0) + 1;
+  P14S.flags = { box_id: b.box_id, rows: null, err: '', tok: tok, missing: false };
+  var rows = null, err = '';
+  try { rows = await api.portFlags(b.box_id); } catch (e) { err = msgOf(e); }
+  if (!P14S.flags || P14S.flags.tok !== tok || P14S.flags.box_id !== b.box_id) return;
+  P14S.flags.rows = rows || []; P14S.flags.err = err; P14S.flags.missing = !!(rows && rows.missing);
+  var sec = document.querySelector('[data-p14-pds]');
+  if (sec && state.sel && state.sel.box_id === b.box_id) p14PdsRender(sec, state.sel, portsCache && portsCache.box_id === b.box_id ? portsCache.ports : []);
+}
+function p14PdsRender(sec, b, ports) {
+  var f = P14S.flags;
+  if (!f || f.rows == null || f.missing) { sec.innerHTML = ''; return; }
+  if (f.err) { sec.innerHTML = '<div class="meta err">Cannot load the PDS marks: ' + esc(f.err) + '</div>'; return; }
+  var el = $('detail'), on = {};
+  f.rows.forEach(function (x) { on[Number(x.np) + ':' + Number(x.port)] = x; });
+  // the port grid: a red outline + "PDS" on each marked port
+  f.rows.forEach(function (x) {
+    var npEl = el.querySelector('[data-dk-np="' + CSS.escape(String(x.np)) + '"]'); if (!npEl) return;
+    npEl.querySelectorAll('.ports .port').forEach(function (c) {
+      if (c.firstChild && c.firstChild.nodeType === 3 && c.firstChild.nodeValue === 'P' + x.port) { c.classList.add('p14-pds'); c.title = c.title + ' · PDS (not free until an admin clears it)'; }
+    });
+  });
+  var acct = {}; (ports || []).forEach(function (p) { acct[Number(p.np) + ':' + Number(p.port)] = p.tag_acct || ''; });
+  var r = P14S.r, w = p14Writer() && b.active !== false, e = P14S.pd && P14S.pd.box_id === b.box_id ? P14S.pd : null;
+  var cand = (ports || []).filter(function (p) { return Q.acctOk(p.tag_acct) && !on[Number(p.np) + ':' + Number(p.port)]; });
+  var h = '';
+  if (f.rows.length) {
+    h += '<div><b>PDS ports</b> <span class="meta">(IBAS account status PDS; never counted free)</span></div>' + f.rows.map(function (x) {
+      var k = Number(x.np) + ':' + Number(x.port), open = e && e.key === k;
+      return '<div class="p14-row"><span class="p14-tag">PDS</span><b class="stencil">NP' + esc(x.np) + ' P' + esc(x.port) + '</b>' + (acct[k] ? '<span class="stencil">' + esc(acct[k]) + '</span>' : '') +
+        '<span class="meta">' + esc([x.pds_by ? 'by ' + x.pds_by : '', x.pds_at ? new Date(x.pds_at).toLocaleString() : '', x.pds_note ? '"' + x.pds_note + '"' : ''].filter(Boolean).join(' · ')) + '</span>' +
+        (w && r.pdsClear && !open ? '<button class="btn sm" type="button" data-p14-rel="' + esc(k) + '">Validate and release</button><button class="btn sm" type="button" data-p14-notpds="' + esc(k) + '">Not PDS</button>' : '') + '</div>' +
+        (open ? p14PdsEditorHtml(e) : '');
+    }).join('');
+  }
+  if (w && r.pdsMark && cand.length) {
+    var mk = e && e.on;
+    h += mk ? p14PdsEditorHtml(e, cand) : '<div class="p14-row"><button class="btn sm" type="button" data-p14-mark>Mark a port PDS…</button><span class="meta">A port with its 13-digit account number whose IBAS account status is PDS.</span></div>';
+  } else if (w && r.pdsMark && !f.rows.length && (ports || []).some(function (p) { return p.status === S.AWT; })) {
+    h += '<div class="meta">To mark a port PDS, it needs its 13-digit account number first.</div>';
+  }
+  sec.innerHTML = h;
+}
+function p14PdsEditorHtml(e, cand) {
+  var err = e.on ? (e.key ? Q.pdsError({ tag_acct: e.acct }, true, e.note, P14S.r) : '') : Q.pdsError({}, false, e.note, P14S.r);
+  return '<div class="p14-pan" role="group" aria-label="' + (e.on ? 'Mark a port PDS' : 'Clear a PDS mark') + '">' +
+    (e.on ? '<label>Port<select data-p14-pp data-p12f="p14-pp"><option value=""' + (e.key ? '' : ' selected') + ' disabled>Choose the port…</option>' + (cand || []).map(function (p) {
+      var k = Number(p.np) + ':' + Number(p.port);
+      return '<option value="' + esc(k) + '"' + (e.key === k ? ' selected' : '') + '>NP' + esc(p.np) + ' P' + esc(p.port) + ' · ' + esc(p.tag_acct) + '</option>';
+    }).join('') + '</select></label>' : '<div class="meta">Clear the PDS mark of <b>NP' + esc(e.key.split(':')[0]) + ' P' + esc(e.key.split(':')[1]) + '</b>: the port keeps its status (use Validate and release to set it Released).</div>') +
+    '<label>' + (e.on ? 'Note (optional)' : 'Reason (required: what was validated in IBAS / Blacklisting)') + '<input type="text" maxlength="240" autocomplete="off" data-p14-pn data-p12f="p14-pn" value="' + esc(e.note) + '"></label>' +
+    '<div class="p12-acts"><button class="btn sm pri" type="button" data-p14-psave' + (e.busy || !e.key || err ? ' disabled' : '') + '>' + (e.busy ? 'Saving…' : e.on ? 'Mark PDS' : 'Clear PDS mark') + '</button>' +
+    '<button class="btn sm" type="button" data-p14-pcancel' + (e.busy ? ' disabled' : '') + '>Cancel</button><span class="p14-msg' + (e.err ? ' err' : '') + '" role="status" aria-live="polite">' + esc(e.err || (e.key ? err : '')) + '</span></div></div>';
+}
+function p14PdsRedraw() { var b = state.sel, sec = document.querySelector('[data-p14-pds]'); if (b && sec) { p14PdsRender(sec, b, portsCache && portsCache.box_id === b.box_id ? portsCache.ports : []); p12Refocus(); } }
+async function p14PdsSave() {
+  var e = P14S.pd; if (!e || e.busy || !e.key) return;
+  var err = e.on ? Q.pdsError({ tag_acct: e.acct }, true, e.note, P14S.r) : Q.pdsError({}, false, e.note, P14S.r);
+  if (err) { e.err = err; p14PdsRedraw(); return; }
+  if (!e.cid) e.cid = Q.newClientId();
+  e.busy = true; e.err = ''; p14PdsRedraw();
+  var kk = e.key.split(':'), res;
+  try { res = await api.setPortPds(Q.pdsPayload({ clientId: e.cid, boxId: e.box_id, np: kk[0], port: kk[1], pds: e.on, note: e.note })); }
+  catch (x) {
+    e.busy = false; e.err = 'Not saved: ' + msgOf(x);
+    if (/NAP_FORBIDDEN/.test(String(x && (x.code || x.message) || ''))) { P14S.pd = null; toast(e.err); p14Init(); if (state.sel) drawDetail(false); return; }
+    toast(e.err); p14PdsRedraw(); return;
+  }
+  e.busy = false;
+  if (P14S.pd === e) P14S.pd = null;
+  toast(res.changed === false ? 'Nothing changed.' : (e.on ? 'Marked PDS: ' : 'PDS mark cleared: ') + 'NP' + kk[0] + ' P' + kk[1] + '.');
+  await p14AfterPds(e.box_id, e.stencil);
+}
+async function p14AfterPds(id, stencil) {
+  if (P14S.flags && P14S.flags.box_id === id) P14S.flags = null;
+  p14LoadSummary(); p14QueueLoad(true); if (!$('v-ports').hidden) p14PortsLoad(true);
+  if (stencil) await p12Fresh(id, stencil);   // a PDS port is never free: the kind / free count may change
+  if (state.sel && state.sel.box_id === id) drawBoard(false);
+}
+// "Validate and release": the phase 11 desk editor of that NP, the port prefilled to Released; the mark is cleared after that save
+function p14Release(x) {
+  var b = state.sel; if (!b || b.box_id !== x.box_id) return;
+  if (!P14S.r.pdsClear) { toast('Only an admin can validate and release a PDS port.'); return; }
+  if (!deskCanEdit(b) || !portsCache || portsCache.box_id !== b.box_id) { toast('Edit ports is not available here: release the port with a desk update first.'); return; }
+  deskOpen(x.np, 0);
+  if (!DK.edit || DK.edit.box_id !== b.box_id) return;
+  DK.edit.edits[x.port] = { status: S.RELEASED, tag_acct: '' };
+  DK.edit.reason = 'Validated in IBAS / Blacklisting: PDS port released';
+  DK.edit.cid = null;
+  P14S.release = { box_id: b.box_id, np: Number(x.np), port: Number(x.port), stencil: b.stencil };
+  drawDetail(false);
+  toast('Check P' + x.port + ' = Released and the reason, then press Save desk update. The PDS mark is cleared after the save.');
+}
+async function p14AfterDesk(e, res) {
+  var x = P14S.release; if (!x || !e || x.box_id !== e.box_id || x.np !== Number(e.np)) return;
+  P14S.release = null;
+  var p = ((res && res.ports) || []).filter(function (q) { return Number(q.port) === x.port; })[0];
+  if (!p || p.status === S.AWT || p.status === S.AWO) { toast('PDS mark kept: P' + x.port + ' was not released by this save.'); return; }
+  try {
+    await api.setPortPds(Q.pdsPayload({ clientId: Q.newClientId(), boxId: x.box_id, np: x.np, port: x.port, pds: false, note: (e.reason || 'Validated in IBAS / Blacklisting').slice(0, 200) }));
+    toast('Released and PDS mark cleared: ' + x.stencil + ' NP' + x.np + ' P' + x.port + '.');
+  } catch (err) { toast('The port was released, but the PDS mark was not cleared: ' + msgOf(err) + '. Use Not PDS.'); }
+  await p14AfterPds(x.box_id, x.stencil);
+}
+
+// ----- clicks / typing in the NAP detail (stage + PDS controls) -----
+$('detail').addEventListener('click', function (ev) {
+  var t = ev.target, b = state.sel; if (!b || !t.closest) return;
+  var sd = t.closest('[data-p14-sd]');
+  if (sd) { if (P14S.sd && P14S.sd.busy) return; P14S.sd = { box_id: b.box_id, stencil: b.stencil, mode: sd.getAttribute('data-p14-sd'), cur: b.stage || '', next: '', reason: '', busy: false, cid: null, err: '' }; P12.focus = { key: 'p14-sn', at: Date.now(), pos: null }; p14StageRedraw(); return; }
+  if (t.closest('[data-p14-ssave]')) { p14StageSave(); return; }
+  if (t.closest('[data-p14-scancel]')) { if (P14S.sd && !P14S.sd.busy) { P14S.sd = null; p14StageRedraw(); } return; }
+  if (t.closest('[data-p14-mark]')) { if (P14S.pd && P14S.pd.busy) return; P14S.pd = { box_id: b.box_id, stencil: b.stencil, key: '', acct: '', on: true, note: '', busy: false, cid: null, err: '' }; P12.focus = { key: 'p14-pp', at: Date.now(), pos: null }; p14PdsRedraw(); return; }
+  var np = t.closest('[data-p14-notpds]');
+  if (np) { if (P14S.pd && P14S.pd.busy) return; P14S.pd = { box_id: b.box_id, stencil: b.stencil, key: np.getAttribute('data-p14-notpds'), acct: '', on: false, note: '', busy: false, cid: null, err: '' }; P12.focus = { key: 'p14-pn', at: Date.now(), pos: null }; p14PdsRedraw(); return; }
+  var rl = t.closest('[data-p14-rel]');
+  if (rl) { var kk = rl.getAttribute('data-p14-rel').split(':'); p14Release({ box_id: b.box_id, np: Number(kk[0]), port: Number(kk[1]) }); return; }
+  if (t.closest('[data-p14-psave]')) { p14PdsSave(); return; }
+  if (t.closest('[data-p14-pcancel]')) { if (P14S.pd && !P14S.pd.busy) { P14S.pd = null; p14PdsRedraw(); } return; }
+});
+function p14Input(ev) {
+  var t = ev.target; if (!t || !t.hasAttribute) return;
+  if (t.hasAttribute('data-p14-sn') || t.hasAttribute('data-p14-sr')) {
+    var e = P14S.sd; if (!e || e.busy) return;
+    if (t.hasAttribute('data-p14-sn')) { e.next = t.value; e.touched = true; } else e.reason = t.value;
+    e.cid = null; e.err = '';
+    if (ev.type === 'change' || t.hasAttribute('data-p14-sn')) p14StageRedraw();
+    else { var sec = document.querySelector('[data-p14-st]'), btn = sec && sec.querySelector('[data-p14-ssave]'), msg = sec && sec.querySelector('.p14-pan .p14-msg');
+           var er = Q.stageError(e.cur, e.next === '__clear' ? '' : e.next, e.reason); if (btn) btn.disabled = !e.next || !!er; if (msg) msg.textContent = e.next ? er : ''; }
+    return;
+  }
+  if (t.hasAttribute('data-p14-pp') || t.hasAttribute('data-p14-pn')) {
+    var p = P14S.pd; if (!p || p.busy) return;
+    if (t.hasAttribute('data-p14-pp')) {
+      p.key = t.value;
+      var kk = p.key.split(':'), row = (portsCache && portsCache.ports || []).filter(function (x) { return String(x.np) === kk[0] && String(x.port) === kk[1]; })[0];
+      p.acct = row ? row.tag_acct || '' : '';
+    } else p.note = t.value;
+    p.cid = null; p.err = '';
+    if (ev.type === 'change' || t.hasAttribute('data-p14-pp')) p14PdsRedraw();
+    else { var s2 = document.querySelector('[data-p14-pds]'), b2 = s2 && s2.querySelector('[data-p14-psave]'), m2 = s2 && s2.querySelector('.p14-pan .p14-msg');
+           var e2 = p.on ? Q.pdsError({ tag_acct: p.acct }, true, p.note, P14S.r) : Q.pdsError({}, false, p.note, P14S.r); if (b2) b2.disabled = !p.key || !!e2; if (m2) m2.textContent = p.key ? e2 : ''; }
+  }
+}
+$('detail').addEventListener('input', p14Input);
+$('detail').addEventListener('change', p14Input);
+$('detail').addEventListener('keydown', function (ev) {
+  if (ev.key !== 'Enter' || !ev.target.closest || ev.target.tagName !== 'INPUT' || !ev.target.closest('.p14-pan')) return;
+  ev.preventDefault();
+  var b = ev.target.closest('.p14-pan').querySelector('[data-p14-ssave],[data-p14-psave]'); if (b && !b.disabled) b.click();
+});
+
+// ----- the Ports tab (board roles) -----
+function p14PortsOpen() {
+  var pt = P14S.pt;
+  if (!pt.init) {
+    pt.init = true;
+    $('p14Stage').innerHTML = '<option value="">All</option><option value="any">With a stage</option>' + Q.STAGES.map(function (s) { return '<option value="' + esc(s.code) + '">' + esc(s.letter + ' · ' + s.label) + '</option>'; }).join('') + '<option value="none">No stage</option>';
+    $('p14Status').innerHTML = '<option value="">All</option>' + Q.PORT_STATUS_FILTERS.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
+  }
+  p14PortsSelects();
+  p14QueueLoad(true); p14PortsLoad(true);
+}
+function p14PortsSelects() {
+  var f = P14S.pt.f, ds = {};
+  state.summary.forEach(function (r) { if (r.district) ds[r.district] = true; });
+  $('p14Dist').innerHTML = '<option value="">All</option>' + Object.keys(ds).sort(function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); }).map(function (d) { return '<option value="' + esc(d) + '"' + (d === f.district ? ' selected' : '') + '>District ' + esc(d) + '</option>'; }).join('');
+  var rows = state.summary.filter(function (r) { return !f.district || String(r.district || '') === f.district; }).slice().sort(function (x, y) { return String(x.barangay).localeCompare(String(y.barangay)); });
+  $('p14Brgy').innerHTML = '<option value="">All</option>' + rows.map(function (r) { return '<option value="' + esc(r.barangay) + '"' + (r.barangay === f.barangay ? ' selected' : '') + '>' + esc(r.barangay) + '</option>'; }).join('');
+  $('p14Stage').value = f.stage; $('p14Status').value = f.status; $('p14Pds').checked = f.pdsOnly; if ($('p14Q').value !== f.q) $('p14Q').value = f.q;
+}
+function p14PortRow(r, queue) {
+  var k = Number(r.np) + ':' + Number(r.port), adm = P14S.r.pdsClear && p14PortsOn(), q = P14S.q, open = queue && q.open === r.box_id + '|' + k;
+  var cells = '<td><button type="button" class="linkish stencil" data-p14-open="' + esc(r.box_id) + '" data-p14-stc="' + esc(r.stencil) + '" title="Show on the Board">' + esc(r.stencil) + '</button></td><td>' + esc(r.barangay || '') + '</td><td>NP' + esc(r.np) + '</td><td>P' + esc(r.port) + '</td><td>' + esc(r.status) + '</td><td class="mono">' + esc(r.tag_acct || '') + '</td>';
+  if (queue) {
+    return '<tr>' + cells + '<td>' + esc([r.pds_by || '', r.pds_at ? new Date(r.pds_at).toLocaleString() : ''].filter(Boolean).join(' · ')) + '</td><td class="rm">' + esc(r.pds_note || '') + '</td><td>' +
+      (adm ? (open ? '' : '<button class="btn sm" type="button" data-p14-qrel="' + esc(r.box_id) + '|' + esc(k) + '" data-p14-stc="' + esc(r.stencil) + '">Validate and release</button> <button class="btn sm" type="button" data-p14-qnot="' + esc(r.box_id) + '|' + esc(k) + '">Not PDS</button>') : '<span class="meta">admin validates</span>') + '</td></tr>' +
+      (open ? '<tr><td colspan="9"><div class="p14-pan"><label>Reason (required: what was validated in IBAS / Blacklisting)<input type="text" maxlength="240" autocomplete="off" data-p14-qn value="' + esc(q.note) + '"></label>' +
+        '<div class="p12-acts"><button class="btn sm pri" type="button" data-p14-qgo' + (q.saving || Q.pdsError({}, false, q.note, P14S.r) ? ' disabled' : '') + '>' + (q.saving ? 'Saving…' : 'Clear PDS mark') + '</button><button class="btn sm" type="button" data-p14-qx' + (q.saving ? ' disabled' : '') + '>Cancel</button>' +
+        '<span class="p14-msg' + (q.err ? ' err' : '') + '" role="status">' + esc(q.err || Q.pdsError({}, false, q.note, P14S.r)) + '</span></div></div></td></tr>' : '');
+  }
+  return '<tr>' + cells + '<td>' + (r.pds ? '<span class="p14-tag" title="' + esc([r.pds_by ? 'by ' + r.pds_by : '', r.pds_note || ''].filter(Boolean).join(' · ')) + '">PDS</span>' : '') + '</td><td class="rm">' + esc(r.remark || '') + '</td><td>' +
+    esc(r.verified_at ? new Date(r.verified_at).toLocaleString() : 'never') + '</td><td>' + p14Chip(r) + '</td></tr>';
+}
+async function p14PortsLoad(reset) {
+  var pt = P14S.pt;
+  if (reset) { pt.rows = []; pt.cursor = null; pt.done = false; pt.err = ''; }
+  var err = Q.portsError(pt.f);
+  $('p14Sum').textContent = Q.portsSummary(pt.f);
+  if (err) { pt.err = err; pt.done = true; return p14PortsDraw(); }
+  if (pt.done && !reset) return p14PortsDraw();
+  var seq = ++pt.seq; pt.busy = true; p14PortsDraw();
+  var rows;
+  try { rows = await api.listPorts(Q.portsArgs(pt.f, pt.cursor, Q.PORTS_PAGE)); }
+  catch (e) { if (seq === pt.seq) { pt.busy = false; pt.err = msgOf(e); p14PortsDraw(); } return; }
+  if (seq !== pt.seq) return;   // the filters changed meanwhile
+  pt.busy = false; pt.rows = pt.rows.concat(rows); pt.cursor = Q.portsCursor(rows, Q.PORTS_PAGE); pt.done = !pt.cursor;
+  p14PortsDraw();
+}
+function p14PortsDraw() {
+  var pt = P14S.pt;
+  $('p14Rows').innerHTML = pt.rows.map(function (r) { return p14PortRow(r, false); }).join('') || '<tr><td colspan="10" class="meta">' + (pt.busy ? 'Loading…' : pt.err ? '' : 'No ports match.') + '</td></tr>';
+  var er = $('p14Err'); er.hidden = !pt.err; er.textContent = pt.err ? (/PGRST202|could not find|does not exist/i.test(pt.err) ? 'The Ports tab needs the phase 14 database update (nap-PHASE14-ALL.sql).' : pt.err) : '';
+  $('p14More').hidden = pt.done; $('p14More').disabled = pt.busy;
+  $('p14Count').textContent = (pt.busy ? 'Loading… ' : '') + fmtN(pt.rows.length) + ' port' + (pt.rows.length === 1 ? '' : 's') + ' shown' + (pt.done ? '' : ' (Load more for the next ' + Q.PORTS_PAGE + ')');
+}
+function p14PortsFilter(k, v) { P14S.pt.f[k] = v; if (k === 'district') { P14S.pt.f.barangay = ''; p14PortsSelects(); } p14PortsLoad(true); }
+$('p14Dist').onchange = function () { p14PortsFilter('district', this.value); };
+$('p14Brgy').onchange = function () { p14PortsFilter('barangay', this.value); };
+$('p14Stage').onchange = function () { p14PortsFilter('stage', Q.filterOk(this.value) ? this.value : ''); };
+$('p14Status').onchange = function () { p14PortsFilter('status', this.value); };
+$('p14Pds').onchange = function () { p14PortsFilter('pdsOnly', this.checked); };
+$('p14Q').addEventListener('input', function () { var v = this.value; clearTimeout(P14S.pt.timer); P14S.pt.timer = setTimeout(function () { p14PortsFilter('q', v.trim()); }, 400); });
+$('p14Clear').onclick = function () { P14S.pt.f = Q.portsDefaults(); $('p14Q').value = ''; p14PortsSelects(); p14PortsLoad(true); };
+$('p14More').onclick = function () { p14PortsLoad(false); };
+// the PDS queue: every PDS-marked port of an active NAP (list_ports with PDS only), oldest stencil first
+async function p14QueueLoad(reset) {
+  var q = P14S.q;
+  if (!p14PortsOn()) return;
+  if (reset) { q.rows = []; q.cursor = null; q.done = false; q.err = ''; }
+  if (q.done && !reset) return p14QueueDraw();
+  var seq = ++q.seq; q.busy = true; p14QueueDraw();
+  var rows;
+  try { rows = await api.listPorts(Q.portsArgs({ pdsOnly: true }, q.cursor, Q.PORTS_PAGE)); }
+  catch (e) { if (seq === q.seq) { q.busy = false; q.err = msgOf(e); p14QueueDraw(); } return; }
+  if (seq !== q.seq) return;
+  q.busy = false; q.rows = q.rows.concat(rows); q.cursor = Q.portsCursor(rows, Q.PORTS_PAGE); q.done = !q.cursor;
+  p14QueueDraw();
+}
+function p14QueueDraw() {
+  var q = P14S.q;
+  if (!$('p14QRows')) return;
+  $('p14QRows').innerHTML = q.rows.map(function (r) { return p14PortRow(r, true); }).join('') ||
+    '<tr><td colspan="9" class="meta">' + (q.busy ? 'Loading…' : q.err ? 'Cannot load the PDS queue: ' + esc(/PGRST202|could not find|does not exist/i.test(q.err) ? 'it needs the phase 14 database update.' : q.err) : 'No PDS ports waiting.') + '</td></tr>';
+  $('p14QMore').hidden = q.done; $('p14QMore').disabled = q.busy;
+  $('p14QCount').textContent = (q.busy ? 'Loading… ' : '') + fmtN(q.rows.length) + ' PDS port' + (q.rows.length === 1 ? '' : 's') + (q.done ? '' : ' shown so far');
+}
+$('p14QMore').onclick = function () { p14QueueLoad(false); };
+$('p14QReload').onclick = function () { p14QueueLoad(true); };
+// open a NAP of the Ports tab on the Board (its stencil): the Board's read path, then the detail; release = open the desk editor there
+async function p14OpenBox(id, stencil, release) {
+  var b = state.known[id] || null;
+  if (!b) {
+    try { var rows = await api.searchBoxes(stencil, 5); b = (rows || []).filter(function (r) { return r.box_id === id; })[0] || null; } catch (e) { b = null; }
+    if (b) remember(b);
+  }
+  if (!b) { toast('Cannot open ' + stencil + ' (deactivated or not found).'); return; }
+  P14S.pend = release ? { box_id: id, np: release.np, port: release.port } : null;
+  state.sel = b; portsCache = null; tab('board'); drawBoard(true); focusSel();
+  setTimeout(function () { var d = $('detail'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+}
+$('v-ports').addEventListener('click', async function (ev) {
+  var t = ev.target; if (!t.closest) return;
+  var o = t.closest('[data-p14-open]'); if (o) { p14OpenBox(o.getAttribute('data-p14-open'), o.getAttribute('data-p14-stc')); return; }
+  var rl = t.closest('[data-p14-qrel]');
+  if (rl) { var a = rl.getAttribute('data-p14-qrel').split('|'), kk = a[1].split(':'); p14OpenBox(a[0], rl.getAttribute('data-p14-stc'), { np: Number(kk[0]), port: Number(kk[1]) }); return; }
+  var q = P14S.q, nt = t.closest('[data-p14-qnot]');
+  if (nt) { if (q.saving) return; q.open = nt.getAttribute('data-p14-qnot'); q.note = ''; q.err = ''; q.cid = null; p14QueueDraw(); var i = document.querySelector('[data-p14-qn]'); if (i) i.focus(); return; }
+  if (t.closest('[data-p14-qx]')) { if (!q.saving) { q.open = ''; p14QueueDraw(); } return; }
+  if (t.closest('[data-p14-qgo]')) {
+    if (q.saving || !q.open) return;
+    var parts = q.open.split('|'), k2 = parts[1].split(':'), er = Q.pdsError({}, false, q.note, P14S.r);
+    if (er) { q.err = er; p14QueueDraw(); return; }
+    if (!q.cid) q.cid = Q.newClientId();
+    q.saving = true; q.err = ''; p14QueueDraw();
+    try { await api.setPortPds(Q.pdsPayload({ clientId: q.cid, boxId: parts[0], np: k2[0], port: k2[1], pds: false, note: q.note })); }
+    catch (x) { q.saving = false; q.err = 'Not saved: ' + msgOf(x); p14QueueDraw(); return; }
+    q.saving = false; q.open = ''; toast('PDS mark cleared: NP' + k2[0] + ' P' + k2[1] + '.');
+    var row = q.rows.filter(function (r) { return r.box_id === parts[0]; })[0];
+    p14AfterPds(parts[0], row && row.stencil);
+  }
+});
+$('v-ports').addEventListener('input', function (ev) {
+  var t = ev.target; if (!t.hasAttribute || !t.hasAttribute('data-p14-qn')) return;
+  var q = P14S.q; q.note = t.value; q.cid = null; q.err = '';
+  var er = Q.pdsError({}, false, q.note, P14S.r), go = document.querySelector('[data-p14-qgo]'), m = t.closest('.p14-pan').querySelector('.p14-msg');
+  if (go) go.disabled = q.saving || !!er; if (m) m.textContent = er;
+});
 // =====================================================================================================================================
 
 boot();
