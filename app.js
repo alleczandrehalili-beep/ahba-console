@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-22.6';
+const APP_VERSION='2026-10-24.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -652,12 +652,12 @@ function wimsMaterialsHTML(rows){
   ];
   const SKIP=['completed_at','team','technician','work_account','jo_number','subscriber','account_no','photos','iptv_count'];
   const META=['id','modem_serial','kit_remarks','photos_count','foc_start_m','foc_end_m','foc_reel_no','foc2_reel_no','foc2_end_m'];
-  const KNOWN=new Set(FORM.map(f=>f[0]).concat(SKIP,META,['iptv_1','iptv_2','iptv_3']));
+  const KNOWN=new Set(FORM.map(f=>f[0]).concat(SKIP,META,['iptv_1','iptv_2','iptv_3','iptv_4']));
   return rows.map(row=>{
     let h='';
     const ser=[];
     if(row.modem_serial) ser.push(`<div><b>📶 ONU / Modem Serial</b>${esc(row.modem_serial)}</div>`);
-    ['iptv_1','iptv_2','iptv_3'].forEach((k,i)=>{ if(row[k]) ser.push(`<div><b>📺 IPTV ${i+1} Serial</b>${esc(row[k])}</div>`); });
+    ['iptv_1','iptv_2','iptv_3','iptv_4'].forEach((k,i)=>{ if(row[k]) ser.push(`<div><b>📺 IPTV ${i+1} Serial</b>${esc(row[k])}</div>`); });   // hanggang 4 (Migration, owner 2026-10-24); iptv_4 ay lalabas kapag na-run na ang wims-IPTV4 SQL
     if(ser.length) h+=`<div class="info-grid">${ser.join('')}</div>`;
     const tr=[];
     FORM.forEach(([k,unit,desc])=>{ if(has(row[k])) tr.push(`<tr><td style="color:#8a9894">${unit}</td><td style="font-weight:800">${esc(row[k])}</td><td>${desc}</td></tr>`); });
@@ -3623,7 +3623,7 @@ async function submitOrderInner(e){
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
   if(ordType==='Migration'){
-    if(f.mig_play_type==='2-PLAY' && !t(f.mig_cpe_count)){ err('For a 2-PLAY migration, select how many CPE are included (maximum 2).'); return; }
+    if(f.mig_play_type==='2-PLAY' && !t(f.mig_cpe_count)){ err('For a 2-PLAY migration, select how many CPE are included (maximum 4).'); return; }
   }
   if(ordType==='SLR' && !t(f.ticket_no)){ err('Ticket No. is required for SLR Loads.'); return; }
   if(ordType==='Transfer'){
