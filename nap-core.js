@@ -268,7 +268,11 @@
   // ---------- NAP Master (import / export) helpers. The server (nap._master_run, nap-12) validates every row: these only read files. ----------
   var MASTER_IMPORT_COLS = ['stencil', 'barangay', 'district', 'dwelling', 'street', 'olt', 'lat', 'lng', 'converge_available', 'active', 'note'];
   var MASTER_EXPORT_COLS = ['stencil', 'barangay', 'district', 'dwelling', 'street', 'olt', 'lat', 'lng', 'geo_source', 'geo_updated_at', 'np_numbers',
-    'total_ports', 'status', 'checked_ports', 'free_ports', 'bad_ports', 'age_days', 'last_audit_at', 'last_audit_team', 'converge_available', 'active'];
+    'total_ports', 'status', 'checked_ports', 'free_ports', 'bad_ports', 'age_days', 'last_audit_at', 'last_audit_team', 'converge_available', 'active',
+    'port_remarks'];
+  // phase 13 (nap-22): port_remarks is the LAST column, read-only. A database without nap-22 does not return it: the export then has exactly
+  // the 21 columns it had before (masterExportCols decides from the rows the server sent).
+  var MASTER_EXPORT_COLS_V1 = MASTER_EXPORT_COLS.filter(function (c) { return c !== 'port_remarks'; });
   // grey (computed) export columns: recognized and ignored on import, so an exported file can be imported back as is
   var MASTER_COMPUTED = MASTER_EXPORT_COLS.filter(function (c) { return MASTER_IMPORT_COLS.indexOf(c) < 0; });
   var MASTER_NUMERIC = { lat: 1, lng: 1, total_ports: 1, checked_ports: 1, free_ports: 1, bad_ports: 1, age_days: 1, converge_available: 1 };
@@ -290,7 +294,9 @@
     "Computed columns (grey, read-only, IGNORED when this file is imported back): geo_source (seed | audit | manual), geo_updated_at, np_numbers,",
     "  total_ports (8 per NAP number), status (installable | full | issue | stale | unverified | inactive), checked_ports, free_ports (fresh Vacant/Released only),",
     "  bad_ports (Hi Loss/Defective), age_days (days since the newest check), last_audit_at and last_audit_team (the newest real audit: not-found visits",
-    "  are skipped, so both are empty for a box that was only ever reported not found).",
+    "  are skipped, so both are empty for a box that was only ever reported not found),",
+    "  port_remarks (the port remarks of the box, read-only: 'NP6 P1: text; NP7 P5: text', every NAP number, by NAP number then port; empty when",
+    "  the box has none; cut at 2,000 characters, ending with an ellipsis. Remarks are written in the NAP detail, never by an import).",
     "",
     "TO UPDATE BOXES: edit the blue columns, save as .xlsx or .csv, then NAP Master > Import > preview > Apply. Up to 5,000 rows per import file,",
     "  so import one barangay (or a 5,000-row part of the whole-QC file) at a time.",
@@ -391,9 +397,15 @@
     var d = new Date(v); if (isNaN(d)) return '';
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   }
-  // one export_boxes row -> the export sheet's cells, in MASTER_EXPORT_COLS order (numbers stay numbers, timestamps become local text)
-  function masterExportCells(b) {
-    return MASTER_EXPORT_COLS.map(function (c) {
+  // the export's columns for the rows the server returned: with port_remarks when the server sends that field (nap-22), else the 21 before it
+  function masterExportCols(rows) {
+    var has = (rows || []).some(function (r) { return r && typeof r === 'object' && Object.prototype.hasOwnProperty.call(r, 'port_remarks'); });
+    return (has ? MASTER_EXPORT_COLS : MASTER_EXPORT_COLS_V1).slice();
+  }
+  // one export_boxes row -> the export sheet's cells, in cols order (default MASTER_EXPORT_COLS; numbers stay numbers, timestamps become
+  // local text). Safe as an Array.map callback (a non-array second argument is ignored).
+  function masterExportCells(b, cols) {
+    return (Array.isArray(cols) ? cols : MASTER_EXPORT_COLS).map(function (c) {
       var v = b ? b[c] : null;
       if (c === 'geo_updated_at' || c === 'last_audit_at') return fmtStamp(v);
       if (MASTER_NUMERIC[c]) return v == null || v === '' || !isFinite(Number(v)) ? '' : Number(v);
@@ -1102,15 +1114,36 @@
     };
   }
 
+  // Board map navigation (dashboard 2026-10-24.1): Expand map memory, Locate me view and messages. The position never leaves the browser.
+  var MAPNAV = {
+    KEY: 'ahba-nap-mapx',   // sessionStorage: '1' = the Board map was expanded
+    LOCATE_FIT_M: 300,      // accuracy above this: fit the accuracy circle instead of zooming in on a guess
+    LOCATE_ZOOM: 17,
+    restore: function (v) { return v === '1'; },
+    locateView: function (acc, zoom) {
+      var a = Number(acc);
+      if (isFinite(a) && a > MAPNAV.LOCATE_FIT_M) return { fit: true, radius: Math.min(a, 20000) };
+      return { fit: false, zoom: Math.max(Number(zoom) || 0, MAPNAV.LOCATE_ZOOM) };
+    },
+    locateMsg: function (acc) {
+      var a = Number(acc);
+      return 'Showing your location' + (isFinite(a) && a > 0 ? ' (accuracy about ' + (a < 1000 ? Math.round(a) + ' m' : (Math.round(a / 100) / 10) + ' km') + ')' : '') + '. It is not sent anywhere.';
+    },
+    geoError: function (err) {
+      var c = err && err.code;
+      return c === 1 ? 'Location permission denied: allow location for this site to use Locate me.' : c === 3 ? 'Locating timed out. Try again.' : 'Cannot get your location. Try again.';
+    }
+  };
+
   return {
-    p12: P12,
+    p12: P12, mapNav: MAPNAV,
     desk: DESK, AUDIT_KINDS: AUDIT_KINDS, AUDIT_KIND_LABEL: AUDIT_KIND_LABEL, AUDIT_PAGE: AUDIT_PAGE, AUDIT_EXPORT_PAGE: AUDIT_EXPORT_PAGE, AUDIT_EXPORT_MAX: AUDIT_EXPORT_MAX,
     AUDIT_STREET_MIN: AUDIT_STREET_MIN, AUDIT_MAXLEN: AUDIT_MAXLEN, auditFilterDefaults: auditFilterDefaults, auditFilterParams: auditFilterParams, auditNewFilters: auditNewFilters,
     auditFilterSummary: auditFilterSummary, auditCursor: auditCursor, auditExportName: auditExportName, fmtManila: fmtManila, AUDIT_EXPORT_COLS: AUDIT_EXPORT_COLS,
     AUDIT_EXPORT_NUMERIC: AUDIT_EXPORT_NUMERIC, AUDIT_EXPORT_WIDTHS: AUDIT_EXPORT_WIDTHS, auditExportCells: auditExportCells, auditExportCsv: auditExportCsv, auditRowFromLegacy: auditRowFromLegacy, STATUS: STATUS, PORT_STATUSES: PORT_STATUSES, DEFAULTS: DEFAULTS, isUsable: isUsable, isOccupied: isOccupied,
     BASKET_MAX: BASKET_MAX, PLAN_MAX_TEAMS: PLAN_MAX_TEAMS, isUuid: isUuid, basketAdd: basketAdd, basketRemove: basketRemove, basketGroups: basketGroups,
     basketParse: basketParse, hilbertIndex: hilbertIndex, walkOrder: walkOrder, splitEvenly: splitEvenly, moveBoxes: moveBoxes, planSummary: planSummary, planPayload: planPayload,
-    MASTER_IMPORT_COLS: MASTER_IMPORT_COLS, MASTER_EXPORT_COLS: MASTER_EXPORT_COLS, MASTER_COMPUTED: MASTER_COMPUTED, MASTER_NUMERIC: MASTER_NUMERIC,
+    MASTER_IMPORT_COLS: MASTER_IMPORT_COLS, MASTER_EXPORT_COLS: MASTER_EXPORT_COLS, MASTER_EXPORT_COLS_V1: MASTER_EXPORT_COLS_V1, masterExportCols: masterExportCols, MASTER_COMPUTED: MASTER_COMPUTED, MASTER_NUMERIC: MASTER_NUMERIC,
     MASTER_MAX_ROWS: MASTER_MAX_ROWS, MASTER_BATCH: MASTER_BATCH, MASTER_EXPORT_README: MASTER_EXPORT_README, headerKey: headerKey, masterColumn: masterColumn, isMasterStencil: isMasterStencil,
     stencilNps: stencilNps, masterCell: masterCell, findMasterHeader: findMasterHeader, parseMasterGrid: parseMasterGrid, parseMasterText: parseMasterText, splitBatches: splitBatches,
     csvCell: csvCell, toCsv: toCsv, fmtStamp: fmtStamp, masterExportCells: masterExportCells, masterFileName: masterFileName, masterErrorsCsv: masterErrorsCsv,

@@ -27,8 +27,9 @@ h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
 .tab{border:0;background:none;color:var(--muted);font:inherit;font-weight:500;padding:7px 14px;border-radius:6px;cursor:pointer}
 .tab[aria-selected=true]{background:var(--accent);color:var(--accent-ink)}
 .tab:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.board{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;align-items:start}
+.board{display:grid;grid-template-columns:minmax(0,2fr) minmax(320px,1fr);gap:14px;align-items:start}
 @media(max-width:900px){.board{grid-template-columns:minmax(0,1fr)}}
+.wrap:has(#v-board:not([hidden])){max-width:1600px}   /* Board tab: the map uses the available width (2026-10-24.1) */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
 .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:12px}
 @media(max-width:560px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
@@ -37,9 +38,27 @@ h1{font-size:20px;font-weight:600;margin:0;text-wrap:balance}
 .kpi span{font-size:11.5px;color:var(--muted)}
 .kpi[aria-pressed=true]{border-color:var(--ink)}
 .k-ok{background:var(--okbg)}.k-full{background:var(--fullbg)}.k-issue{background:var(--issuebg)}.k-stale{background:var(--stalebg)}.k-unv{background:var(--stalebg)}
-.mapbox{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden}
-#map{display:block;width:100%;height:60vh;min-height:320px;cursor:crosshair;background:var(--bg)}
-@media(max-width:560px){#map{height:55vh}}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--bg);overflow:hidden;isolation:isolate}
+#map{display:block;width:100%;height:max(520px,calc(100vh - 150px));height:max(520px,calc(100dvh - 150px));cursor:crosshair;background:var(--bg)}
+@media(max-width:600px){#map{height:max(380px,60vh);height:max(380px,60dvh)}}
+/* Board map navigation (2026-10-24.1): Expand map, Locate me, gesture hints */
+.mapbar{position:absolute;top:10px;right:10px;z-index:1001;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;max-width:calc(100% - 70px)}
+.mapbar .btn{box-shadow:0 1px 4px rgba(0,0,0,.25);padding:6px 10px;font-size:12.5px}
+.mapbar .btn[aria-busy=true]{opacity:.65}
+.mapx-only{display:none!important}
+.maphint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1002;background:rgba(10,16,22,.78);color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;pointer-events:none;text-align:center;max-width:calc(100% - 32px)}
+body.mapx{overflow:hidden}
+body.mapx #v-board .board{position:fixed;top:0;left:0;right:0;bottom:var(--bkh,0px);z-index:7;margin:0;padding:8px;background:var(--bg);grid-template-columns:minmax(0,1fr) minmax(300px,380px);grid-template-rows:minmax(0,1fr);align-items:stretch;gap:8px}
+body.mapx #v-board .board>.card{min-height:0;overflow:auto;padding:10px}
+body.mapx #v-board .bcard-map{display:flex;flex-direction:column;overflow:hidden}
+body.mapx .mapctl{flex:0 1 auto;max-height:42%;overflow:auto;min-height:0}
+body.mapx .mapctl.off{display:none}
+body.mapx .mapbox{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;margin-top:6px!important}
+body.mapx #map{flex:1 1 auto;height:auto;min-height:0}
+body.mapx .bcard-map>.hint,body.mapx .bcard-map>.legend{display:none}
+body.mapx .mapx-only{display:inline-flex!important}
+@media(max-width:900px){body.mapx #v-board .board{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+  body.mapx #v-board .bcard-list{max-height:34vh}}
 .mapnote{position:absolute;left:8px;right:8px;top:8px;z-index:1000;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px;pointer-events:none}
 #map>.mapnote{position:static;margin:8px}
 .leaflet-container{font:inherit}
@@ -196,8 +215,8 @@ tr.inb td{background:var(--bg)}
 .p12-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
 .p12-row>label{flex:1 1 130px;min-width:0}
 .p12-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
-.p12-map{width:100%;height:300px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--panel)}
-@media(max-width:560px){.p12-map{height:240px}}
+.p12-map{width:100%;height:400px;border:1px solid var(--line);border-radius:8px;margin-top:6px;background:var(--panel)}
+@media(max-width:560px){.p12-map{height:320px}}
 .p12-msg{font-size:12px;margin-top:6px;overflow-wrap:anywhere}
 .p12-msg.err{color:var(--full)}
 .p12-hits{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:220px;overflow:auto}
@@ -258,7 +277,8 @@ tr.inb td{background:var(--bg)}
     <div class="vbanner" id="viewBanner" role="note" hidden><b>View only</b> · You can look at the Board: map, NAP lists, stencil search and the subscriber pin. Dispatch, audits and exports are for NAP dispatchers.<span id="viewBannerHo" hidden> Session handed over from FieldOps lasts about an hour. Open NAP VIEW again from FieldOps to renew.</span></div>
     <section id="v-board">
     <div class="board">
-      <div class="card">
+      <div class="card bcard-map">
+        <div class="mapctl" id="mapCtl">
         <div class="filters" id="boardFilters">
           <label>District<select id="fDist"></select></label>
           <label>Barangay<select id="fBrgy"></select></label>
@@ -283,7 +303,15 @@ tr.inb td{background:var(--bg)}
         <div class="hits" id="subHits" hidden></div>
         <p class="subnote" id="subMsg" role="status" aria-live="polite" hidden></p>
         <p class="subnote">The address you type is sent to OpenStreetMap (Nominatim) to find the location.</p>
-        <div class="mapbox" style="margin-top:10px"><div id="map" aria-label="Map of NAP boxes"></div></div>
+        </div>
+        <div class="mapbox" id="mapBox" style="margin-top:10px"><div id="map" aria-label="Map of NAP boxes"></div>
+          <div class="mapbar" id="mapBar" role="toolbar" aria-label="Map tools" hidden>
+            <button class="btn mapx-only" id="mapCtlBtn" type="button" aria-controls="mapCtl" aria-expanded="true">Hide controls</button>
+            <button class="btn" id="mapLocate" type="button" aria-label="Locate me: show my position on the map" hidden>Locate me</button>
+            <button class="btn" id="mapExpand" type="button" aria-pressed="false" aria-label="Expand map">Expand map</button>
+          </div>
+          <div class="maphint" id="mapHint" role="status" aria-live="polite" hidden></div>
+        </div>
         <p class="hint" id="noCoordNote" hidden></p>
         <div class="legend">
           <span><i class="dot" style="background:var(--ok)"></i>Installable</span>
@@ -293,10 +321,10 @@ tr.inb td{background:var(--bg)}
           <span><i class="dot" style="background:var(--unv)"></i>Unverified (Converge only)</span>
           <span><i class="dot" style="background:var(--pin)"></i>Subscriber</span>
         </div>
-        <p class="hint">Click the map to place the subscriber address.</p>
+        <p class="hint">Click the map to place the subscriber address. Expand map fills the screen (Esc exits). On a phone, use two fingers to move the map.</p>
       </div>
 
-      <div class="card">
+      <div class="card bcard-list">
         <div class="radsec" id="radSec" hidden><h2 id="radH"></h2><p class="radcap" id="radCap" role="status" aria-live="polite" hidden></p><ul class="list inrad" id="inRad"></ul><div class="row" style="margin-top:8px"><button class="btn sm" id="radAdd" type="button" hidden>Add these to the basket</button></div></div>
         <h2>Where should the team go?</h2>
         <div class="row">
@@ -412,7 +440,7 @@ tr.inb td{background:var(--bg)}
     </section>
     <section id="v-master" hidden>
       <div class="card"><h2>Export the NAP master</h2>
-        <p class="hint" style="margin:0 0 10px">One row per NAP box: the master columns you can edit and import back, plus the computed status (read-only). Deactivated NAPs are listed with status <b>inactive</b> and active <b>NO</b>; this export is the only place they appear.</p>
+        <p class="hint" style="margin:0 0 10px">One row per NAP box: the master columns you can edit and import back, plus the computed status and the port remarks (read-only, column <b>port_remarks</b>; ignored when the file is imported back). Deactivated NAPs are listed with status <b>inactive</b> and active <b>NO</b>; this export is the only place they appear.</p>
         <div class="row">
           <label class="meta">Scope <select id="mxScope" aria-label="Export scope"></select></label>
           <label class="meta"><input type="checkbox" id="mxInactive" checked> Include deactivated NAPs</label>
@@ -454,11 +482,11 @@ tr.inb td{background:var(--bg)}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-22.4"></script>
-<script src="nap-api.js?v=2026-10-22.4"></script>
+<script src="nap-core.js?v=2026-10-24.1"></script>
+<script src="nap-api.js?v=2026-10-24.1"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-22.4';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-10-24.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -700,7 +728,11 @@ function initMap() {
   if (typeof L === 'undefined') { mapFailed = true; mapNote('Cannot load the map. The list still works.'); return false; }
   try {
     var rend = L.canvas({ padding: 0.5 });
-    LMAP = L.map('map', { preferCanvas: true, renderer: rend, zoomControl: true, attributionControl: true }).setView([14.6645, 121.0195], 15);
+    // Gestures (2026-10-24.1): the page keeps scrolling over the map. Mouse wheel zooms only after a click / drag / focus on the map (or
+    // while expanded); on a touch device one finger scrolls the page and two fingers move + zoom the map (Leaflet touchZoom), see mapNavInit.
+    MAPTOUCH = !!(L.Browser && (L.Browser.mobile || (L.Browser.touch && window.matchMedia && matchMedia('(pointer: coarse)').matches)));
+    LMAP = L.map('map', { preferCanvas: true, renderer: rend, zoomControl: true, attributionControl: true, scrollWheelZoom: false, dragging: !MAPTOUCH }).setView([14.6645, 121.0195], 15);
+    L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(LMAP);
     var tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(LMAP);
     tl.on('tileload', function () { tileOk++; });
     tl.on('tileerror', function () { tileBad++; if (!tileOk && tileBad >= 3) mapNote('Cannot load the map. The list still works.'); });
@@ -708,8 +740,84 @@ function initMap() {
     mapTip = L.tooltip({ direction: 'top', offset: [0, -6] });
     if (window.ResizeObserver) new ResizeObserver(function () { if (LMAP) LMAP.invalidateSize(); }).observe($('map'));
     LMAP.on('click', function (e) { setPin({ lat: e.latlng.lat, lng: e.latlng.lng }, !state.sub); });
+    mapNavInit();
     return true;
   } catch (e) { LMAP = null; mapFailed = true; mapNote('Cannot load the map. The list still works.'); return false; }
+}
+// ----- Board map navigation (2026-10-24.1): Expand map (Fullscreen API when available, else a CSS overlay), Locate me, gesture hints -----
+var MAPTOUCH = false, MN = C.mapNav, mapx = { on: false, fs: false }, meLayer = null, hintT = 0, wheelOn = false;
+function mapHint(msg) { var h = $('mapHint'); h.textContent = msg; h.hidden = false; clearTimeout(hintT); hintT = setTimeout(function () { h.hidden = true; }, 1600); }
+function mapWheel(on) { on = !!on || mapx.on; if (!LMAP || on === wheelOn) return; wheelOn = on; if (on) LMAP.scrollWheelZoom.enable(); else LMAP.scrollWheelZoom.disable(); }
+function mapResize() { if (LMAP) LMAP.invalidateSize(); if (typeof P12 !== 'undefined' && P12 && P12.map) { try { P12.map.invalidateSize(); } catch (e) {} } }
+function bkhSync() { var b = $('bkBar'); document.body.style.setProperty('--bkh', (b && !b.hidden ? b.offsetHeight : 0) + 'px'); }
+function mapExpand(on, opt) {
+  on = !!on; opt = opt || {};
+  if (on === mapx.on || !LMAP) return;
+  mapx.on = on;
+  document.body.classList.toggle('mapx', on);
+  [document.querySelector('#app > header'), $('viewBanner'), $('blCard')].forEach(function (el) { if (el) el.inert = on; });   // keyboard stays inside the full map
+  var btn = $('mapExpand');
+  btn.textContent = on ? 'Exit full map' : 'Expand map'; btn.setAttribute('aria-pressed', on); btn.setAttribute('aria-label', on ? 'Exit full map' : 'Expand map');
+  if (on) {
+    bkhSync();
+    mapCtlShow(!window.matchMedia || !matchMedia('(max-width: 900px)').matches);   // phone: map first, controls one tap away
+    if (opt.fs !== false && !opt.restore && document.fullscreenEnabled && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      try { document.documentElement.requestFullscreen().then(function () { mapx.fs = true; }, function () { mapx.fs = false; }); } catch (e) { mapx.fs = false; }
+    }
+  } else {
+    var wasFs = mapx.fs; mapx.fs = false;
+    if (wasFs && document.fullscreenElement && document.exitFullscreen) { try { document.exitFullscreen().catch(function () {}); } catch (e) {} }
+  }
+  if (MAPTOUCH) { if (on) LMAP.dragging.enable(); else LMAP.dragging.disable(); }
+  wheelOn = !on; mapWheel(on);
+  try { if (on) sessionStorage.setItem(MN.KEY, '1'); else sessionStorage.removeItem(MN.KEY); } catch (e) { /* private mode: not remembered */ }
+  mapResize(); setTimeout(mapResize, 60); setTimeout(mapResize, 350);   // after the layout and the fullscreen switch settle
+  if (!opt.restore) btn.focus();
+}
+function mapCtlShow(show) {
+  $('mapCtl').classList.toggle('off', !show);
+  var b = $('mapCtlBtn'); b.textContent = show ? 'Hide controls' : 'Show controls'; b.setAttribute('aria-expanded', show);
+  mapResize();
+}
+function mapLocate() {
+  var b = $('mapLocate'); if (b.getAttribute('aria-busy') === 'true' || !LMAP) return;
+  b.setAttribute('aria-busy', 'true'); b.textContent = 'Locating…';
+  var done = function () { b.removeAttribute('aria-busy'); b.textContent = 'Locate me'; };
+  try {
+    navigator.geolocation.getCurrentPosition(function (p) {
+      done(); if (!LMAP) return;
+      var ll = [p.coords.latitude, p.coords.longitude], acc = p.coords.accuracy;
+      if (!meLayer) meLayer = L.layerGroup().addTo(LMAP);
+      meLayer.clearLayers();
+      if (acc > 0) L.circle(ll, { radius: acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: .12, interactive: false }).addTo(meLayer);
+      L.circleMarker(ll, { radius: 7, fillColor: '#1a73e8', fillOpacity: 1, color: '#fff', weight: 2, interactive: false }).addTo(meLayer);
+      var v = MN.locateView(acc, LMAP.getZoom());
+      if (v.fit) LMAP.fitBounds(L.latLng(ll[0], ll[1]).toBounds(v.radius * 2), { padding: [20, 20] }); else LMAP.setView(ll, v.zoom);
+      toast(MN.locateMsg(acc));
+    }, function (err) { done(); toast(MN.geoError(err)); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 });
+  } catch (e) { done(); toast(MN.geoError(null)); }
+}
+function mapNavInit() {
+  var host = $('map');
+  $('mapBar').hidden = false;
+  $('mapLocate').hidden = !(navigator.geolocation && window.isSecureContext !== false);
+  $('mapLocate').onclick = mapLocate;
+  $('mapExpand').onclick = function () { mapExpand(!mapx.on); };
+  $('mapCtlBtn').onclick = function () { mapCtlShow($('mapCtl').classList.contains('off')); };
+  // desktop: the wheel scrolls the page until the map is clicked, dragged or focused; leaving the map hands the wheel back to the page
+  host.addEventListener('mousedown', function () { mapWheel(true); });
+  host.addEventListener('focus', function () { mapWheel(true); });
+  host.addEventListener('mouseleave', function () { mapWheel(false); });
+  host.addEventListener('blur', function () { if (!host.matches(':hover')) mapWheel(false); });
+  host.addEventListener('wheel', function () { if (!wheelOn && !mapx.on) mapHint('Click the map first to zoom with the mouse wheel, or use + and −.'); }, { passive: true });
+  // touch: one finger scrolls the page (Leaflet dragging is off, so the map is touch-action: pan-x pan-y), two fingers move the map
+  host.addEventListener('touchmove', function (e) { if (MAPTOUCH && !mapx.on && e.touches && e.touches.length === 1) mapHint('Use two fingers to move the map'); }, { passive: true });
+  document.addEventListener('keydown', function (e) { if (mapx.on && (e.key === 'Escape' || e.key === 'Esc') && !e.defaultPrevented) mapExpand(false); });
+  document.addEventListener('fullscreenchange', function () { if (!document.fullscreenElement && mapx.fs) { mapx.fs = false; mapExpand(false); } else mapResize(); });
+  if (window.ResizeObserver && $('bkBar')) new ResizeObserver(bkhSync).observe($('bkBar'));
+  $('bkBar').addEventListener('click', function (e) { if (mapx.on && e.target.closest('button')) mapExpand(false); }, true);   // basket actions scroll to cards under the overlay
+  var keep = false; try { keep = MN.restore(sessionStorage.getItem(MN.KEY)); } catch (e) {}
+  if (keep && !$('v-board').hidden) mapExpand(true, { restore: true });
 }
 function markerStyle(b) {
   var sel = isSel(b), dim = !!(state.filter && state.filter !== b.kind), unv = b.kind === 'unverified';
@@ -719,7 +827,7 @@ function markerStyle(b) {
 function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' free' : ''); }
 function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
 function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
-function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); }
+function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
 function mapRows() {
   var seen = {}, out = [];
   state.boxes.concat(state.near, state.nearest).forEach(function (b) { if (b && b.box_id && !seen[b.box_id]) { seen[b.box_id] = true; out.push(state.known[b.box_id] || b); } });
@@ -920,7 +1028,7 @@ function drawRadius() {
   }).join('') : '<li class="meta">No NAP within ' + C.fmtRange(state.radius) + '. Increase the radius or click another location.</li>';
 }
 function drawBoard(refresh) { computeRad(); drawMap(); drawKpis(); drawList(); drawRadius(); drawBoardList(); drawDetail(refresh); }
-function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); }
+function pickBox(ev) { var b = ev.target.closest('.item'); if (!b) return; state.sel = state.known[b.dataset.id] || null; drawBoard(); focusSel(); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
 
 // Subscriber pin: set by map click, a pasted lat,lng, or an address search. Never stored. Its coordinates go to our own database only
 // (nap.boxes_near for the radius list, nap.nearest_installable for the "where should the team go" list).
@@ -1053,6 +1161,7 @@ function tab(name) {
   if (ACC.tabs.indexOf(name) < 0) name = 'board';   // a view-only account never opens another tab
   ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('v-' + t).hidden = t !== name; $('tb-' + t).setAttribute('aria-selected', t === name); });
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
+  if (name !== 'board' && mapx.on) mapExpand(false);
   if (name === 'audits') auOpen(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
 }
 ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
@@ -1777,7 +1886,8 @@ var MM_ST = { 'new': ['new', 'p-ok'], update: ['update', 'p-upd'], unchanged: ['
 var MM_APPLY = { 'new': 1, update: 1, deactivate: 1, reactivate: 1 };
 var MM_SHOW_MAX = 1000;
 var MX_WIDTHS = { stencil: 26, barangay: 24, district: 10, dwelling: 10, street: 28, olt: 14, lat: 12, lng: 12, geo_source: 12, geo_updated_at: 18, np_numbers: 12,
-                  total_ports: 12, status: 13, checked_ports: 14, free_ports: 12, bad_ports: 10, age_days: 10, last_audit_at: 18, last_audit_team: 16, converge_available: 18, active: 8 };
+                  total_ports: 12, status: 13, checked_ports: 14, free_ports: 12, bad_ports: 10, age_days: 10, last_audit_at: 18, last_audit_team: 16, converge_available: 18, active: 8,
+                  port_remarks: 60 };
 function mxMsg(t) { $('mxMsg').textContent = t || ''; }
 function mmMsg(t) { $('mmMsg').textContent = t || ''; }
 function mmProg(t) { $('mmProg').textContent = t || ''; }
@@ -1810,9 +1920,10 @@ async function mxRun(kind) {
       mxMsg('Building the file (' + fmtN(rows.length) + ' rows)…');
       await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint before the (synchronous) file build
       if (job.cancel) throw CANCEL();
-      var cells = rows.map(C.masterExportCells);
+      var cols = C.masterExportCols(rows);   // + port_remarks when the database sends it (phase 13), else the 21 columns as before
+      var cells = rows.map(function (r) { return C.masterExportCells(r, cols); });
       name = C.masterFileName(scope || 'whole-qc', kind);
-      saveBlob(new Blob(['\ufeff' + C.toCsv(C.MASTER_EXPORT_COLS, cells, C.MASTER_NUMERIC)], { type: 'text/csv;charset=utf-8' }), name);
+      saveBlob(new Blob(['\ufeff' + C.toCsv(cols, cells, C.MASTER_NUMERIC)], { type: 'text/csv;charset=utf-8' }), name);
       n = rows.length; off = rows.filter(function (r) { return r.active === 'NO'; }).length;
       rows = cells = null;
     } else {
@@ -1823,7 +1934,8 @@ async function mxRun(kind) {
   } catch (e) { mxMsg(e && e.code === 'NAP_CANCELLED' ? 'Export cancelled.' : 'Cannot export: ' + msgOf(e)); }
   finally { if (job.x) { job.x.close(); job.x = null; } mx.busy = false; mxLock(false); }
 }
-// .xlsx: each page of 1,000 boxes becomes cells here and goes to the builder (the worker) at once; a failed worker = one more run on the page
+// .xlsx: each page of 1,000 boxes becomes cells here and goes to the builder (the worker) at once; a failed worker = one more run on the page.
+// The builder opens on the FIRST page: its columns come from the rows (port_remarks only when the database sends it, phase 13 / nap-22).
 async function mxXlsx(scope, label, inc, job) {
   var CANCEL = function () { return Object.assign(new Error('cancelled'), { code: 'NAP_CANCELLED' }); };
   for (var attempt = 0; ; attempt++) {
@@ -1836,15 +1948,25 @@ async function mxXlsx(scope, label, inc, job) {
       mxMsg(t + (job.fallback ? XLSX_FREEZE : ''));
     };
     job.onProgress = function (p) { if (p.phase === 'rows') added = p.rows; else phase = 'write'; say(); };
-    mxMsg('Loading the Excel writer…');
-    try { await xlsxJob({ sheet: 'EXPORT', head: C.MASTER_EXPORT_COLS, cols: C.MASTER_EXPORT_COLS.map(function (c) { return { wch: MX_WIDTHS[c] || 12 }; }) }, job); }
-    catch (e) { if (job.cancel) throw CANCEL(); throw new Error('Cannot load the Excel writer; use .csv'); }
-    if (job.cancel) throw CANCEL();
-    mxMsg('Exporting ' + label + '…' + (job.fallback ? XLSX_FREEZE : ''));
+    var cols = null;
+    var openX = async function (c) {
+      cols = c;
+      mxMsg('Loading the Excel writer…');
+      try { await xlsxJob({ sheet: 'EXPORT', head: cols, cols: cols.map(function (k) { return { wch: MX_WIDTHS[k] || 12 }; }) }, job); }
+      catch (e) { if (job.cancel) throw CANCEL(); throw new Error('Cannot load the Excel writer; use .csv'); }
+      if (job.cancel) throw CANCEL();
+      say();
+    };
+    mxMsg('Exporting ' + label + '…');
     try {
       var n = await api.exportBoxesAll({ barangay: scope || null, includeInactive: inc, cancelled: function () { return job.cancel; },
         onPage: function (k) { fetched = k; say(); },
-        onRows: function (rows) { rows.forEach(function (r) { if (r.active === 'NO') off++; }); return job.x.add(rows.map(C.masterExportCells)); } });
+        onRows: async function (rows) {
+          if (!job.x) await openX(C.masterExportCols(rows));
+          rows.forEach(function (r) { if (r.active === 'NO') off++; });
+          return job.x.add(rows.map(function (r) { return C.masterExportCells(r, cols); }));
+        } });
+      if (!job.x) await openX(C.MASTER_EXPORT_COLS_V1.slice());   // no rows: the header only
       phase = 'build'; say();
       if (job.x.mode() === 'main') { phase = 'write'; say(); await new Promise(function (r) { setTimeout(r, 30); }); }   // paint before the synchronous build
       if (job.cancel) throw CANCEL();
