@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-10-24.1';
+const APP_VERSION='2026-11-04.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -5028,12 +5028,15 @@ async function renderAnnounceBar(){
       if(!isAhba){ bar.classList.add('hidden'); bar.innerHTML=''; return; }
     }
     const esc=s=>(s||'').replace(/</g,'&lt;'); const rec=!!a.photo_path;
-    const img=rec?`<img src="${photoBase(a.photo_path)}" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none">`:'';
+    // Owner 2026-11-04: clickable na ang announcement photo — bubukas nang buong laki
+    // sa bagong tab para makita ng console users ang recognition poster.
+    const img=rec?`<img id="annBarImg" src="${photoBase(a.photo_path)}" alt="" title="View full photo" style="width:40px;height:40px;border-radius:8px;object-fit:cover;border:2px solid #fff;flex:none;cursor:pointer">`:'';
     const rm=canRemoveAnn(a)?`<button id="annBarRm" data-id="${a.id}" style="flex:none;border:0;background:rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:6px 11px;font-weight:700;font-size:11px;cursor:pointer">✕ Remove</button>`:'';
     bar.style.cssText='display:flex;gap:13px;align-items:center;padding:10px 30px;'+(rec?'background:linear-gradient(135deg,#f6c453,#e9952f);color:#3a2600':'background:#0e3531;color:#eaf5f1');
     bar.innerHTML=`${img}<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:9px;letter-spacing:.06em;opacity:.85">${rec?'🏆 RECOGNITION':'📢 ANNOUNCEMENT'} · ${esc(a.audience||'all').toUpperCase()}</div><div style="font-weight:800;font-size:13px">${esc(a.title||'Announcement')}</div><div style="font-size:11px;opacity:.92;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.body||'')}</div></div>${rm}`;
     bar.classList.remove('hidden');
     const b=$('#annBarRm'); if(b) b.onclick=()=>removeAnnounce(b.dataset.id);
+    const im=$('#annBarImg'); if(im) im.onclick=()=>window.open(photoBase(a.photo_path),'_blank','noopener,noreferrer');
   }catch(e){ bar.classList.add('hidden'); }
 }
 async function removeAnnounce(id){
