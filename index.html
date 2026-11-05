@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-11-04.1" />
+  <link rel="stylesheet" href="styles.css?v=2026-11-05.1" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -533,6 +533,10 @@
           </div>
           <div class="table-wrap"><table><thead><tr><th>Work account</th><th>Assigned to</th><th>Active</th><th>Sharing</th><th>Actions</th></tr></thead><tbody id="gcWaBody"></tbody></table></div>
         </article>
+        <article class="panel full-table" id="acSecReq" style="margin-top:14px;display:none">
+          <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">📞 Secondary contact requirement</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Which organizations must supply a Secondary contact no. when encoding a job order. <b>AHBA (GC) is always required</b> — it cannot be turned off. Toggle each subcontractor to require it for their console and sales-agent encodes too.</p></div></div>
+          <div id="secReqBody" style="padding:12px 20px"></div>
+        </article>
         <article class="panel full-table" id="acAuditLog" style="margin-top:14px;display:none">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">🔑 Password reset history</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Superadmin monitoring — who reset / created / renamed / deleted which account and when.</p></div><button class="secondary-btn" id="auditRefresh"><i data-icon="arrow"></i>Refresh</button></div>
           <div class="table-wrap"><table><thead><tr><th>When</th><th>By</th><th>Action</th><th>Account</th><th>Type</th></tr></thead><tbody id="auditBody"></tbody></table></div>
@@ -616,7 +620,7 @@
         <label class="field"><span>Last name *</span><input name="last_name" required></label>
         <label class="field"><span>Date of birth *</span><input name="birth_date" id="ord_birth" type="date"></label>
         <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
-        <label class="field"><span>Other contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+        <label class="field"><span id="ordOcnLabel">Secondary contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
         <label class="field"><span>Email address *</span><input name="email" type="email" inputmode="email" autocomplete="off" placeholder="name@email.com" required></label>
       </div>
 
@@ -829,19 +833,19 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-11-04.1"></script>
-  <script src="qa-photo-corrections.js?v=2026-11-04.1"></script>
-  <script src="hr-core.js?v=2026-11-04.1"></script>
-  <script src="hr-api.js?v=2026-11-04.1"></script>
-  <script src="hr-attendance-import.js?v=2026-11-04.1"></script>
-  <script src="hr-sheets.js?v=2026-11-04.1"></script>
-  <script src="console-hr.js?v=2026-11-04.1"></script>
-  <script src="hr-entry.js?v=2026-11-04.1"></script>
-  <script src="app.js?v=2026-11-04.1"></script>
+  <script src="qa-wims-export.js?v=2026-11-05.1"></script>
+  <script src="qa-photo-corrections.js?v=2026-11-05.1"></script>
+  <script src="hr-core.js?v=2026-11-05.1"></script>
+  <script src="hr-api.js?v=2026-11-05.1"></script>
+  <script src="hr-attendance-import.js?v=2026-11-05.1"></script>
+  <script src="hr-sheets.js?v=2026-11-05.1"></script>
+  <script src="console-hr.js?v=2026-11-05.1"></script>
+  <script src="hr-entry.js?v=2026-11-05.1"></script>
+  <script src="app.js?v=2026-11-05.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-11-04.1"></script>
+  <script src="ahba-cloud.js?v=2026-11-05.1"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-11-04.1"></script><script src="qa-subscriber-info.js?v=2026-11-04.1"></script><script src="qa-api.js?v=2026-11-04.1"></script><script src="console-qa.js?v=2026-11-04.1"></script><script src="console-qa-findings.js?v=2026-11-04.1"></script>
-  <script src="fms-core.js?v=2026-11-04.1"></script><script src="fms-api.js?v=2026-11-04.1"></script><script src="console-fms.js?v=2026-11-04.1"></script>
+  <script src="qa-core.js?v=2026-11-05.1"></script><script src="qa-subscriber-info.js?v=2026-11-05.1"></script><script src="qa-api.js?v=2026-11-05.1"></script><script src="console-qa.js?v=2026-11-05.1"></script><script src="console-qa-findings.js?v=2026-11-05.1"></script>
+  <script src="fms-core.js?v=2026-11-05.1"></script><script src="fms-api.js?v=2026-11-05.1"></script><script src="console-fms.js?v=2026-11-05.1"></script>
 </body>
 </html>

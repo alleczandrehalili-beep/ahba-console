@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-04.1';
+const APP_VERSION='2026-11-05.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1324,6 +1324,21 @@ async function loadOrgMap(){
   }catch(e){}
   try{ tlBuildOrgFilter(); }catch(e){}
   try{ napViewNav(); }catch(e){}   // NAP VIEW needs gcOrgId (GC check)
+  try{ loadSecReq(); }catch(e){}   // Secondary-contact requirement ng sariling org
+}
+// Owner 2026-11-05: Secondary contact no. ay MANDATORY sa encoding — laging
+// required sa GC (AHBA / superadmin), at per-contractor via orgs flag (RPC).
+// secReqMine: null = hindi pa alam (RPC hindi pa tumakbo o wala pa ang SQL) —
+// sa gayon GC pa rin ang naka-enforce via secReqLocalGc() (effective agad).
+let secReqMine=null;
+function secReqLocalGc(){ const u=window.dashUser; return !!(u && (u.is_super || (gcOrgId && u.org_id && u.org_id===gcOrgId))); }
+function secReqNow(){ return (secReqMine===true) || secReqLocalGc(); }
+async function loadSecReq(){
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/my_secondary_contact_required`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:'{}'});
+    if(r.ok){ secReqMine=((await r.json())===true); }
+  }catch(e){}
+  const lb=$('#ordOcnLabel'); if(lb) lb.innerHTML='Secondary contact no. '+(secReqNow()?'* ':'')+'(11 digits)';
 }
 // GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
 // Options: "AHBA + MSA-SLI" (all) · "AHBA" (GC only) · "MSA - SLI" (all subcons only) · each subcon by name.
@@ -3613,7 +3628,12 @@ async function submitOrderInner(e){
   if(!email && !emailOptional){ err('Email address is required.'); return; }
   if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err('Enter a valid email address (name@email.com).'); return; }
   if(!/^\d{11}$/.test(pno)){ err('Primary no. must be exactly 11 digits (numbers only).'); return; }
-  if(ono && !/^\d{11}$/.test(ono)){ err('Other contact no. must be 11 digits (numbers only).'); return; }
+  // Owner 2026-11-05: Secondary contact no. ay REQUIRED sa BAGONG encode kapag GC
+  // (laging on) o naka-ON ang contractor flag. Edit/resubmit ng lumang JO = hindi
+  // hinaharang (parehong patakaran ng birth_date — nauna ang mga record sa field).
+  if(secReqMine===null){ try{ await loadSecReq(); }catch(_e){} }
+  if(!ordEditId && secReqNow() && !ono){ err('Secondary contact no. is required (11 digits).'); return; }
+  if(ono && !/^\d{11}$/.test(ono)){ err('Secondary contact no. must be 11 digits (numbers only).'); return; }
   // Date of birth: required on NEW encodes; optional on edit/resubmit (old JOs predate the field).
   const bday=(f.birth_date||'').trim();
   if(!ordEditId && !bday){ err('Date of birth is required.'); return; }
@@ -4544,7 +4564,47 @@ async function renderAccess(){
   $$('#accessWrap [data-xorg]').forEach(b=>b.onclick=()=>toggleCrossOrg(b.dataset.xorg, b.dataset.xon!=='1'));
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
   renderGcWorkAccounts();   // GC's own work-account pool manager (superadmin only)
+  renderSecReqCard();   // Secondary-contact requirement per contractor (superadmin only)
   if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
+}
+// Secondary contact requirement card — superadmin picks WHICH contractors must
+// supply a Secondary contact no. at encode time. AHBA (GC) is shown locked:
+// always required, hindi configurable (server-side din itong tinatanggihan).
+async function renderSecReqCard(){
+  const card=$('#acSecReq'), body=$('#secReqBody'); if(!card||!body) return;
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
+  card.style.display=isSuper?'':'none';
+  if(!isSuper) return;
+  body.innerHTML='Loading…';
+  let flagged=null;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/get_secondary_contact_orgs`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:'{}'});
+    if(r.ok) flagged=new Set(await r.json());
+  }catch(e){}
+  if(flagged===null){
+    body.innerHTML='<span style="color:#c2503a;font-size:11px">⚠ Backend not ready — run <b>supabase-secondary-contact.sql</b> in the SQL editor first. (GC encodes already require the secondary contact regardless.)</span>';
+    return;
+  }
+  const ids=Object.keys(orgById);
+  const subs=ids.filter(id=>id!==gcOrgId).sort((a,b)=>String(orgById[a].name||'').localeCompare(String(orgById[b].name||'')));
+  const esc=s=>String(s||'').replace(/</g,'&lt;');
+  const rows=[];
+  if(gcOrgId&&orgById[gcOrgId]) rows.push(`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #eef2f0"><b style="font-size:12px;min-width:220px">${esc(orgById[gcOrgId].name||'AHBA')} <span style="color:#8a9894;font-weight:400">(GC)</span></b><span style="font-size:11px;color:#11825f;font-weight:700">✓ Always required</span></div>`);
+  subs.forEach(id=>{
+    const on=flagged.has(id);
+    rows.push(`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #eef2f0"><b style="font-size:12px;min-width:220px">${esc(orgById[id].name||orgById[id].code)}</b><button class="assign-btn" data-secreq="${id}" data-secon="${on?1:0}" style="${on?'color:#11825f;border-color:#9fd9c4;font-weight:700':''}">${on?'Required: ON':'Required: OFF'}</button></div>`);
+  });
+  body.innerHTML=rows.join('')||'<span style="color:#8a9894;font-size:11px">No organizations loaded.</span>';
+  $$('#secReqBody [data-secreq]').forEach(b=>b.onclick=async()=>{
+    const on=b.dataset.secon!=='1';
+    try{
+      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/set_secondary_contact_requirement`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_org:b.dataset.secreq,p_on:on})});
+      if(!r.ok){ let m='HTTP '+r.status; try{ const j=await r.json(); m=j.message||j.error||m; }catch(_){ } throw new Error(m); }
+      let msg=''; try{ msg=await r.json(); }catch(_){ }
+      showToast(typeof msg==='string'&&msg?msg:(on?'Requirement enabled':'Requirement disabled'));
+    }catch(e){ showToast('Failed: '+(e.message||e)); }
+    renderSecReqCard();
+  });
 }
 // Grant/revoke SUPERADMIN-like cross-org Dashboard access for a GC dispatcher account.
 // Backed by the superadmin-guarded set_gc_all_loads() RPC (refuses non-GC accounts — no leak).
