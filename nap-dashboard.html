@@ -322,6 +322,80 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 .p16 .p16-meta div{margin-top:3px}
 .p16 .p16-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .p16 .p16-act .btn{padding:5px 10px;font-size:12px}
+/* phase 17 (2026-11-11.3): the technician MAP VIEW (body.techmap; NapCore.p17.techMapView decides). Self-contained: every rule starts with
+   body.techmap, .tm or #tm. Only KPI tiles + subscriber search / radius + one barangay row + the map; the rest is hidden or opens as a sheet. */
+.tm-only{display:none!important}
+body.techmap .tm-only{display:inline-flex!important}
+body.techmap{margin:0;padding:6px 8px 8px}
+body.techmap .wrap{max-width:none;gap:6px}
+body.techmap #app{display:flex;flex-direction:column;gap:6px;min-height:calc(100vh - 14px);min-height:calc(100dvh - 14px)}
+body.techmap #app>header{flex-wrap:nowrap;align-items:center;gap:8px}
+body.techmap #app>header>div:first-child{min-width:0;flex:1 1 auto}
+body.techmap #app>header h1{font-size:15px}
+body.techmap #who{font-size:11.5px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.techmap #app>header>.row{flex-wrap:nowrap;gap:6px;flex:0 0 auto}
+body.techmap #app>header .btn{min-height:36px}
+body.techmap #app>header .tabs,body.techmap #exportCsv,body.techmap #viewBanner{display:none!important}
+body.techmap #v-board{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+body.techmap #v-board .board{display:flex;flex-direction:column;align-items:stretch;flex:1 1 auto;min-height:0;min-width:0;gap:0}
+body.techmap #v-board .bcard-list,body.techmap #v-board>#blCard{display:none!important}
+body.techmap #v-board .bcard-map{flex:1 1 auto;display:flex;flex-direction:column;padding:8px;min-height:0;min-width:0}
+body.techmap .mapctl{display:flex;flex-direction:column;gap:6px}
+body.techmap #cityLine,body.techmap #p14City,body.techmap #brgyBox,body.techmap .findrow,body.techmap #findHits,body.techmap #kpiScope,
+body.techmap .bcard-map>.legend,body.techmap .bcard-map>.p14-legend,body.techmap .bcard-map>.hint,body.techmap #noCoordNote{display:none!important}
+body.techmap .kpis{order:1;display:flex;gap:6px;margin:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
+body.techmap .kpis::-webkit-scrollbar{display:none}
+body.techmap .kpi{flex:1 0 auto;display:flex;flex-direction:column;justify-content:center;min-height:44px;padding:3px 10px}
+body.techmap .kpi b{font-size:16px;line-height:1.15}
+body.techmap .kpi span{font-size:11px;white-space:nowrap}
+body.techmap .subbar{order:2;margin:0;gap:6px}
+body.techmap .subbar .q{flex:1 1 170px;min-height:40px}
+body.techmap #subGo{flex:0 0 auto;min-height:40px}
+body.techmap #radPre{flex:0 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
+body.techmap #radPre::-webkit-scrollbar{display:none}
+body.techmap #radPre button{flex:0 0 auto;min-height:38px;white-space:nowrap}
+body.techmap #tmRadC,body.techmap #subClear{min-height:38px;padding:4px 10px;font-size:12.5px}
+body.techmap .subbar .rad{display:none;flex:1 1 100%}
+body.techmap.tm-radc .subbar .rad{display:flex}
+body.techmap .subbar .rad input{min-height:38px}
+body.techmap #subHits{order:3;margin:0}
+body.techmap #subMsg{order:4;margin:0}
+body.techmap .mapctl>.subnote{order:5;margin:0;font-size:11px}
+body.techmap #loadMsg{order:6;margin:0}
+body.techmap #boardFilters{order:7;flex-wrap:nowrap;align-items:center;gap:6px;margin:0}
+body.techmap #boardFilters>label{display:none}
+body.techmap #boardFilters>label.tm-brgy{display:flex;flex-direction:row;align-items:center;gap:6px;flex:1 1 auto;min-width:0;font-size:12px}
+body.techmap #fBrgy{flex:1 1 auto;min-width:0;min-height:40px}
+body.techmap .tm-acts{display:flex;gap:6px;flex:0 0 auto}
+body.techmap .tm-acts .btn{min-height:40px;padding:4px 10px;font-size:12.5px}
+.tm-acts{display:none}
+body.techmap .mapbox{flex:1 1 auto;display:flex;flex-direction:column;margin-top:6px!important;min-height:min(380px,calc(100vh - 16px));min-height:min(380px,calc(100dvh - 16px))}
+body.techmap #map{flex:1 1 auto;height:auto;min-height:min(380px,calc(100vh - 16px));min-height:min(380px,calc(100dvh - 16px))}
+body.techmap.mapx .mapbox,body.techmap.mapx #map{min-height:0}
+@media (orientation:landscape) and (max-height:500px){   /* a phone on its side: the controls left, the map right, both full height */
+  body.techmap #v-board .bcard-map{flex-direction:row;gap:8px}
+  body.techmap .mapctl{flex:0 0 min(300px,42%);min-height:0;overflow:auto;overscroll-behavior:contain}
+  body.techmap .mapbox{margin-top:0!important;min-height:0}
+  body.techmap #map{min-height:0}
+  body.techmap #v-board .board{max-height:calc(100dvh - 60px)}
+}
+/* the sheets (NAP details, NAP list, legend): full-width bottom sheet over the map, 44 px targets, own scroll, Esc / Back / Close */
+.tm-scrim{position:fixed;inset:0;z-index:29;background:rgba(0,0,0,.38)}
+.tm-sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:92vh;max-height:92dvh;display:flex;flex-direction:column;background:var(--panel);color:var(--ink);
+  border-top:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.3);max-width:900px;margin:0 auto}
+.tm-sheet[hidden],.tm-scrim[hidden]{display:none!important}
+.tm-sheet-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px 6px 14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+.tm-sheet-h h2{margin:0;font-size:15px;min-width:0;overflow-wrap:anywhere}
+.tm-sheet-h .btn{min-height:44px;min-width:64px}
+.tm-sheet-b{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px calc(16px + env(safe-area-inset-bottom,0px))}
+.tm-sheet-b>.detail{margin:0;border:0;padding:0}
+.tm-sheet-b>#blCard{margin:0!important;border:0;padding:0;background:none}
+.tm-sheet-b>.radsec{margin-bottom:12px}
+.tm-sheet .inrad{max-height:none}
+.tm-sheet .btn,.tm-sheet .item,.tm-sheet .linkish,.tm-sheet select{min-height:44px}
+.tm-sheet .legend,.tm-sheet .p14-legend{display:flex;flex-direction:column;gap:8px;font-size:13px;margin:0 0 12px}
+body.tm-open{overflow:hidden}
+body.tm-open .toast{z-index:31}
 </style>
 </head>
 <body>
@@ -604,11 +678,11 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-11-11.2"></script>
-<script src="nap-api.js?v=2026-11-11.2"></script>
+<script src="nap-core.js?v=2026-11-11.3"></script>
+<script src="nap-api.js?v=2026-11-11.3"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-11-11.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-11-11.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -696,6 +770,7 @@ async function boot() {
     p16Init();    // phase 16: the NAP card on the Board map (hover / tap a marker)
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
+    tmApply();    // phase 17: the technician map view (NapCore.p17.techMapView), before the Board shows
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
     if (ACC.tabs.indexOf(cur) < 0) tab('board');
     show('app');
@@ -1186,7 +1261,7 @@ function clampRadius(v) { return C.clampRange(v); }
 try { var rawR = localStorage.getItem(RADIUS_KEY), savedR = rawR === null ? null : clampRadius(rawR); if (savedR != null) state.radius = savedR; } catch (e) {}
 $('subRad').value = state.radius;
 $('radPre').innerHTML = C.RANGE_PRESETS.map(function (m) { return '<button type="button" data-m="' + m + '">' + esc(C.fmtRange(m)) + '</button>'; }).join('');
-function syncRadPre() { Array.prototype.forEach.call($('radPre').querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', String(+b.dataset.m === state.radius)); }); }
+function syncRadPre() { Array.prototype.forEach.call($('radPre').querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', String(+b.dataset.m === state.radius)); }); tmSyncRad(); }
 var radTimer = null;
 function applyRadius(n) {
   if (n == null) n = state.radius;
@@ -4313,6 +4388,7 @@ function p16Click(e) {
     var b = P16S.b && (state.known[P16S.b.box_id] || P16S.b); if (!b) return;
     p16Close();
     if (!isSel(b)) { state.sel = b; drawBoard(); }
+    if (tmOpen('detail')) return;   // phase 17: the technician map view shows the detail as a sheet
     var d = $('detail');
     setTimeout(function () { try { d.scrollIntoView({ behavior: 'smooth', block: mapx.on ? 'nearest' : 'start' }); d.tabIndex = -1; d.focus({ preventScroll: true }); } catch (x) {} }, 0);
     return;
@@ -4330,6 +4406,123 @@ function p16Copy(text) {
   try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(s).then(done, fallback); return; } } catch (x) { /* fall back */ }
   fallback();
 }
+// =====================================================================================================================================
+
+// ===== phase 17 (2026-11-11.3): the technician MAP VIEW. Self-contained block (CSS body.techmap / .tm*, elements #tm*). =====================
+// NapCore.p17.techMapView is THE rule (role 'field' AND (handoff OR width <= 700 px), the technician's toggle wins). body.techmap + CSS hide /
+// reflow the Board: slim header, KPI tiles, subscriber search + radius chips, one Barangay row (List / Legend), the map filling the screen.
+// On demand: a tap on a marker = the phase 16 card (docked); its Open details = the NAP detail as a bottom SHEET; List = the NAP list (+ the
+// NAPs near the pin) in the same sheet; Legend = the status + stage legend. The sheets MOVE the existing elements (#detail, #radSec, #blCard)
+// into the sheet and back, so every existing renderer / handler keeps working; nothing is fetched for a sheet (no new request, no polling).
+var R17 = C.p17;
+var TM = { on: false, sheet: null, moved: [], opener: null, pushed: false, skipPop: false, el: null, body: null, title: null, scrim: null };
+function tmPref() { try { return R17.pref(sessionStorage.getItem(R17.PREF_KEY)); } catch (e) { return ''; } }
+function tmSetPref(v) { try { sessionStorage.setItem(R17.PREF_KEY, v); } catch (e) { /* private mode: this page only */ } TM.mem = v; }
+function tmSession() { return { role: ACC.ok ? ACC.role : HANDOFF ? 'field' : '', handoff: !!HANDOFF, pref: tmPref() || TM.mem || '' }; }
+function tmBuild() {
+  // header toggle (technicians only), the Custom radius chip, the List / Legend buttons on the Barangay row, the sheet + scrim
+  var tg = document.createElement('button'); tg.type = 'button'; tg.className = 'btn sm'; tg.id = 'tmToggle'; tg.hidden = true;
+  $('signOut').parentNode.insertBefore(tg, $('signOut'));
+  tg.onclick = function () { tmSetPref(R17.nextPref(TM.on)); tmApply(); try { window.scrollTo(0, 0); } catch (e) {} };
+  var rc = document.createElement('button'); rc.type = 'button'; rc.className = 'btn tm-only'; rc.id = 'tmRadC'; rc.textContent = 'Custom';
+  rc.setAttribute('aria-expanded', 'false'); rc.setAttribute('aria-controls', 'subRad'); rc.setAttribute('aria-label', 'Custom radius in meters');
+  $('radPre').parentNode.insertBefore(rc, $('radPre').nextSibling);
+  rc.onclick = function () { var on = !document.body.classList.contains('tm-radc'); document.body.classList.toggle('tm-radc', on); rc.setAttribute('aria-expanded', String(on)); if (on) { try { $('subRad').focus(); } catch (e) {} } };
+  var bl = $('fBrgy').closest('label'); if (bl) bl.classList.add('tm-brgy');
+  var acts = document.createElement('div'); acts.className = 'tm-acts';
+  acts.innerHTML = '<button type="button" class="btn" id="tmList" aria-haspopup="dialog">List</button><button type="button" class="btn" id="tmLegend" aria-haspopup="dialog">Legend</button>';
+  $('boardFilters').appendChild(acts);
+  $('tmList').onclick = function () { tmOpen('list'); };
+  $('tmLegend').onclick = function () { tmOpen('legend'); };
+  var sc = document.createElement('div'); sc.className = 'tm-scrim'; sc.hidden = true; sc.onclick = function () { tmClose(false); };
+  var sh = document.createElement('div'); sh.className = 'tm-sheet'; sh.id = 'tmSheet'; sh.hidden = true;
+  sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.setAttribute('aria-labelledby', 'tmSheetT');
+  sh.innerHTML = '<div class="tm-sheet-h"><h2 id="tmSheetT"></h2><button type="button" class="btn" id="tmSheetX">Close</button></div><div class="tm-sheet-b" id="tmSheetB"></div>';
+  document.body.appendChild(sc); document.body.appendChild(sh);
+  TM.el = sh; TM.scrim = sc; TM.body = $('tmSheetB'); TM.title = $('tmSheetT');
+  $('tmSheetX').onclick = function () { tmClose(false); };
+  // a NAP picked in the List sheet (after the list's own handlers): back to the map with its card, or its detail when it has no marker
+  TM.body.addEventListener('click', function (e) {
+    if (TM.sheet !== 'list') return;
+    var t = e.target.closest && e.target.closest('[data-pick], .item[data-id]'); if (!t) return;   // the row may be redrawn already: no ancestor test
+    var id = t.dataset.pick || t.dataset.id, b = state.known[id]; if (!b) return;
+    var m = p16MarkerOf(id);
+    if (R17.afterPick(!!m) === 'detail') { tmOpen('detail'); return; }
+    tmClose(false, true);
+    if (!(P16S.b && P16S.b.box_id === id && P16S.el && !P16S.el.hidden)) p16Tap(b, m); else P16S.pinned = true;
+    P16S.opener = null; mapResize(); p16Place();
+    try { P16S.el.focus({ preventScroll: true }); } catch (x) {}
+  });
+  // Esc closes the sheet first (capture, registered before the card's and the expanded map's Esc handlers: they do not see it)
+  document.addEventListener('keydown', function (e) {
+    if (TM.sheet && (e.key === 'Escape' || e.key === 'Esc')) { e.preventDefault(); e.stopImmediatePropagation(); tmClose(false); }
+  }, true);
+  // the phone's Back button closes the sheet (one history entry while a sheet is open)
+  window.addEventListener('popstate', function () { if (TM.skipPop) { TM.skipPop = false; return; } if (TM.sheet) { TM.pushed = false; tmClose(true); } });
+  // narrow <-> wide (rotation, window resize): re-check the rule; an event, not a poll
+  try { var mq = matchMedia('(max-width: ' + R17.NARROW + 'px)'); if (mq.addEventListener) mq.addEventListener('change', tmApply); else if (mq.addListener) mq.addListener(tmApply); } catch (e) {}
+}
+// apply the rule (boot calls this right after the access is known, before the Board shows: no layout flash)
+function tmApply() {
+  var s = tmSession(), on = R17.techMapView(s, window.innerWidth), tg = $('tmToggle');
+  if (tg) { tg.hidden = !(ACC.ok && R17.canToggle(s)); tg.textContent = on ? R17.LABEL.full : R17.LABEL.map; }
+  if (on === TM.on) return;
+  TM.on = on;
+  document.body.classList.toggle('techmap', on);
+  if (!on) { tmClose(false, true); document.body.classList.remove('tm-radc'); }
+  else if ($('v-board').hidden && ACC.ok) tab('board');
+  mapResize(); if (P16S.el && !P16S.el.hidden) p16Place();
+}
+function tmSyncRad() { var rc = $('tmRadC'); if (rc) rc.setAttribute('aria-pressed', String(C.RANGE_PRESETS.indexOf(state.radius) < 0)); }
+function tmMove(el) { if (!el) return; TM.moved.push({ el: el, parent: el.parentNode, next: el.nextSibling }); el.inert = false; TM.body.appendChild(el); }
+function tmRestore() {
+  while (TM.moved.length) { var m = TM.moved.pop(); m.parent.insertBefore(m.el, m.next && m.next.parentNode === m.parent ? m.next : null); }
+  TM.body.textContent = '';
+  if ($('blCard')) $('blCard').inert = mapx.on;   // as mapExpand left it
+}
+// open a sheet (switching from another one puts that one's content back first); true = opened
+function tmOpen(kind) {
+  if (!TM.on || !TM.el) return false;
+  var next = R17.sheetNext(TM.sheet, { type: 'open', kind: kind });
+  if (!next || next === TM.sheet && next !== 'detail') return !!next;
+  if (TM.sheet) tmRestore(); else TM.opener = document.activeElement;
+  TM.sheet = next;
+  TM.title.textContent = R17.SHEET_TITLE[next];
+  if (next === 'detail') tmMove($('detail'));
+  else if (next === 'list') { tmMove($('radSec')); tmMove($('blCard')); }
+  else {   // the legend: static copies of the status legend and (with nap-23) the stage legend
+    [document.querySelector('.bcard-map>.legend'), document.querySelector('.bcard-map>[data-p14-legend]')].forEach(function (n) { if (n) TM.body.appendChild(n.cloneNode(true)); });
+  }
+  TM.el.hidden = false; TM.scrim.hidden = false;
+  document.body.classList.add('tm-open'); $('app').inert = true;
+  if (!TM.pushed) { try { history.pushState({ tmSheet: 1 }, ''); TM.pushed = true; } catch (e) { TM.pushed = false; } }
+  TM.body.scrollTop = 0;
+  try { $('tmSheetX').focus({ preventScroll: true }); } catch (e) {}
+  return true;
+}
+// close the sheet: the map exactly as it was (pin, radius, selection untouched); after the detail, the NAP's card again when it is cached
+// (no request); focus back to what opened the sheet. fromPop = the Back button already removed the history entry.
+function tmClose(fromPop, quiet) {
+  if (!TM.sheet) return;
+  var was = TM.sheet; TM.sheet = null;
+  tmRestore();
+  TM.el.hidden = true; TM.scrim.hidden = true;
+  document.body.classList.remove('tm-open'); $('app').inert = false;
+  if (TM.pushed && !fromPop) { TM.pushed = false; TM.skipPop = true; try { history.back(); } catch (e) { TM.skipPop = false; } }
+  TM.pushed = false;
+  mapResize();
+  if (quiet) return;
+  var b = state.sel, o = TM.opener; TM.opener = null;
+  if (was === 'detail' && b && TM.on) {
+    var m = p16MarkerOf(b.box_id);
+    if (m && (P16S.ld.cached(b.box_id) || P16S.ld.isOff())) { p16Show(b, m, true); P16S.opener = null; try { P16S.el.focus({ preventScroll: true }); } catch (x) {} return; }
+  }
+  if (o && document.contains(o) && o.offsetParent !== null) { try { o.focus({ preventScroll: true }); } catch (x) {} }
+  else { try { $('map').focus({ preventScroll: true }); } catch (x) {} }
+}
+tmBuild();
+tmSyncRad();
+if (HANDOFF) tmApply();   // a handoff session is a technician session: decide before anything shows (boot applies it again with the role)
 // =====================================================================================================================================
 
 boot();

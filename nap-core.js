@@ -1558,7 +1558,46 @@
   })();
   // ======================================================================================================================
 
+  // ---------- phase 17: the technician MAP VIEW of the Board (dashboard only). Pure helpers (tested in nap-phase17.test.mjs) ----------
+  // A NAP technician (role 'field') who opens NAP VIEW on the phone sees only the KPI tiles, the subscriber search / radius row and the map;
+  // the NAP card (phase 16), the NAP detail, the NAP list and the legend open on demand as sheets.
+  var P17 = (function () {
+    var NARROW = 700, PREF_KEY = 'ahba-nap-techmap', MAP_MIN = 380, SHEETS = ['detail', 'list', 'legend'];
+    var LABEL = { full: 'Show full dashboard', map: 'Map view' };
+    var SHEET_TITLE = { detail: 'NAP details', list: 'NAP list', legend: 'Legend' };
+    function pref(v) { return v === 'map' || v === 'full' ? v : ''; }
+    // THE RULE (the only place it is written down): the technician map view is for NAP technician sessions only (role 'field': a session
+    // handed over from the FieldOps NAP VIEW tile, or a FieldOps account signed in on the dashboard). It is on when the session is a handoff
+    // OR the viewport is narrow (<= 700 CSS px). The technician's own choice in this browser session (pref 'map' / 'full', the toggle) wins.
+    // Dispatchers, admins, superadmins and console viewers: never (the full dashboard on every screen).
+    function techMapView(session, width) {
+      var s = session || {};
+      if (s.role !== 'field') return false;
+      var p = pref(s.pref);
+      if (p) return p === 'map';
+      if (s.handoff === true) return true;
+      var w = Number(width);
+      return isFinite(w) && w > 0 && w <= NARROW;
+    }
+    // the toggle is offered to technicians only; pressing it stores the opposite of what is shown now
+    function canToggle(session) { return !!session && session.role === 'field'; }
+    function nextPref(on) { return on ? 'full' : 'map'; }
+    // the sheet state: one sheet at a time (null = the map). open switches to a known sheet; close / esc / back always return to the map.
+    function sheetNext(cur, act) {
+      var c = SHEETS.indexOf(cur) >= 0 ? cur : null, a = act || {};
+      if (a.type === 'open') return SHEETS.indexOf(a.kind) >= 0 ? a.kind : c;
+      if (a.type === 'close' || a.type === 'esc' || a.type === 'back') return null;
+      return c;
+    }
+    // a NAP picked in the List sheet: back to the map with its card when it has a marker, else its detail sheet (no coordinates)
+    function afterPick(hasMarker) { return hasMarker ? 'card' : 'detail'; }
+    return { NARROW: NARROW, PREF_KEY: PREF_KEY, MAP_MIN: MAP_MIN, SHEETS: SHEETS.slice(), LABEL: LABEL, SHEET_TITLE: SHEET_TITLE,
+             pref: pref, techMapView: techMapView, canToggle: canToggle, nextPref: nextPref, sheetNext: sheetNext, afterPick: afterPick };
+  })();
+  // ======================================================================================================================
+
   return {
+    p17: P17,
     p16: P16,
     p15: P15,
     p14: P14,
