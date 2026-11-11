@@ -1383,8 +1383,183 @@
              errorText: errorText, newClientId: function () { return DESK.newClientId(); } };
   })();
   // ======================================================================================================================
+  // ---------- phase 16: the NAP CARD on the Board map (nap-25 nap.box_card). Pure helpers for the dashboard (tested in nap-phase16.test.mjs) ----------
+  // The card shows the marker's box_status row at once (no request) and, after the hover intent delay (or a tap / click), ONE nap.box_card read
+  // (cached per box for 60 s, at most one request in flight, the newest wanted box wins, answers for an older wish are dropped). A database
+  // without nap-25: one probe, then the instant part only. Board roles see the last check's team and the open dispatch item; everyone else not.
+  // No account numbers, photos or remark text ever reach the card (the server does not send them).
+  var P16 = (function () {
+    var DELAY = 250, TTL = 60000, CACHE_MAX = 200, HIDE_GRACE = 220, BOARD = ['dispatcher', 'admin', 'superadmin'];
+    var CODES = { T: STATUS.AWT, A: STATUS.AWO, V: STATUS.VACANT, R: STATUS.RELEASED, H: STATUS.HILOSS, D: STATUS.DEFECTIVE, U: STATUS.UNVERIFIED };
+    // the port breakdown, in the order the card lists it (key = nap.box_card counts key)
+    var BREAK = [{ key: 'awt', code: 'T', label: 'Active w/ tagging', short: 'Act+T' }, { key: 'awo', code: 'A', label: 'Active w/o tagging', short: 'Act' },
+                 { key: 'vacant', code: 'V', label: 'Vacant', short: 'Vac' }, { key: 'released', code: 'R', label: 'Released', short: 'Rel' },
+                 { key: 'hiloss', code: 'H', label: 'Hi Loss', short: 'Hi' }, { key: 'defective', code: 'D', label: 'Defective', short: 'Def' },
+                 { key: 'unverified', code: 'U', label: 'Unverified', short: '?' }];
+    var KIND = { installable: 'Installable', full: 'Full', issue: 'Issue', stale: 'Stale', unverified: 'Unverified' };
+    var REASONS = ['stage_blocks', 'unverified', 'installable', 'full', 'pds_only', 'stale', 'issue', 'no_free'];
+    var GEO = { audit: 'GPS from a team audit', manual: 'Set manually (dashboard / import)', seed: 'From the master list (seed)' };
+    function str(v) { return String(v == null ? '' : v); }
+    function n0(v) { var n = Number(v); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+    function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+    // who sees the board-only lines (the server decides too: it sends null to everyone else)
+    function rights(role, handoff) { return { board: !handoff && BOARD.indexOf(str(role)) >= 0 }; }
+    // 'NOT RFS - Not ready for selling' -> 'NOT RFS'
+    function stageShort(code) { var s = P14.stage(code); return s ? s.label.split(' - ')[0] : ''; }
+    // the reason code of a box without the card yet (from the map row; the server's code replaces it)
+    function instantReason(box, freshDays) {
+      var b = box || {}, fd = n0(freshDays) || DEFAULTS.freshnessDays;
+      if (P14.blocksInstall(b.stage)) return 'stage_blocks';
+      if (b.kind === 'unverified' || !n0(b.checked)) return 'unverified';
+      if (b.kind === 'installable') return 'installable';
+      if (b.kind === 'full') return 'full';
+      if (b.age_days != null && Number(b.age_days) > fd) return 'stale';
+      if (b.kind === 'issue') return 'issue';
+      return 'no_free';
+    }
+    // one line: why it is or is not installable (x = the card or the box: free, total, checked, bad, age_days, stage, counts)
+    function reasonText(code, x) {
+      var b = x || {}, total = n0(b.total), c = b.counts || {};
+      switch (code) {
+        case 'installable': return 'Installable: ' + plural(n0(b.free), 'fresh free port');
+        case 'stage_blocks': return 'Not installable: stage ' + (stageShort(b.stage) || 'blocks installs');
+        case 'full': return 'Full: all ' + total + ' ports active';
+        case 'unverified': return 'Not installable: never checked (' + plural(total, 'port') + ' unverified)';
+        case 'pds_only': return 'Not installable: the free port' + (n0(c.pds) === 1 ? ' is' : 's are') + ' marked PDS';
+        case 'stale': return 'Stale: last check ' + (b.age_days == null ? 'too long ago' : plural(n0(b.age_days), 'day') + ' ago');
+        case 'issue': return 'Not installable: ' + plural(n0(b.bad), 'Hi Loss / Defective port') + ', no fresh free port';
+        case 'no_free': return 'Not installable: no fresh free port (' + n0(b.checked) + ' of ' + total + ' ports checked)';
+        default: return '';
+      }
+    }
+    function reasonOk(code) { return code === 'installable'; }
+    // per NAP number: 8 dots {port, code, status, pds, title}; nps = nap.box_card nps [{np, s, pds}]
+    function grid(nps) {
+      return (Array.isArray(nps) ? nps : []).slice(0, 32).map(function (r) {
+        var s = str(r && r.s), p = str(r && r.pds), np = n0(r && r.np), dots = [];
+        for (var i = 0; i < 8; i++) {
+          var code = Object.prototype.hasOwnProperty.call(CODES, s.charAt(i)) ? s.charAt(i) : 'U', pds = p.charAt(i) === '1';
+          dots.push({ port: i + 1, code: code, status: CODES[code], pds: pds, title: 'NP' + np + ' P' + (i + 1) + ': ' + CODES[code] + (pds ? ' (PDS)' : '') });
+        }
+        return { np: np, dots: dots };
+      });
+    }
+    function breakdown(counts) { var c = counts || {}; return BREAK.map(function (k) { return { key: k.key, code: k.code, label: k.label, short: k.short, n: n0(c[k.key]) }; }); }
+    function geoText(src, hasCoords) { return (GEO[str(src)] || 'Unknown source') + (hasCoords === false ? ' · no coordinates yet' : ''); }
+    function isoDay(v) { var t = toMs(v); return isFinite(t) ? fmtManila(t).slice(0, 10) : ''; }
+    function lastText(last, box) {
+      if (last && last.at) {
+        var d = n0(last.days);
+        return 'Last check: ' + (d === 0 ? 'today' : plural(d, 'day') + ' ago') + ' (' + isoDay(last.at) + ')' + (last.team ? ' by ' + str(last.team) : '') + (last.desk ? ' (desk update)' : '');
+      }
+      if (last === null) return 'Last check: none (no audit yet)';
+      var b = box || {};   // instant: the newest port reading of the map row
+      return b.age_days == null ? 'Last check: not yet visited' : 'Last check: ' + (Number(b.age_days) === 0 ? 'today' : plural(n0(b.age_days), 'day') + ' ago');
+    }
+    function dispatchText(d) {
+      if (!d || !d.status) return 'Dispatch: none open';
+      return 'Dispatch: ' + str(d.status) + (d.team ? ' to ' + str(d.team) : '') + (d.due_date ? ' · due ' + str(d.due_date) : '');
+    }
+    // everything the card shows, as plain text / numbers (the dashboard escapes): box = the marker's row, card = nap.box_card or null
+    function model(box, card, o) {
+      var b = box || {}, c = card && typeof card === 'object' && !card.missing ? card : null, x = c || b, opt = o || {}, r = rights(opt.role, opt.handoff);
+      var stage = P14.stage(x.stage), kind = str(x.kind);
+      var reason = c && REASONS.indexOf(c.reason) >= 0 ? c.reason : instantReason(b, opt.freshDays);
+      var nps = Array.isArray(x.np_numbers) ? x.np_numbers.map(Number).filter(function (n) { return isFinite(n); }) : [];
+      var m = {
+        box_id: str(b.box_id || x.box_id), stencil: str(x.stencil), barangay: str(x.barangay), street: str(x.street), nps: nps, npText: nps.length ? 'NP' + nps.join(', NP') : '',
+        total: n0(x.total), primary: stage ? { type: 'stage', label: stage.label, letter: stage.letter, color: stage.color } : { type: 'kind', kind: kind, label: KIND[kind] || kind },
+        second: stage ? (KIND[kind] || kind) : '', kind: kind,
+        reason: reason, reasonText: reasonText(reason, x), installable: reasonOk(reason),
+        stats: [{ key: 'free', label: 'Free', n: n0(x.free), hint: 'fresh free ports' }, { key: 'checked', label: 'Checked', n: n0(x.checked), of: n0(x.total) },
+                { key: 'bad', label: 'Hi Loss / Def', n: n0(x.bad) }],
+        loaded: !!c, full: null, grid: [], last: lastText(c ? c.last : undefined, b), dispatch: null, geo: null
+      };
+      if (c) {
+        var k = c.counts || {};
+        m.stats.push({ key: 'pds', label: 'PDS', n: n0(k.pds) }, { key: 'remarks', label: 'Remarks', n: n0(k.remarks) }, { key: 'unverified', label: 'Unverified', n: n0(k.unverified) });
+        m.full = breakdown(k);
+        m.grid = grid(c.nps);
+        m.geo = geoText(c.geo_source, c.has_coords);
+        if (r.board && c.dispatch_visible === true) m.dispatch = dispatchText(c.dispatch);
+      }
+      return m;
+    }
+    // a small TTL cache (per box id); now() injected for tests
+    function cache(ttl, max, now) {
+      var map = {}, keys = [], t = ttl || TTL, lim = max || CACHE_MAX, clock = now || function () { return Date.now(); };
+      function del(k) { delete map[k]; var i = keys.indexOf(k); if (i >= 0) keys.splice(i, 1); }
+      return {
+        get: function (k) { var e = map[k]; if (!e) return null; if (clock() - e.at > t) { del(k); return null; } return e.v; },
+        set: function (k, v) { del(k); map[k] = { v: v, at: clock() }; keys.push(k); while (keys.length > lim) del(keys[0]); },
+        forget: function (k) { del(k); }, clear: function () { map = {}; keys = []; }, size: function () { return keys.length; }
+      };
+    }
+    // the request side: at most ONE request in flight; while it runs only the newest wish is kept; an answer goes to its caller only if that is
+    // still the newest wish (sequence token); a 'missing' answer (no nap-25) turns the loader off for good (one probe). o.fetch(id) -> Promise.
+    function loader(o) {
+      var c = cache(o.ttl, o.max, o.now), busy = null, want = null, seq = 0, off = false, sent = 0;
+      function deliver(w, res) { if (w && w.seq === seq && typeof w.cb === 'function') { try { w.cb(res); } catch (e) { /* the caller's own error */ } } }
+      function start() {
+        var w = want; want = null; if (!w) return;
+        var hit = c.get(w.id); if (hit) { deliver(w, { card: hit, cached: true }); return; }
+        busy = w; sent++;
+        var p; try { p = Promise.resolve(o.fetch(w.id)); } catch (e) { p = Promise.reject(e); }
+        p.then(function (card) {
+          if (card && card.missing) { off = true; return { off: true }; }
+          c.set(w.id, card); return { card: card };
+        }, function (e) { return { error: e }; }).then(function (res) {
+          busy = null;
+          if (res.off) { deliver(w, res); if (want) { var x = want; want = null; deliver(x, res); } return; }
+          deliver(w, res);
+          if (want) start();
+        });
+      }
+      return {
+        request: function (id, cb) {
+          var w = { id: id, cb: cb, seq: ++seq };
+          if (off) { deliver(w, { off: true }); return; }
+          var hit = c.get(id); if (hit) { deliver(w, { card: hit, cached: true }); return; }
+          if (busy && busy.id === id) { busy.cb = cb; busy.seq = w.seq; want = null; return; }   // the same box is already on its way
+          want = w; if (!busy) start();
+        },
+        cancel: function () { seq++; want = null; },   // the card closed: nothing queued is sent, an answer on its way is cached, not shown
+        forget: function (id) { if (id) c.forget(id); else c.clear(); },
+        cached: function (id) { return c.get(id); },
+        isOff: function () { return off; }, inFlight: function () { return busy ? 1 : 0; }, sent: function () { return sent; }
+      };
+    }
+    // hover intent: fn runs only when the pointer stays on the same key for `delay` ms (a sweep over many markers runs nothing)
+    function intent(o) {
+      var t = null, key = null, d = o && o.delay != null ? o.delay : DELAY, set = (o && o.setTimeout) || setTimeout, clr = (o && o.clearTimeout) || clearTimeout;
+      return {
+        over: function (k, fn) { if (t && key === k) return; if (t) clr(t); key = k; t = set(function () { t = null; key = null; fn(); }, d); },
+        out: function () { if (t) clr(t); t = null; key = null; },
+        pending: function () { return t ? key : null; }
+      };
+    }
+    // where the card goes inside the map box (container pixels): next to the marker (right, else left), clamped below the top tool row
+    // (o.top = Locate me / Expand map), right of the zoom buttons (o.left) and above the scale / attribution (o.bottom); a narrow map (< 560 px,
+    // phones) or a marker outside the view: docked along the bottom edge (CSS), never over the top controls.
+    function place(anchor, card, box, o) {
+      var a = anchor || {}, c = card || {}, b = box || {}, r = o || {}, gap = 14, m = 8;
+      var top = n0(r.top) || 52, left = n0(r.left) || 54, bottom = n0(r.bottom) || 24, bw = Number(b.w) || 0, bh = Number(b.h) || 0, cw = Number(c.w) || 0, ch = Number(c.h) || 0;
+      var x = Number(a.x), y = Number(a.y);
+      if (bw < 560 || !isFinite(x) || !isFinite(y) || x < 0 || y < 0 || x > bw || y > bh) return { mode: 'dock', maxH: Math.max(120, bh - Math.max(top, 84) - 30) };
+      var maxH = Math.max(120, bh - top - bottom), h = Math.min(ch, maxH);
+      var lx = x + gap; if (lx + cw > bw - m) lx = x - gap - cw;
+      lx = Math.max(left, Math.min(lx, bw - m - cw));
+      var ty = Math.max(top, Math.min(y - h / 2, bh - bottom - h));
+      return { mode: 'anchor', left: Math.round(lx), top: Math.round(ty), maxH: Math.round(maxH) };
+    }
+    return { DELAY: DELAY, TTL: TTL, CACHE_MAX: CACHE_MAX, HIDE_GRACE: HIDE_GRACE, CODES: CODES, BREAK: BREAK, REASONS: REASONS, place: place,
+             rights: rights, stageShort: stageShort, instantReason: instantReason, reasonText: reasonText, grid: grid, breakdown: breakdown, geoText: geoText,
+             lastText: lastText, dispatchText: dispatchText, model: model, cache: cache, loader: loader, intent: intent };
+  })();
+  // ======================================================================================================================
 
   return {
+    p16: P16,
     p15: P15,
     p14: P14,
     p12: P12, mapNav: MAPNAV,

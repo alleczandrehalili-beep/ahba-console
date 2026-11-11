@@ -289,6 +289,39 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 .p15-tbl td .btn{margin:2px 4px 2px 0}
 .p15-card .row label{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);min-width:0;flex:1 1 160px}
 .p15-card .row select,.p15-card .row input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
+/* phase 16 (2026-11-11.2): the NAP card on the Board map (hover / tap a marker). Self-contained: every rule starts with .p16 */
+.p16{position:absolute;z-index:1003;width:300px;max-width:calc(100% - 16px);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 4px 18px rgba(0,0,0,.28);padding:10px 12px;font-size:12.5px;line-height:1.4;overflow:auto;overflow-wrap:anywhere;min-width:0}
+.p16[hidden]{display:none}
+.p16.p16-dock{left:8px;right:8px;bottom:22px;top:auto;width:auto;max-width:none}
+.p16.p16-moving{visibility:hidden}
+.p16 .p16-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.p16 .p16-stc{font-family:var(--mono);font-weight:600;font-size:13px}
+.p16 .p16-sub,.p16 .p16-meta,.p16 .p16-load{color:var(--muted);font-size:12px}
+.p16 .p16-x{border:0;background:none;color:var(--muted);font:inherit;font-size:18px;line-height:1;padding:0 4px;cursor:pointer;border-radius:5px}
+.p16 .p16-x:focus-visible,.p16 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.p16 .p16-chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.p16 .p16-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:600;color:#fff}
+.p16 .p16-chip i{font-style:normal;font-family:var(--mono);background:rgba(255,255,255,.25);border-radius:3px;padding:0 3px}
+.p16 .p16-why{margin-top:6px;font-weight:600}
+.p16 .p16-why.ok{color:var(--ok)}.p16 .p16-why.no{color:var(--full)}
+.p16 .p16-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:6px}
+.p16 .p16-stats span{background:var(--bg);border-radius:6px;padding:3px 6px;font-size:11px;color:var(--muted)}
+.p16 .p16-stats b{display:block;color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
+.p16 .p16-brk{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.p16 .p16-brk span{border-radius:5px;padding:1px 6px;font-size:11px;font-family:var(--mono)}
+.p16 .p16-grid{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.p16 .p16-npl{display:flex;align-items:center;gap:3px}
+.p16 .p16-npl b{font-family:var(--mono);font-weight:500;font-size:11px;min-width:34px}
+.p16 .p16-d{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid transparent}
+.p16 .p16-d.c-T{background:var(--full)}.p16 .p16-d.c-A{background:var(--fullbg);border:1px dashed var(--full)}
+.p16 .p16-d.c-V{background:var(--ok)}.p16 .p16-d.c-R{background:var(--okbg);border-color:var(--ok)}
+.p16 .p16-d.c-H{background:var(--issue)}.p16 .p16-d.c-D{background:var(--issuebg);border:1px dashed var(--issue)}
+.p16 .p16-d.c-U{background:var(--stalebg);border-color:var(--line)}
+.p16 .p16-d.p16-pds{outline:2px solid var(--pin);outline-offset:1px}
+.p16 .p16-meta div{margin-top:3px}
+.p16 .p16-act{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.p16 .p16-act .btn{padding:5px 10px;font-size:12px}
 </style>
 </head>
 <body>
@@ -571,11 +604,11 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-11-11.1"></script>
-<script src="nap-api.js?v=2026-11-11.1"></script>
+<script src="nap-core.js?v=2026-11-11.2"></script>
+<script src="nap-api.js?v=2026-11-11.2"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-11-11.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-11-11.2';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -660,6 +693,7 @@ async function boot() {
     p12Init();    // phase 12: may this session edit NAP locations? (async; the NAP detail shows "Edit location" when yes)
     p14Init();    // phase 14: stage / PDS / remark rights + the stage legend, filter and summary
     p15Init();    // phase 15: delete / restore a NAP, duplicate NPs (board roles, a database with nap-24)
+    p16Init();    // phase 16: the NAP card on the Board map (hover / tap a marker)
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
@@ -828,10 +862,11 @@ function initMap() {
     var tl = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(LMAP);
     tl.on('tileload', function () { tileOk++; });
     tl.on('tileerror', function () { tileBad++; if (!tileOk && tileBad >= 3) mapNote('Cannot load the map. The list still works.'); });
-    boxLayer = L.layerGroup().addTo(LMAP); lineLayer = L.layerGroup().addTo(LMAP); pinLayer = L.layerGroup().addTo(LMAP);
+    // phase 16: the marker layer is a FeatureGroup so ONE set of handlers serves every marker (Leaflet passes the marker as e.layer)
+    boxLayer = L.featureGroup().addTo(LMAP).on('mouseover', onMarkerOver).on('mouseout', onMarkerOut).on('click', onMarkerClick); lineLayer = L.layerGroup().addTo(LMAP); pinLayer = L.layerGroup().addTo(LMAP);
     mapTip = L.tooltip({ direction: 'top', offset: [0, -6] });
     if (window.ResizeObserver) new ResizeObserver(function () { if (LMAP) LMAP.invalidateSize(); }).observe($('map'));
-    LMAP.on('click', function (e) { setPin({ lat: e.latlng.lat, lng: e.latlng.lng }, !state.sub); });
+    LMAP.on('click', function (e) { if (p16MapClick()) return; setPin({ lat: e.latlng.lat, lng: e.latlng.lng }, !state.sub); });   // phase 16: a pinned card closes first
     mapNavInit();
     return true;
   } catch (e) { LMAP = null; mapFailed = true; mapNote('Cannot load the map. The list still works.'); return false; }
@@ -917,9 +952,10 @@ function markerStyle(b) {
   return { radius: sel || hl ? 9 : unv ? 3 : b.stage ? 6 : 5, fillColor: p14Fill(b) || KCOL[b.kind], color: sel ? '#111' : hl ? '#7a2fbf' : '#fff', weight: sel || hl ? 3 : 1, fillOpacity: dim ? .12 : out ? .35 : unv ? .55 : .95, opacity: dim ? .3 : 1, interactive: !dim };
 }
 function tipHtml(b) { return '<b>' + esc(b.stencil) + '</b><br>' + p14Tip(b) + esc(LBL[b.kind] || b.kind) + (b.free != null ? ' · ' + esc(b.free) + ' free' : ''); }
-function onMarkerOver(e) { var b = e.target._b; if (b) mapTip.setContent(tipHtml(b)).setLatLng(e.target.getLatLng()).addTo(LMAP); }
-function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); }
-function onMarkerClick(e) { var b = e.target._b; if (!b) return; state.sel = b; onMarkerOver(e); drawBoard(); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
+// phase 16: the small tooltip stays as the instant, minimal fallback; the NAP card opens after the hover intent delay (p16Over) or on a click / tap
+function onMarkerOver(e) { var m = p16Target(e), b = m && m._b; if (!b) return; if (!MAPTOUCH && !(P16S.b && P16S.b.box_id === b.box_id && !P16S.el.hidden)) mapTip.setContent(tipHtml(b)).setLatLng(m.getLatLng()).addTo(LMAP); p16Over(b, m); }
+function onMarkerOut() { if (LMAP) LMAP.closeTooltip(mapTip); p16Out(); }
+function onMarkerClick(e) { var m = p16Target(e), b = m && m._b; if (!b) return; state.sel = b; drawBoard(); p16Tap(b, p16MarkerOf(b.box_id) || m); if (mapx.on) setTimeout(function () { try { $('detail').scrollIntoView({ block: 'nearest' }); } catch (x) {} }, 0); }
 function mapRows() {
   var seen = {}, out = [];
   state.boxes.concat(state.near, state.nearest).forEach(function (b) { if (b && b.box_id && !seen[b.box_id]) { seen[b.box_id] = true; out.push(state.known[b.box_id] || b); } });
@@ -933,7 +969,6 @@ function rebuildMarkers() {
     if (b.lat == null || b.lng == null || !KCOL[b.kind]) return;
     var m = L.circleMarker([b.lat, b.lng], Object.assign({ bubblingMouseEvents: false }, markerStyle(b)));
     m._b = b; m._sig = ''; m._vis = false;
-    m.on('mouseover', onMarkerOver); m.on('mouseout', onMarkerOut); m.on('click', onMarkerClick);
     mapMarkers.push(m);
   });
   markersDirty = false;
@@ -964,6 +999,7 @@ function drawMap() {
     if (pts.length) LMAP.fitBounds(L.latLngBounds(pts), { padding: [24, 24], maxZoom: 18 });
     else LMAP.setView([14.6500, 121.0400], 12);   // no box of this barangay has coordinates yet: show QC
   }
+  p16AfterMap();   // phase 16: the NAP card follows its marker (or closes)
 }
 function focusSel() {
   var b = state.sel; if (!LMAP || !b || b.lat == null) return;
@@ -1007,6 +1043,7 @@ async function drawDetail(refresh) {
   var el = $('detail'), b = state.sel, tok = ++detailTok;
   if (!b) { el.hidden = true; return; }
   el.hidden = false;
+  if (refresh) p16Forget(b.box_id);   // phase 16: a refresh (after a save) also drops the NAP card's cached read
   var ports;
   if (!refresh && portsCache && portsCache.box_id === b.box_id) ports = portsCache.ports;
   else {
@@ -4124,6 +4161,175 @@ function p15Key(ev) {
   if (b && !b.disabled) b.click();
 }
 ['detail', 'v-master'].forEach(function (k) { $(k).addEventListener('click', p15Click); $(k).addEventListener('input', p15Input); $(k).addEventListener('keydown', p15Key); });
+// =====================================================================================================================================
+
+// ===== phase 16 (2026-11-11.2): the NAP CARD on the Board map. Self-contained block (CSS .p16*, one card element inside #mapBox). =====
+// Desktop: hovering a marker shows the small tooltip at once; staying on it for NapCore.p16.DELAY ms (hover intent) opens the card (a sweep
+// over many markers opens nothing and sends nothing). Click / tap = the card PINNED (and the NAP selected, as before); it stays until the ×,
+// Esc, another marker or a click on the map (that click then only closes the card: it does not drop the subscriber pin). Keyboard: focusing a
+// NAP in the Board list opens the same card; Enter on it pins it. The card shows the marker's own data at once and ONE nap.box_card read
+// (NapCore.p16.loader: cached 60 s per NAP, at most one request in flight, the newest wish wins, older answers dropped). Without nap-25 (one
+// probe): the instant part only. Board roles see the last check's team and the open dispatch item (the server sends them only to them). No
+// account numbers, photos or remark text (the server never sends them). Every text is escaped. Markers: ONE delegated handler set on the
+// marker layer (L.featureGroup), none per marker.
+var R16 = C.p16;
+var P16S = { el: null, b: null, m: null, pinned: false, card: null, state: '', hideT: 0, opener: null, hooked: false, focusKey: false,
+             ld: R16.loader({ fetch: function (id) { return api.boxCard(id); } }), it: R16.intent({ delay: R16.DELAY }) };
+function p16Init() {
+  if (P16S.el) return;
+  var host = $('mapBox'); if (!host) return;
+  var el = document.createElement('div'); el.id = 'p16Card'; el.className = 'p16'; el.hidden = true;
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false'); el.setAttribute('aria-labelledby', 'p16T'); el.tabIndex = -1;
+  host.appendChild(el); P16S.el = el;
+  el.addEventListener('mouseenter', function () { clearTimeout(P16S.hideT); });
+  el.addEventListener('mouseleave', function () { if (!P16S.pinned) p16HideSoon(); });
+  el.addEventListener('click', p16Click);
+  // Esc closes the card first (capture: before the expanded map's own Esc handler, which then sees defaultPrevented)
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'Escape' || e.key === 'Esc') && P16S.el && !P16S.el.hidden) { e.preventDefault(); var o = P16S.opener; p16Close(); p16Refocus(o); }
+  }, true);
+  // the Board list: keyboard focus on a NAP opens its card (not pinned); Enter / click on it pins it (after the list's own handler)
+  var bl = $('blRows');
+  bl.addEventListener('focusin', function (e) {
+    var t = e.target.closest && e.target.closest('[data-pick]'); if (!t || !t.matches(':focus-visible')) return;
+    var b = state.known[t.dataset.pick]; if (!b || b.lat == null) return;
+    P16S.opener = t; clearTimeout(P16S.hideT);
+    P16S.it.over('f:' + b.box_id, function () { p16Show(b, p16MarkerOf(b.box_id), false); });
+  });
+  bl.addEventListener('focusout', function (e) {
+    if (e.relatedTarget && P16S.el.contains(e.relatedTarget)) return;
+    P16S.it.out(); if (!P16S.pinned) p16HideSoon();
+  });
+  bl.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-pick]'); if (!t) return;
+    var b = state.known[t.dataset.pick]; if (!b || b.lat == null) return;
+    P16S.opener = t; P16S.it.out();
+    p16Show(b, p16MarkerOf(b.box_id), true);
+    if (e.detail === 0 && P16S.el && !P16S.el.hidden) { try { P16S.el.focus({ preventScroll: true }); } catch (x) {} }   // keyboard: into the card
+  });
+}
+function p16Hook() {
+  if (P16S.hooked || !LMAP) return;
+  P16S.hooked = true;
+  LMAP.on('move zoom resize viewreset', p16Place);
+  LMAP.on('zoomstart', function () { if (P16S.el) P16S.el.classList.add('p16-moving'); });
+  LMAP.on('zoomend', function () { if (P16S.el) { P16S.el.classList.remove('p16-moving'); p16Place(); } });
+}
+function p16MarkerOf(id) { for (var i = 0; i < mapMarkers.length; i++) { var m = mapMarkers[i]; if (m._b && m._b.box_id === id) return m._vis ? m : null; } return null; }
+function p16Target(e) { var m = e && (e.layer || e.propagatedFrom || e.target); return m && m._b ? m : null; }
+// ---- the marker events (onMarkerOver / onMarkerOut / onMarkerClick call these; one handler set on the marker layer) ----
+function p16Over(b, m) {
+  clearTimeout(P16S.hideT);
+  if (MAPTOUCH) return;   // touch: a tap is a click (pins the card); no hover card
+  if (P16S.el && !P16S.el.hidden && P16S.b && P16S.b.box_id === b.box_id) return;
+  if (P16S.pinned) return;   // a pinned card stays: other markers only get the small tooltip
+  P16S.opener = null;
+  P16S.it.over('m:' + b.box_id, function () { if (LMAP) LMAP.closeTooltip(mapTip); p16Show(b, m, false); });
+}
+function p16Out() { P16S.it.out(); if (!P16S.pinned) p16HideSoon(); }
+function p16Tap(b, m) { P16S.it.out(); clearTimeout(P16S.hideT); if (LMAP) LMAP.closeTooltip(mapTip); P16S.opener = null; p16Show(b, m, true); }
+// a click on the map while a card is pinned only closes the card (true = the click is used)
+function p16MapClick() { if (P16S.el && !P16S.el.hidden && P16S.pinned) { p16Close(); return true; } if (P16S.el && !P16S.el.hidden) p16Close(); return false; }
+function p16HideSoon() { clearTimeout(P16S.hideT); P16S.hideT = setTimeout(function () { if (!P16S.pinned) p16Close(); }, R16.HIDE_GRACE); }
+function p16Close() {
+  clearTimeout(P16S.hideT); P16S.it.out(); P16S.ld.cancel();
+  P16S.b = null; P16S.m = null; P16S.pinned = false; P16S.card = null; P16S.state = '';
+  if (P16S.el) { P16S.el.hidden = true; P16S.el.innerHTML = ''; }
+}
+function p16Forget(id) { P16S.ld.forget(id); }
+// back to the Board list row that opened the card (the list may have been redrawn meanwhile: same NAP, new row)
+function p16Refocus(o) {
+  if (!o) return;
+  var t = document.contains(o) ? o : o.dataset && o.dataset.pick ? document.querySelector('#blRows [data-pick="' + CSS.escape(o.dataset.pick) + '"]') : null;
+  if (t && t.focus) { try { t.focus(); } catch (x) {} }
+}
+// show (or re-pin) the card of box b at marker m (null = docked)
+function p16Show(b, m, pin) {
+  if (!P16S.el || !b) return;
+  p16Hook();
+  var same = P16S.b && P16S.b.box_id === b.box_id && !P16S.el.hidden;
+  P16S.pinned = !!pin || !!(same && P16S.pinned);
+  if (same) { P16S.m = m || P16S.m; p16Place(); return; }
+  P16S.b = b; P16S.m = m; P16S.card = P16S.ld.cached(b.box_id) || null;
+  P16S.state = P16S.card ? 'ok' : P16S.ld.isOff() ? 'off' : 'loading';
+  p16Draw(); P16S.el.hidden = false; p16Place();
+  if (P16S.card || P16S.ld.isOff()) return;
+  var id = b.box_id;
+  P16S.ld.request(id, function (res) {
+    if (!P16S.b || P16S.b.box_id !== id) return;   // another card meanwhile
+    if (res.card) { P16S.card = res.card; P16S.state = 'ok'; }
+    else if (res.off) P16S.state = 'off';
+    else P16S.state = res.error && res.error.code === 'NAP_BAD_BOX' ? 'gone' : 'err';
+    p16Draw(); p16Place();
+  });
+}
+function p16Draw() {
+  var el = P16S.el, b = P16S.b; if (!el || !b) return;
+  var x = R16.model(state.known[b.box_id] || b, P16S.card, { role: ACC.role, handoff: !!HANDOFF, freshDays: state.settings && state.settings.freshness_days });
+  var pr = x.primary.type === 'stage' ? '<span class="p16-chip" style="background:' + esc(x.primary.color) + '" title="Stage: ' + esc(x.primary.label) + '"><i aria-hidden="true">' + esc(x.primary.letter) + '</i>' + esc(x.primary.label) + '</span>'
+    : '<span class="pill p-' + (x.kind === 'installable' ? 'ok' : x.kind === 'unverified' ? 'unv' : esc(x.kind)) + '">' + esc(x.primary.label) + '</span>';
+  var sec = x.second ? '<span class="pill p-' + (x.kind === 'installable' ? 'ok' : x.kind === 'unverified' ? 'unv' : esc(x.kind)) + '" title="Computed from the port readings">' + esc(x.second) + '</span>' : '';
+  var stats = x.stats.map(function (s) { return '<span title="' + esc(s.hint || s.label) + '"><b>' + esc(s.n) + (s.of != null ? '<small style="font-weight:400;color:var(--muted)"> / ' + esc(s.of) + '</small>' : '') + '</b>' + esc(s.label) + '</span>'; }).join('');
+  var brk = x.full ? x.full.filter(function (k) { return k.n > 0; }).map(function (k) { return '<span class="s-' + PCLS[R16.CODES[k.code]] + '" title="' + esc(k.label) + '">' + esc(k.short) + ' ' + esc(k.n) + '</span>'; }).join('') : '';
+  var grid = x.grid.map(function (g) {
+    return '<div class="p16-npl"><b>NP' + esc(g.np) + '</b>' + g.dots.map(function (d) { return '<i class="p16-d c-' + esc(d.code) + (d.pds ? ' p16-pds' : '') + '" title="' + esc(d.title) + '"></i>'; }).join('') + '</div>';
+  }).join('');
+  var st = P16S.state, note = st === 'loading' ? 'Loading details…' : st === 'err' ? 'Details not available right now.' : st === 'gone' ? 'This NAP is no longer listed.' : '';
+  el.innerHTML = '<div class="p16-h"><div><div class="p16-stc" id="p16T">' + esc(x.stencil) + '</div><div class="p16-sub">' + esc([x.barangay, x.street].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<button type="button" class="p16-x" data-p16-x aria-label="Close the NAP card">&times;</button></div>' +
+    '<div class="p16-chips">' + pr + sec + '<span class="p16-sub">' + esc(x.npText) + (x.npText ? ' · ' : '') + esc(x.total) + ' ports</span></div>' +
+    '<div class="p16-why ' + (x.installable ? 'ok' : 'no') + '">' + esc(x.reasonText) + '</div>' +
+    '<div class="p16-stats">' + stats + '</div>' +
+    (brk ? '<div class="p16-brk" aria-label="Ports by status">' + brk + '</div>' : '') +
+    (grid ? '<div class="p16-grid" aria-label="Ports per NAP number">' + grid + '</div>' : '') +
+    '<div class="p16-meta"><div>' + esc(x.last) + '</div>' + (x.dispatch ? '<div>' + esc(x.dispatch) + '</div>' : '') + (x.geo ? '<div>Location: ' + esc(x.geo) + '</div>' : '') + '</div>' +
+    (note ? '<div class="p16-load" role="status">' + esc(note) + '</div>' : '') +
+    '<div class="p16-act"><button type="button" class="btn pri" data-p16-open>Open details</button><button type="button" class="btn" data-p16-copy>Copy stencil</button></div>';
+  el.setAttribute('aria-label', 'NAP card ' + x.stencil);
+}
+function p16Place() {
+  var el = P16S.el; if (!el || el.hidden || !LMAP) return;
+  var map = $('map'), bar = $('mapBar');
+  var bw = map.clientWidth, bh = map.clientHeight, ox = map.offsetLeft, oy = map.offsetTop, a = null;
+  try { if (P16S.m && P16S.m._vis !== false) { var p = LMAP.latLngToContainerPoint(P16S.m.getLatLng()); a = { x: Number(p.x), y: Number(p.y) }; } } catch (e) { a = null; }
+  var top = (bar && !bar.hidden ? bar.offsetTop + bar.offsetHeight - oy : 40) + 10;
+  el.classList.remove('p16-dock'); el.style.left = '0px'; el.style.top = '0px'; el.style.maxHeight = '';
+  var pl = R16.place(a, { w: el.offsetWidth, h: el.scrollHeight }, { w: bw, h: bh }, { top: top, left: 54, bottom: 26 });
+  if (pl.mode === 'dock') { el.classList.add('p16-dock'); el.style.left = ''; el.style.top = ''; el.style.maxHeight = pl.maxH + 'px'; return; }
+  el.style.left = (ox + pl.left) + 'px'; el.style.top = (oy + pl.top) + 'px'; el.style.maxHeight = pl.maxH + 'px';
+}
+// after every map redraw: follow the (possibly rebuilt) marker; close when the NAP left the map (other barangay, filtered out)
+function p16AfterMap() {
+  if (!P16S.el || P16S.el.hidden || !P16S.b) return;
+  var m = p16MarkerOf(P16S.b.box_id);
+  if (!m && P16S.m) { p16Close(); return; }
+  P16S.m = m; p16Place();
+}
+function p16Click(e) {
+  var t = e.target;
+  if (t.closest('[data-p16-x]')) { var o = P16S.opener; p16Close(); p16Refocus(o); return; }
+  if (t.closest('[data-p16-copy]')) { p16Copy(P16S.b && P16S.b.stencil); return; }
+  if (t.closest('[data-p16-open]')) {
+    var b = P16S.b && (state.known[P16S.b.box_id] || P16S.b); if (!b) return;
+    p16Close();
+    if (!isSel(b)) { state.sel = b; drawBoard(); }
+    var d = $('detail');
+    setTimeout(function () { try { d.scrollIntoView({ behavior: 'smooth', block: mapx.on ? 'nearest' : 'start' }); d.tabIndex = -1; d.focus({ preventScroll: true }); } catch (x) {} }, 0);
+    return;
+  }
+  if (!P16S.pinned) P16S.pinned = true;   // a click inside a hover card keeps it open
+}
+function p16Copy(text) {
+  var s = String(text || ''); if (!s) return;
+  var done = function () { toast('Stencil copied: ' + s); };
+  var fallback = function () {
+    try { var ta = document.createElement('textarea'); ta.value = s; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select();
+      var ok = document.execCommand && document.execCommand('copy'); document.body.removeChild(ta); if (ok) return done(); } catch (x) { /* not allowed */ }
+    toast('Copy is not available here. Stencil: ' + s);
+  };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(s).then(done, fallback); return; } } catch (x) { /* fall back */ }
+  fallback();
+}
 // =====================================================================================================================================
 
 boot();
