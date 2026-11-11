@@ -1301,8 +1301,91 @@
              newClientId: function () { return DESK.newClientId(); } };
   })();
   // ======================================================================================================================
+  // ---------- phase 15: DELETE / RESTORE a NAP, duplicate NP overlaps (nap-24). Pure helpers for the dashboard (tested in nap-phase15.test.mjs) ----------
+  // A deleted NAP = an inactive box whose deactivated_reason starts with 'Deleted by ' (the server rule nap._deleted). Delete = board roles
+  // (dispatcher / admin / super); restore and merge = admin / super. A NAP with data needs its stencil typed to confirm.
+  var P15 = (function () {
+    var REASON_MIN = 3, REASON_MAX = 200, LIST_PAGE = 50, LIST_MAX = 200, DELETED_PREFIX = 'Deleted by ';
+    var BOARD = ['dispatcher', 'admin', 'superadmin'], ADMIN = ['admin', 'superadmin'];
+    function str(v) { return String(v == null ? '' : v); }
+    function n0(v) { var n = Number(v); return isFinite(n) && n > 0 ? n : 0; }
+    function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+    // who sees what (the server is the real guard): never a viewer, a field team or a session handed over from the phone
+    function rights(role, handoff) {
+      var r = str(role), ok = !handoff;
+      return { del: ok && BOARD.indexOf(r) >= 0, restore: ok && ADMIN.indexOf(r) >= 0, merge: ok && ADMIN.indexOf(r) >= 0, lists: ok && BOARD.indexOf(r) >= 0 };
+    }
+    function isDeletedReason(reason) { return str(reason).indexOf(DELETED_PREFIX) === 0; }
+    function reasonNorm(t) { return str(t).replace(/\s+/g, ' ').trim(); }
+    function reasonError(t) {
+      var n = reasonNorm(t).length;
+      if (n < REASON_MIN) return 'Enter the reason (' + REASON_MIN + ' to ' + REASON_MAX + ' characters).';
+      if (n > REASON_MAX) return 'At most ' + REASON_MAX + ' characters (' + n + ' entered).';
+      return '';
+    }
+    // counts = delete_box_preview().counts. Empty = nothing a person ever recorded (the server rule nap._counts_empty).
+    function isEmpty(c) {
+      var x = c || {};
+      return n0(x.audits) === 0 && n0(x.ports_checked) === 0 && n0(x.remarks) === 0 && n0(x.pds_ports) === 0 && n0(x.dispatch_open) === 0 && n0(x.dispatch_other) === 0;
+    }
+    // the lines the delete dialog shows (plain text; the dashboard escapes them)
+    function countLines(c) {
+      var x = c || {}, out = [];
+      if (isEmpty(x)) out.push('Nothing was recorded on this NAP (no audits, port readings, remarks, PDS marks or dispatch items).');
+      else {
+        var parts = [plural(n0(x.audits), 'audit'), plural(n0(x.photos), 'photo'), plural(n0(x.ports_checked), 'checked port'), plural(n0(x.remarks), 'remark'), plural(n0(x.pds_ports), 'PDS mark'),
+                     plural(n0(x.dispatch_open) + n0(x.dispatch_other), 'dispatch item')];
+        out.push('This NAP has ' + parts.join(', ') + '. They are KEPT (the audits stay in the Audits tab).');
+      }
+      if (n0(x.dispatch_open)) out.push(plural(n0(x.dispatch_open), 'open dispatch item') + ' will be cancelled.');
+      return out;
+    }
+    // the dialog state -> {ok, needsTyped, reasonError, typedError}
+    function deleteCheck(o) {
+      var x = o || {}, pv = x.preview || {}, needs = pv.needs_typed_confirm === true || (pv.needs_typed_confirm == null && !isEmpty(pv.counts));
+      var re = reasonError(x.reason), te = '';
+      if (needs && normStencil(x.typed) !== normStencil(pv.stencil)) te = 'Type the stencil ' + str(pv.stencil) + ' to confirm.';
+      var blocked = pv.can_delete === false ? (pv.deleted ? 'This NAP is already deleted.' : 'This NAP is deactivated: it is already hidden from every list.') : '';
+      return { ok: !re && !te && !blocked && !!pv.box_id, needsTyped: needs, reasonError: re, typedError: te, blocked: blocked };
+    }
+    function deletePayload(o) {
+      var x = o || {};
+      return { client_id: x.clientId, box_id: x.boxId, reason: reasonNorm(x.reason), confirm: true, confirm_stencil: x.needsTyped ? normStencil(x.typed) : null };
+    }
+    function restorePayload(o) { var x = o || {}; return { client_id: x.clientId, box_id: x.boxId, reason: reasonNorm(x.reason) }; }
+    function npList(a) { return (a || []).map(Number).filter(function (n) { return isFinite(n); }).sort(function (p, q) { return p - q; }); }
+    // one np_overlaps row -> 'NP3 also exists in QCY001 LP10 NP3 (1 audit, 2 checked ports)'
+    function overlapText(r) {
+      var x = r || {}, c = npList(x.common_nps), bits = [plural(n0(x.audits), 'audit'), plural(n0(x.ports_checked), 'checked port')];
+      if (n0(x.dispatch_open)) bits.push(plural(n0(x.dispatch_open), 'open dispatch item'));
+      return 'NP' + (c.length ? c.join(', NP') : '?') + ' also ' + (c.length > 1 ? 'exist' : 'exists') + ' in ' + str(x.stencil) + ' (' + bits.join(', ') + ')';
+    }
+    // a list_np_overlaps row -> its 'shared' text
+    function pairText(p) { var c = npList(p && p.common_nps); return 'Both have NP' + c.join(', NP'); }
+    // the args of nap.list_np_overlaps / nap.deleted_boxes (bounded like the server)
+    function listArgs(o) {
+      var x = o || {}, lim = Math.max(1, Math.min(LIST_MAX, Math.floor(Number(x.limit)) || LIST_PAGE)), off = Math.max(0, Math.floor(Number(x.offset)) || 0);
+      var a = { p_barangay: str(x.barangay).trim() || null, p_limit: lim, p_offset: off };
+      if (x.deleted) a.p_q = normStencil(x.q).length >= 2 ? normStencil(x.q).slice(0, 80) : null;
+      return a;
+    }
+    // the server's refusals, in one sentence (the NAP_ code stripped)
+    var CODES = { NAP_CONFIRM_REQUIRED: 'Type the stencil exactly to confirm (this NAP has data).', NAP_ALREADY_DELETED: 'This NAP is already deleted.',
+                  NAP_INACTIVE: 'This NAP is deactivated (NAP Master import or merge): it is already hidden.', NAP_NOT_DELETED: 'This NAP is not a deleted NAP.',
+                  NAP_FORBIDDEN: 'You do not have the right to do this.', NAP_REASON_REQUIRED: 'Enter the reason (3 to 200 characters).', NAP_BAD_BOX: 'This NAP was not found.' };
+    function errorText(e) {
+      var code = str(e && e.code), msg = str(e && typeof e === 'object' ? e.message : e).replace(/^NAP_[A-Z_]+:\s*/, '');
+      return msg || CODES[code] || 'Unknown error';
+    }
+    return { REASON_MIN: REASON_MIN, REASON_MAX: REASON_MAX, LIST_PAGE: LIST_PAGE, LIST_MAX: LIST_MAX, DELETED_PREFIX: DELETED_PREFIX, CODES: CODES,
+             rights: rights, isDeletedReason: isDeletedReason, reasonNorm: reasonNorm, reasonError: reasonError, isEmpty: isEmpty, countLines: countLines,
+             deleteCheck: deleteCheck, deletePayload: deletePayload, restorePayload: restorePayload, overlapText: overlapText, pairText: pairText, listArgs: listArgs,
+             errorText: errorText, newClientId: function () { return DESK.newClientId(); } };
+  })();
+  // ======================================================================================================================
 
   return {
+    p15: P15,
     p14: P14,
     p12: P12, mapNav: MAPNAV,
     desk: DESK, AUDIT_KINDS: AUDIT_KINDS, AUDIT_KIND_LABEL: AUDIT_KIND_LABEL, AUDIT_PAGE: AUDIT_PAGE, AUDIT_EXPORT_PAGE: AUDIT_EXPORT_PAGE, AUDIT_EXPORT_MAX: AUDIT_EXPORT_MAX,

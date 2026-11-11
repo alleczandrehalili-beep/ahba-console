@@ -268,6 +268,27 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 .p14-ports td.mono{font-family:var(--mono)}
 #v-ports .filters label{flex:1 1 150px}
 #v-ports .filters .ckl{flex-direction:row;align-items:center;gap:6px;flex:0 1 auto;font-size:12.5px;color:var(--ink)}
+/* ---------- phase 15: delete / restore a NAP, duplicate NPs ---------- */
+.p15{margin-top:10px;min-width:0}
+.p15-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.p15-ov{display:flex;flex-direction:column;gap:6px;margin:8px 0 0;overflow-wrap:anywhere}
+.p15-ov .p15-ovl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.p15-pan{margin-top:8px;border:1px solid var(--full);border-radius:8px;padding:10px;background:var(--bg);min-width:0;overflow-wrap:anywhere}
+.p15-pan h3{font-size:13px;margin:0 0 6px;font-weight:600}
+.p15-pan label{display:block;font-size:11.5px;color:var(--muted);margin-top:6px}
+.p15-pan input[type=text]{display:block;width:100%;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;margin-top:2px}
+.p15-pan input.p15-bad{border-color:var(--full)}
+.p15-mono{font-family:var(--mono)}
+.p15-lines{margin:6px 0 0;padding-left:18px;font-size:12px}
+.p15-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.p15-msg{font-size:12px;margin-top:6px;overflow-wrap:anywhere}
+.p15-msg.err{color:var(--full)}
+.btn.p15-danger{border-color:var(--full);color:var(--full)}
+.btn.p15-danger.pri{background:var(--full);color:#fff}
+.p15-tbl td{vertical-align:top;overflow-wrap:anywhere}
+.p15-tbl td .btn{margin:2px 4px 2px 0}
+.p15-card .row label{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--muted);min-width:0;flex:1 1 160px}
+.p15-card .row select,.p15-card .row input{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);min-width:0;width:100%}
 </style>
 </head>
 <body>
@@ -502,6 +523,19 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
         <p class="meta" id="mmProg" role="status" aria-live="polite" style="margin:8px 0 0"></p>
         <div id="mmResult"></div>
       </div>
+      <!-- ---------- phase 15: duplicate NAP numbers + deleted NAPs (board roles; shown only when the database has nap-24) ---------- -->
+      <div class="card p15-card" id="p15DupCard" style="margin-top:12px" hidden><h2>Duplicate NAPs (same LP, same NAP number)</h2>
+        <p class="hint" style="margin:0 0 8px">Two active NAPs with the same LP that share a NAP number, for example <b>QCY001 LP10 NP1-2-3</b> and <b>QCY001 LP10 NP3</b> after a stencil was combined. Open each one on the Board to check it; delete the extra one (its audits are kept), or let an admin merge it from the NAP detail.</p>
+        <div class="row"><label>Barangay<select id="p15DupBrgy" aria-label="Barangay of the duplicate NAPs"></select></label><button class="btn sm" id="p15DupLoad" type="button">Find duplicates</button><span class="meta" id="p15DupSum" role="status" aria-live="polite"></span></div>
+        <div class="tablewrap" style="margin-top:8px"><table class="p15-tbl"><thead><tr><th>LP</th><th>NAP</th><th>Other NAP</th><th>Shared</th></tr></thead><tbody id="p15DupRows"></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="p15DupMore" type="button" hidden>Load more</button></div>
+      </div>
+      <div class="card p15-card" id="p15DelCard" style="margin-top:12px" hidden><h2>Deleted NAPs</h2>
+        <p class="hint" style="margin:0 0 8px">NAPs deleted from the list (hidden from every list, map, search and dispatch; their audits, ports and photos are kept). The stencil stays reserved: the NAP Master import refuses it. An admin can <b>Restore</b> a NAP (it comes back exactly as it was); to use its stencil for another box, restore it, rename it, then delete it again.</p>
+        <div class="row"><label>Barangay<select id="p15DelBrgy" aria-label="Barangay of the deleted NAPs"></select></label><label>Stencil contains<input type="search" id="p15DelQ" maxlength="80" autocomplete="off" placeholder="LP10" aria-label="Stencil of the deleted NAP"></label><button class="btn sm" id="p15DelLoad" type="button">Show</button><span class="meta" id="p15DelSum" role="status" aria-live="polite"></span></div>
+        <div class="tablewrap" style="margin-top:8px"><table class="p15-tbl"><thead><tr><th>NAP</th><th>Barangay</th><th>Deleted</th><th>Reason</th><th>Recorded</th><th></th></tr></thead><tbody id="p15DelRows"></tbody></table></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm" id="p15DelMore" type="button" hidden>Load more</button></div>
+      </div>
     </section>
     <!-- ---------- phase 14: the Ports tab (board roles: dispatcher / admin / super; the server answers NAP_FORBIDDEN to anyone else) ---------- -->
     <section id="v-ports" hidden>
@@ -537,11 +571,11 @@ body.mapx .mapctl.off~.legend,body.mapx .mapctl.off~.p14-legend{display:none}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-10-24.3"></script>
-<script src="nap-api.js?v=2026-10-24.3"></script>
+<script src="nap-core.js?v=2026-11-11.1"></script>
+<script src="nap-api.js?v=2026-11-11.1"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-10-24.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-11-11.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -625,6 +659,7 @@ async function boot() {
     deskInit();   // phase 11: may this session desk-update ports? (async; the NAP detail shows "Edit ports" when yes)
     p12Init();    // phase 12: may this session edit NAP locations? (async; the NAP detail shows "Edit location" when yes)
     p14Init();    // phase 14: stage / PDS / remark rights + the stage legend, filter and summary
+    p15Init();    // phase 15: delete / restore a NAP, duplicate NPs (board roles, a database with nap-24)
     $('who').textContent = (C.teamOfEmail(state.email) || state.email) + ' · ' + (ACC.viewOnly ? 'view only' + (HANDOFF ? ' (from FieldOps)' : '') : state.role) + ' · v' + NAP_DASH_VERSION;
     applyAccess();
     var cur = C.DASH_TABS.filter(function (t) { return !$('v-' + t).hidden; })[0];
@@ -998,6 +1033,7 @@ async function drawDetail(refresh) {
   deskAfterDetail(b, ports);
   p12AfterDetail(b);   // phase 12: stencil / location tools + port remarks
   p14AfterDetail(b, ports);   // phase 14: stage row + Set / Move stage, PDS marks of the ports
+  p15AfterDetail(b);   // phase 15: Delete NAP + the Duplicate NP notice
   if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -1223,6 +1259,7 @@ function tab(name) {
   if (name === 'board' && LMAP) setTimeout(function () { LMAP.invalidateSize(); }, 0);
   if (name !== 'board' && mapx.on) mapExpand(false);
   if (name === 'audits') auOpen(); if (name === 'pilot') loadPilot(); if (name === 'dispatch') dpOpen(); if (name === 'master') mxOpen();
+  if (name === 'master') p15MasterOpen();   // phase 15: Duplicate NAPs + Deleted NAPs cards
 }
 ['board', 'audits', 'dispatch', 'master', 'pilot'].forEach(function (t) { $('tb-' + t).onclick = function () { tab(t); }; });
 // ---------- Audits tab (phase 10): server-side filters (nap.list_audits, nap-19), 200 per page + Load more, export of the filtered audits ----------
@@ -3030,11 +3067,11 @@ function p12RenRender(slot) {
   slot.innerHTML = '<div class="p12-pan" role="group" aria-label="Rename the stencil"><h3>Rename <span class="p12-mono">' + esc(r.stencil) + '</span></h3>' +
     '<div class="meta">Use this when the stencil was typed wrong or repainted. Everything stays with this NAP (ports, audits, dispatch items, photos). To move this NAP\'s data into another existing NAP, use Merge (admin).</div>' +
     '<label>New stencil<input type="text" class="p12-mono" maxlength="120" autocomplete="off" spellcheck="false" data-p12-rtext data-p12f="rtext" value="' + esc(r.text) + '"></label>' +
-    '<div class="p12-msg" data-p12-rchk role="status" aria-live="polite"></div>' +
+    '<div class="p12-msg" data-p12-rchk role="status" aria-live="polite"></div><div data-p15-ren></div>' +
     '<label>Reason (required)<input type="text" maxlength="200" autocomplete="off" data-p12-rreason data-p12f="rreason" placeholder="e.g. Stencil repainted on site" value="' + esc(r.reason) + '"></label>' +
     '<div class="p12-acts"><button class="btn sm pri" type="button" data-p12-rnsave>Rename</button><button class="btn sm" type="button" data-p12-rncancel>Cancel</button></div>' +
     '<div class="p12-msg err" data-p12-rnerr role="alert"></div></div>';
-  p12RenRefresh(slot);
+  p12RenRefresh(slot); p15RenDraw();
 }
 function p12RenRefresh(slot) {
   var r = P12.ren; if (!r || !slot) return;
@@ -3051,7 +3088,7 @@ var p12DupTimer = null;
 function p12RenDupCheck() {
   var r = P12.ren; if (!r) return;
   clearTimeout(p12DupTimer);
-  var chk = P.renameCheck({ stencil: r.stencil, np_numbers: r.nps }, r.text); if (!chk.ok) return;
+  var chk = P.renameCheck({ stencil: r.stencil, np_numbers: r.nps }, r.text); p15RenCheck(r, chk); if (!chk.ok) return;
   var tok = ++r.dupTok, want = chk.stencil, mine = r;
   p12DupTimer = setTimeout(async function () {
     var rows = [];
@@ -3756,6 +3793,337 @@ $('v-ports').addEventListener('input', function (ev) {
   var er = Q.pdsError({}, false, q.note, P14S.r), go = document.querySelector('[data-p14-qgo]'), m = t.closest('.p14-pan').querySelector('.p14-msg');
   if (go) go.disabled = q.saving || !!er; if (m) m.textContent = er;
 });
+// =====================================================================================================================================
+
+// =====================================================================================================================================
+// ---------- phase 15: DELETE / RESTORE a NAP, DUPLICATE NP overlaps (nap-24). Self-contained block. ----------
+// Who (the server is the real guard; these only decide what to show), NapCore.p15.rights: Delete NAP, the overlap notice, the rename check and
+// the two NAP Master lists = dispatcher / admin / super; Restore and Merge = admin / super. Never viewers, field teams or a handed-over session.
+// A database without nap-24 (the probe nap.deleted_boxes answers "missing"): everything here stays hidden. Everything from the server or the user
+// is escaped. A delete / restore keeps one client_id while its inputs stay the same and is locked while busy; answers for another box / an
+// older request are dropped (tokens).
+var R15 = C.p15;
+var P15S = { on: null, tok: 0,
+             ov: null,      // {box_id, rows, err, tok}: np_overlaps of the selected box (the Duplicate NP notice)
+             ren: null,     // {box_id, text, rows, tok}: np_overlaps of the stencil typed in the Rename dialog
+             del: null,     // the delete panel {box_id, stencil, where: 'detail' | 'dup', pv, pvErr, pvTok, reason, typed, busy, cid, err}
+             rs: null,      // the restore panel {box_id, stencil, barangay, reason, busy, cid, err}
+             dup: { brgy: '', rows: [], total: null, off: 0, busy: false, err: '', seq: 0, loaded: false },
+             dl: { brgy: '', q: '', rows: [], total: null, off: 0, busy: false, err: '', seq: 0, loaded: false } };
+var p15RenTimer = null;
+function p15R() { return R15.rights(ACC.ok ? ACC.role : '', !!HANDOFF); }
+function p15On() { return P15S.on === true && p15R().del; }
+async function p15Init() {
+  var tok = ++P15S.tok, was = P15S.on;
+  P15S.on = false;
+  if (!p15R().lists) { p15ApplyMaster(); return; }
+  var rows = null;
+  try { rows = await api.deletedBoxes(R15.listArgs({ deleted: true, limit: 1 })); } catch (e) { rows = null; }
+  if (tok !== P15S.tok) return;
+  P15S.on = !!(rows && !rows.missing);
+  p15ApplyMaster();
+  if (P15S.on !== was && state.sel) drawDetail(false);
+}
+function p15ApplyMaster() {
+  var on = p15On();
+  if ($('p15DupCard')) $('p15DupCard').hidden = !on;
+  if ($('p15DelCard')) $('p15DelCard').hidden = !on;
+  if (on && !$('v-master').hidden) p15MasterOpen();
+}
+function p15Key2(b) { return String(b.stencil) + '|' + (b.np_numbers || []).join(','); }
+function p15Busy() { return !!((P15S.del && P15S.del.busy) || (P15S.rs && P15S.rs.busy)); }
+function p15Nap(id, stencil) { return '<span class="p15-mono">' + esc(stencil || '') + '</span>'; }
+
+// ----- the NAP detail: Delete NAP + the Duplicate NP notice (called at the end of every drawDetail) -----
+function p15AfterDetail(b) {
+  var el = $('detail'); if (!el || !b || !p15On()) return;
+  if (P15S.del && P15S.del.where === 'detail' && P15S.del.host !== b.box_id && !P15S.del.busy) P15S.del = null;
+  var host = document.createElement('div'); host.className = 'p15'; host.setAttribute('data-p15', '1');
+  var ov = P15S.ov && P15S.ov.box_id === b.box_id && P15S.ov.key === p15Key2(b) ? P15S.ov : null;   // a rename / merge changes the key: reload
+  host.innerHTML = '<div class="p15-bar"><button class="btn sm p15-danger" type="button" data-p15-del="' + esc(b.box_id) + '" data-p15-stc="' + esc(b.stencil) + '"' +
+      (P15S.del && P15S.del.box_id === b.box_id ? ' aria-pressed="true"' : '') + '>Delete NAP</button></div>' +
+    (ov && ov.rows && ov.rows.length ? p15OvHtml(ov.rows, b, 'Duplicate NP') : '') +
+    (P15S.del && P15S.del.where === 'detail' && P15S.del.host === b.box_id ? p15DelHtml(P15S.del) : '');
+  var nps = el.querySelector('.nps');
+  if (nps) el.insertBefore(host, nps); else el.appendChild(host);
+  if (P15S.del && P15S.del.where === 'detail' && P15S.del.host === b.box_id) p15DelRefresh();
+  if (!ov) p15LoadOv(b);
+}
+async function p15LoadOv(b) {
+  var tok = (P15S.ov && P15S.ov.tok || 0) + 1;
+  P15S.ov = { box_id: b.box_id, key: p15Key2(b), rows: null, err: '', tok: tok };
+  var rows = [], err = '';
+  try { rows = await api.npOverlaps(b.box_id); } catch (e) { err = msgOf(e); rows = []; }
+  if (!P15S.ov || P15S.ov.tok !== tok || P15S.ov.box_id !== b.box_id) return;
+  P15S.ov.rows = rows || []; P15S.ov.err = err;
+  if (rows && rows.length && state.sel && state.sel.box_id === b.box_id) drawDetail(false);
+}
+// the overlap lines with their two actions; `self` = the NAP the user is on (Merge moves the OTHER NAP into it)
+function p15OvHtml(rows, self, title) {
+  var r = p15R();
+  return '<div class="warn p15-ov" role="note"><b>' + esc(title) + '</b>' + rows.slice(0, 5).map(function (x) {
+    return '<div class="p15-ovl"><span>' + esc(R15.overlapText(x)) + '.</span>' +
+      (r.del ? '<button class="btn sm p15-danger" type="button" data-p15-del="' + esc(x.box_id) + '" data-p15-stc="' + esc(x.stencil) + '">Delete that NAP</button>' : '') +
+      (r.merge && self && self.box_id ? '<button class="btn sm" type="button" data-p15-mg="' + esc(x.box_id) + '" data-p15-stc="' + esc(x.stencil) + '" data-p15-to="' + esc(self.box_id) + '" data-p15-tostc="' + esc(self.stencil) + '">Merge it into this NAP</button>' : '') +
+      '</div>';
+  }).join('') + (rows.length > 5 ? '<div class="meta">… and ' + esc(rows.length - 5) + ' more</div>' : '') + '</div>';
+}
+
+// ----- the delete panel (in the NAP detail, or under a row of the Duplicate NAPs list) -----
+function p15DelOpen(id, stencil, where, host) {
+  if (!p15On() || p15Busy()) return;
+  if (P15S.del && P15S.del.box_id === id && P15S.del.where === where) { P15S.del = null; p15Redraw(where); return; }
+  var d = P15S.del = { box_id: id, stencil: stencil, where: where, host: host, pv: null, pvErr: '', pvTok: (P15S.del && P15S.del.pvTok || 0) + 1, reason: '', typed: '', busy: false, cid: null, err: '' };
+  p15Redraw(where);
+  var tok = d.pvTok;
+  (async function () {
+    var pv = null, err = '';
+    try { pv = await api.deleteBoxPreview(id); } catch (e) { err = msgOf(e); }
+    if (P15S.del !== d || d.pvTok !== tok) return;
+    d.pv = pv; d.pvErr = err ? 'Cannot load the NAP: ' + err : !pv ? 'Delete needs the phase 15 database update.' : '';
+    p15Redraw(where);
+    var f = document.querySelector('[data-p15-reason]'); if (f) { try { f.focus({ preventScroll: true }); } catch (x) {} }
+  })();
+}
+function p15DelHtml(d) {
+  var pv = d.pv, chk = pv ? R15.deleteCheck({ preview: pv, reason: d.reason, typed: d.typed }) : null;
+  return '<div class="p15-pan" role="group" aria-label="Delete NAP ' + esc(d.stencil) + '"><h3>Delete NAP ' + p15Nap(d.box_id, d.stencil) + '</h3>' +
+    '<div class="meta">Removes this NAP from every list, map, search, summary and dispatch. Its audits, ports, photos and history are KEPT, and an admin can restore it.</div>' +
+    (d.pvErr ? '<div class="p15-msg err">' + esc(d.pvErr) + '</div>' : !pv ? '<div class="meta">Loading…</div>' :
+      '<ul class="p15-lines">' + R15.countLines(pv.counts).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+      (chk.blocked ? '<div class="p15-msg err">' + esc(chk.blocked) + '</div>' :
+        '<label>Reason (required)<input type="text" maxlength="240" autocomplete="off" data-p15-reason placeholder="e.g. Duplicate of NP3 in QCY001 LP10 NP1-2-3" value="' + esc(d.reason) + '"></label>' +
+        (chk.needsTyped ? '<label>This NAP has data: type its stencil <b class="p15-mono">' + esc(pv.stencil) + '</b> to confirm<input type="text" class="p15-mono" maxlength="120" autocomplete="off" spellcheck="false" data-p15-typed placeholder="' + esc(pv.stencil) + '" value="' + esc(d.typed) + '"></label>' : ''))) +
+    '<div class="p15-acts">' + (pv && !chk.blocked ? '<button class="btn sm pri p15-danger" type="button" data-p15-go>Delete NAP</button>' : '') + '<button class="btn sm" type="button" data-p15-cancel>Cancel</button></div>' +
+    '<div class="p15-msg err" data-p15-err role="alert"></div></div>';
+}
+function p15DelRefresh() {
+  var d = P15S.del, p = document.querySelector('.p15-pan[aria-label^="Delete NAP"]'); if (!d || !p) return;
+  var chk = d.pv ? R15.deleteCheck({ preview: d.pv, reason: d.reason, typed: d.typed }) : null;
+  var go = p.querySelector('[data-p15-go]'); if (go) { go.disabled = d.busy || !chk || !chk.ok; go.textContent = d.busy ? 'Deleting…' : 'Delete NAP'; }
+  p.querySelectorAll('input, [data-p15-cancel]').forEach(function (x) { x.disabled = d.busy; });
+  var ty = p.querySelector('[data-p15-typed]'); if (ty) ty.classList.toggle('p15-bad', !!(d.typed && chk && chk.typedError));
+  var er = p.querySelector('[data-p15-err]'); if (er) er.textContent = d.err || (chk && d.reason && chk.reasonError ? chk.reasonError : '');
+}
+function p15Redraw(where) {
+  if (where === 'dup') p15DupDraw(); else if (state.sel) drawDetail(false);
+}
+async function p15DelGo() {
+  var d = P15S.del; if (!d || d.busy || !d.pv) return;
+  var chk = R15.deleteCheck({ preview: d.pv, reason: d.reason, typed: d.typed }); if (!chk.ok) return;
+  if (!d.cid) d.cid = R15.newClientId();
+  d.busy = true; d.err = ''; p15DelRefresh();
+  var res;
+  try { res = await api.deleteBox(R15.deletePayload({ clientId: d.cid, boxId: d.box_id, reason: d.reason, typed: d.typed, needsTyped: chk.needsTyped })); }
+  catch (x) {
+    d.busy = false; d.err = 'Not deleted: ' + msgOf(x); toast(d.err);
+    if (/NAP_FORBIDDEN/.test(String(x && (x.code || x.message) || ''))) { P15S.del = null; p15Redraw(d.where); return; }
+    if (/NAP_CONFIRM_REQUIRED/.test(String(x && (x.code || x.message) || ''))) { d.pv = Object.assign({}, d.pv, { needs_typed_confirm: true }); d.cid = null; p15Redraw(d.where); return; }
+    p15DelRefresh(); return;
+  }
+  d.busy = false;
+  if (P15S.del === d) P15S.del = null;
+  p15Gone(d.box_id);
+  var n = Number(res && res.cancelled_items || 0);
+  toast('Deleted ' + d.stencil + (n ? ' (' + n + ' open dispatch item' + (n === 1 ? '' : 's') + ' cancelled)' : '') + '. An admin can restore it in NAP Master.');
+  if (d.where === 'dup') p15DupLoad(true); else drawBoard(false);
+}
+// a deleted NAP leaves the Board at once (box_status hides it on the next read anyway)
+function p15Gone(id) {
+  state.boxes = state.boxes.filter(function (x) { return x.box_id !== id; });
+  delete state.known[id]; markersDirty = true;
+  if (state.sel && state.sel.box_id === id) { state.sel = null; portsCache = null; histCache = null; }
+  P15S.ov = null; P15S.ren = null; P15S.dl.loaded = false; P15S.dup.loaded = false;
+}
+
+// ----- Merge it into this NAP (admin): the phase 12 merge flow, opened on the OTHER NAP with this NAP as the target -----
+async function p15MergeInto(fromId, fromStc, toId, toStc) {
+  if (!p15R().merge || p15Busy()) return;
+  var b = state.known[fromId] || await p12Fresh(fromId, fromStc);
+  if (!b) { toast('Cannot open ' + fromStc + ' (deactivated or not found).'); return; }
+  if (!p12Close()) return;
+  P15S.del = null;
+  state.sel = b; portsCache = null; histCache = null; tab('board');
+  p12MgOpen(b);
+  if (P12.mg) { P12.mg.q = toStc; p12MgPick({ box_id: toId, stencil: toStc }); }
+  drawBoard(false); focusSel();
+  setTimeout(function () { var dd = $('detail'); if (dd) dd.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 80);
+}
+
+// ----- the Rename dialog (phase 12): live "NP3 also exists in …" for the stencil being typed (a warning: the rename still saves) -----
+function p15RenCheck(r, chk) {
+  clearTimeout(p15RenTimer);
+  if (!p15On() || !r) return;
+  if (!chk || !chk.ok) { P15S.ren = null; p15RenDraw(); return; }
+  if (P15S.ren && P15S.ren.box_id === r.box_id && P15S.ren.text === chk.stencil) return;
+  var tok = (P15S.ren && P15S.ren.tok || 0) + 1, mine = P15S.ren = { box_id: r.box_id, text: chk.stencil, rows: null, tok: tok };
+  p15RenTimer = setTimeout(async function () {
+    var rows = [];
+    try { rows = await api.npOverlaps(r.box_id, chk.stencil); } catch (e) { rows = []; }
+    if (P15S.ren !== mine || mine.tok !== tok || !P12.ren || P12.ren.box_id !== r.box_id) return;
+    mine.rows = rows || [];
+    p15RenDraw();
+  }, 350);
+}
+function p15RenDraw() {
+  var slot = document.querySelector('[data-p15-ren]'), r = P12.ren, x = P15S.ren; if (!slot) return;
+  if (!r || !x || x.box_id !== r.box_id || !x.rows || !x.rows.length) { slot.innerHTML = ''; return; }
+  slot.innerHTML = p15OvHtml(x.rows, { box_id: r.box_id, stencil: r.stencil }, 'After this rename:') +
+    '<div class="meta">The rename is still allowed. Delete the other NAP (or an admin merges it into this one) so the NAP number is listed once.</div>';
+}
+
+// ----- NAP Master: the Duplicate NAPs and the Deleted NAPs lists -----
+function p15BrgyOptions(cur) {
+  var rows = state.summary.slice().sort(function (a, b) { return String(a.barangay).localeCompare(String(b.barangay)); });
+  return '<option value="">Whole QC</option>' + rows.map(function (r) { return '<option value="' + esc(r.barangay) + '"' + (r.barangay === cur ? ' selected' : '') + '>' + esc(r.barangay) + '</option>'; }).join('');
+}
+function p15MasterOpen() {
+  if (!p15On()) return;
+  $('p15DupBrgy').innerHTML = p15BrgyOptions(P15S.dup.brgy);
+  $('p15DelBrgy').innerHTML = p15BrgyOptions(P15S.dl.brgy);
+  if (!P15S.dup.loaded) p15DupLoad(true); else p15DupDraw();
+  if (!P15S.dl.loaded) p15DlLoad(true); else p15DlDraw();
+}
+async function p15DupLoad(reset) {
+  var s = P15S.dup; if (!p15On()) return;
+  if (reset) { s.rows = []; s.off = 0; s.total = null; s.err = ''; if (P15S.del && P15S.del.where === 'dup' && !P15S.del.busy) P15S.del = null; }
+  var seq = ++s.seq; s.busy = true; s.loaded = true; p15DupDraw();
+  var rows;
+  try { rows = await api.listNpOverlaps(R15.listArgs({ barangay: s.brgy, limit: R15.LIST_PAGE, offset: s.off })); }
+  catch (e) { if (seq === s.seq) { s.busy = false; s.err = msgOf(e); p15DupDraw(); } return; }
+  if (seq !== s.seq) return;
+  s.busy = false; s.rows = s.rows.concat(rows || []); s.off = s.rows.length; s.total = rows && rows.length ? Number(rows[0].total) : s.rows.length;
+  p15DupDraw();
+}
+function p15Side(id, stc, brgy, aud, chk, opn) {
+  var r = p15R();
+  return '<button class="btn sm" type="button" data-p15-open="' + esc(id) + '" data-p15-stc="' + esc(stc) + '"><span class="stencil">' + esc(stc) + '</span></button>' +
+    '<div class="meta">' + esc(brgy || 'UNASSIGNED') + ' · ' + esc(Number(aud || 0)) + ' audit' + (Number(aud) === 1 ? '' : 's') + ' · ' + esc(Number(chk || 0)) + ' checked' + (Number(opn) ? ' · ' + esc(Number(opn)) + ' open dispatch' : '') + '</div>' +
+    (r.del ? '<button class="btn sm p15-danger" type="button" data-p15-ddel="' + esc(id) + '" data-p15-stc="' + esc(stc) + '">Delete</button>' : '');
+}
+function p15DupDraw() {
+  var s = P15S.dup; if (!$('p15DupRows')) return;
+  var d = P15S.del && P15S.del.where === 'dup' ? P15S.del : null;
+  $('p15DupRows').innerHTML = s.rows.map(function (p) {
+    var row = '<tr><td class="p15-mono">' + esc(p.prefix) + '</td><td>' + p15Side(p.a_box_id, p.a_stencil, p.a_barangay, p.a_audits, p.a_ports_checked, p.a_dispatch_open) + '</td>' +
+      '<td>' + p15Side(p.b_box_id, p.b_stencil, p.b_barangay, p.b_audits, p.b_ports_checked, p.b_dispatch_open) + '</td><td>' + esc(R15.pairText(p)) + '</td></tr>';
+    if (d && (d.box_id === p.a_box_id || d.box_id === p.b_box_id) && d.host === p.a_box_id + '|' + p.b_box_id) row += '<tr><td colspan="4">' + p15DelHtml(d) + '</td></tr>';
+    return row;
+  }).join('') || '<tr><td colspan="4" class="meta">' + (s.busy ? 'Looking for duplicate NAP numbers…' : s.err ? 'Cannot load: ' + esc(s.err) : 'No duplicate NAP numbers' + (s.brgy ? ' in ' + esc(s.brgy) : '') + '.') + '</td></tr>';
+  $('p15DupMore').hidden = s.busy || s.total == null || s.rows.length >= s.total; $('p15DupMore').disabled = s.busy;
+  $('p15DupLoad').disabled = s.busy;
+  $('p15DupSum').textContent = s.busy ? 'Loading…' : s.total == null ? '' : fmtN(s.total) + ' pair' + (s.total === 1 ? '' : 's') + (s.rows.length < s.total ? ' (' + fmtN(s.rows.length) + ' shown)' : '');
+  if (d) p15DelRefresh();
+}
+async function p15DlLoad(reset) {
+  var s = P15S.dl; if (!p15On()) return;
+  if (reset) { s.rows = []; s.off = 0; s.total = null; s.err = ''; if (P15S.rs && !P15S.rs.busy) P15S.rs = null; }
+  var seq = ++s.seq; s.busy = true; s.loaded = true; p15DlDraw();
+  var rows;
+  try { rows = await api.deletedBoxes(R15.listArgs({ deleted: true, barangay: s.brgy, q: s.q, limit: R15.LIST_PAGE, offset: s.off })); }
+  catch (e) { if (seq === s.seq) { s.busy = false; s.err = msgOf(e); p15DlDraw(); } return; }
+  if (seq !== s.seq) return;
+  s.busy = false; s.rows = s.rows.concat(rows || []); s.off = s.rows.length; s.total = rows && rows.length ? Number(rows[0].total) : s.rows.length;
+  p15DlDraw();
+}
+function p15DlDraw() {
+  var s = P15S.dl, r = p15R(), rs = P15S.rs; if (!$('p15DelRows')) return;
+  $('p15DelRows').innerHTML = s.rows.map(function (x) {
+    var row = '<tr><td><span class="stencil">' + esc(x.stencil) + '</span><div class="meta">' + esc(x.street || '') + '</div></td><td>' + esc(x.barangay || 'UNASSIGNED') + '</td>' +
+      '<td>' + esc(x.deleted_at ? new Date(x.deleted_at).toLocaleString() : '') + '<div class="meta">by ' + esc(x.deleted_by || '?') + '</div></td><td>' + esc(x.reason || '') + '</td>' +
+      '<td>' + esc(Number(x.audits || 0)) + ' audit' + (Number(x.audits) === 1 ? '' : 's') + '<div class="meta">' + esc(Number(x.ports_checked || 0)) + ' checked ports</div></td>' +
+      '<td>' + (r.restore ? '<button class="btn sm" type="button" data-p15-rs="' + esc(x.box_id) + '" data-p15-stc="' + esc(x.stencil) + '" data-p15-brgy="' + esc(x.barangay || '') + '"' + (rs && rs.box_id === x.box_id ? ' aria-pressed="true"' : '') + '>Restore</button>' : '') + '</td></tr>';
+    if (rs && rs.box_id === x.box_id) row += '<tr><td colspan="6">' + p15RsHtml(rs) + '</td></tr>';
+    return row;
+  }).join('') || '<tr><td colspan="6" class="meta">' + (s.busy ? 'Loading…' : s.err ? 'Cannot load: ' + esc(s.err) : 'No deleted NAPs' + (s.brgy ? ' in ' + esc(s.brgy) : '') + (s.q ? ' matching "' + esc(s.q) + '"' : '') + '.') + '</td></tr>';
+  $('p15DelMore').hidden = s.busy || s.total == null || s.rows.length >= s.total; $('p15DelMore').disabled = s.busy;
+  $('p15DelLoad').disabled = s.busy;
+  $('p15DelSum').textContent = s.busy ? 'Loading…' : s.total == null ? '' : fmtN(s.total) + ' deleted NAP' + (s.total === 1 ? '' : 's') + (s.rows.length < s.total ? ' (' + fmtN(s.rows.length) + ' shown)' : '');
+  if (rs) p15RsRefresh();
+}
+function p15RsHtml(rs) {
+  return '<div class="p15-pan" role="group" aria-label="Restore NAP ' + esc(rs.stencil) + '" style="border-color:var(--accent)"><h3>Restore ' + p15Nap(rs.box_id, rs.stencil) + '</h3>' +
+    '<div class="meta">It comes back on the Board exactly as it was (ports, stage, audits, location). Cancelled dispatch items stay cancelled.</div>' +
+    '<label>Reason (required)<input type="text" maxlength="240" autocomplete="off" data-p15-rsreason placeholder="e.g. Deleted by mistake" value="' + esc(rs.reason) + '"></label>' +
+    '<div class="p15-acts"><button class="btn sm pri" type="button" data-p15-rsgo>Restore</button><button class="btn sm" type="button" data-p15-rscancel>Cancel</button></div>' +
+    '<div class="p15-msg err" data-p15-rserr role="alert"></div></div>';
+}
+function p15RsRefresh() {
+  var rs = P15S.rs, p = document.querySelector('.p15-pan[aria-label^="Restore NAP"]'); if (!rs || !p) return;
+  var re = R15.reasonError(rs.reason);
+  var go = p.querySelector('[data-p15-rsgo]'); if (go) { go.disabled = rs.busy || !!re; go.textContent = rs.busy ? 'Restoring…' : 'Restore'; }
+  p.querySelectorAll('input, [data-p15-rscancel]').forEach(function (x) { x.disabled = rs.busy; });
+  var er = p.querySelector('[data-p15-rserr]'); if (er) er.textContent = rs.err || (rs.reason && re ? re : '');
+}
+async function p15RsGo() {
+  var rs = P15S.rs; if (!rs || rs.busy || R15.reasonError(rs.reason) || !p15R().restore) return;
+  if (!rs.cid) rs.cid = R15.newClientId();
+  rs.busy = true; rs.err = ''; p15RsRefresh();
+  var res;
+  try { res = await api.restoreBox(R15.restorePayload({ clientId: rs.cid, boxId: rs.box_id, reason: rs.reason })); }
+  catch (x) { rs.busy = false; rs.err = 'Not restored: ' + msgOf(x); toast(rs.err); p15RsRefresh(); return; }
+  rs.busy = false;
+  if (P15S.rs === rs) P15S.rs = null;
+  var ov = Number(res && res.overlaps || 0);
+  toast('Restored ' + rs.stencil + '.' + (ov ? ' It shares a NAP number with ' + ov + ' other NAP' + (ov === 1 ? '' : 's') + ' (see Duplicate NAPs).' : ''));
+  P15S.dup.loaded = false; P15S.ov = null;
+  p15DlLoad(true);
+  if (P15S.dup.loaded === false && !$('v-master').hidden) p15DupLoad(true);
+  if ((rs.barangay || 'UNASSIGNED') === (state.brgy || '')) loadBarangay(state.brgy, true);
+}
+$('p15DupLoad').onclick = function () { P15S.dup.brgy = $('p15DupBrgy').value; p15DupLoad(true); };
+$('p15DupBrgy').onchange = function () { P15S.dup.brgy = $('p15DupBrgy').value; p15DupLoad(true); };
+$('p15DupMore').onclick = function () { p15DupLoad(false); };
+$('p15DelLoad').onclick = function () { P15S.dl.brgy = $('p15DelBrgy').value; P15S.dl.q = $('p15DelQ').value.trim(); p15DlLoad(true); };
+$('p15DelBrgy').onchange = function () { P15S.dl.brgy = $('p15DelBrgy').value; p15DlLoad(true); };
+$('p15DelQ').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); $('p15DelLoad').click(); } });
+$('p15DelMore').onclick = function () { p15DlLoad(false); };
+
+// ----- events: one delegated listener set on the detail panel and one on the NAP Master view -----
+function p15Click(ev) {
+  var t = ev.target; if (!t || !t.closest) return;
+  var a = t.closest('[data-p15-del]');
+  if (a) { var host = state.sel ? state.sel.box_id : null; if (host) p15DelOpen(a.getAttribute('data-p15-del'), a.getAttribute('data-p15-stc'), 'detail', host); return; }
+  var dd = t.closest('[data-p15-ddel]');
+  if (dd) {
+    var tr = dd.closest('tr'), i = tr ? Array.prototype.indexOf.call(tr.parentNode.children, tr) : -1, pr = null;
+    var id = dd.getAttribute('data-p15-ddel');
+    P15S.dup.rows.forEach(function (p) { if (!pr && (p.a_box_id === id || p.b_box_id === id)) pr = p; });
+    if (pr) p15DelOpen(id, dd.getAttribute('data-p15-stc'), 'dup', pr.a_box_id + '|' + pr.b_box_id);
+    return;
+  }
+  var mg = t.closest('[data-p15-mg]');
+  if (mg) { p15MergeInto(mg.getAttribute('data-p15-mg'), mg.getAttribute('data-p15-stc'), mg.getAttribute('data-p15-to'), mg.getAttribute('data-p15-tostc')); return; }
+  var op = t.closest('[data-p15-open]');
+  if (op) { p14OpenBox(op.getAttribute('data-p15-open'), op.getAttribute('data-p15-stc')); return; }
+  if (t.closest('[data-p15-go]')) { p15DelGo(); return; }
+  if (t.closest('[data-p15-cancel]')) { if (P15S.del && !P15S.del.busy) { var w = P15S.del.where; P15S.del = null; p15Redraw(w); } return; }
+  var rb = t.closest('[data-p15-rs]');
+  if (rb) {
+    if (p15Busy() || !p15R().restore) return;
+    var rid = rb.getAttribute('data-p15-rs');
+    P15S.rs = P15S.rs && P15S.rs.box_id === rid ? null : { box_id: rid, stencil: rb.getAttribute('data-p15-stc'), barangay: rb.getAttribute('data-p15-brgy'), reason: '', busy: false, cid: null, err: '' };
+    p15DlDraw();
+    var f = document.querySelector('[data-p15-rsreason]'); if (f) { try { f.focus({ preventScroll: true }); } catch (x) {} }
+    return;
+  }
+  if (t.closest('[data-p15-rsgo]')) { p15RsGo(); return; }
+  if (t.closest('[data-p15-rscancel]')) { if (P15S.rs && !P15S.rs.busy) { P15S.rs = null; p15DlDraw(); } return; }
+}
+function p15Input(ev) {
+  var t = ev.target; if (!t || !t.hasAttribute) return;
+  var d = P15S.del;
+  if (t.hasAttribute('data-p15-reason') && d && !d.busy) { d.reason = t.value; d.cid = null; d.err = ''; p15DelRefresh(); return; }
+  if (t.hasAttribute('data-p15-typed') && d && !d.busy) { d.typed = t.value; d.cid = null; d.err = ''; p15DelRefresh(); return; }
+  if (t.hasAttribute('data-p15-rsreason') && P15S.rs && !P15S.rs.busy) { P15S.rs.reason = t.value; P15S.rs.cid = null; P15S.rs.err = ''; p15RsRefresh(); return; }
+}
+function p15Key(ev) {
+  if (ev.key !== 'Enter' || !ev.target || !ev.target.closest || !ev.target.closest('.p15-pan')) return;
+  ev.preventDefault();
+  var b = ev.target.closest('.p15-pan').querySelector('[data-p15-go],[data-p15-rsgo]');
+  if (b && !b.disabled) b.click();
+}
+['detail', 'v-master'].forEach(function (k) { $(k).addEventListener('click', p15Click); $(k).addEventListener('input', p15Input); $(k).addEventListener('keydown', p15Key); });
 // =====================================================================================================================================
 
 boot();

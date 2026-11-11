@@ -495,6 +495,40 @@
     return api;
   };
   // ======================================================================================================================
+  // ---------- phase 15: DELETE / RESTORE a NAP, duplicate NP overlaps (nap-24). Self-contained block: adds methods to every api ----------
+  // A database without nap-24: the reads answer [] / null with .missing = true (the screens hide every control); writes throw.
+  function p15Api(client) {
+    var nap = function () { return client.schema('nap'); };
+    function missingFn(err) { return /PGRST202|could not find the function|does not exist|42883/i.test(String((err && err.message) || '') + ' ' + String((err && err.code) || '')) && !/^NAP_/.test(String((err && err.message) || '')); }
+    function soft(name, args) {
+      return Promise.resolve(nap().rpc(name, args)).then(function (r) {
+        if (r && r.error) { if (missingFn(r.error)) { var n = []; n.missing = true; return n; } throw fail(r.error, r.status); }
+        return (r && r.data) || [];
+      });
+    }
+    return {
+      // board: {box_id, stencil, active, deleted, counts, empty, needs_typed_confirm, can_delete, can_restore, …}; without nap-24: null
+      deleteBoxPreview: function (boxId) {
+        return Promise.resolve(nap().rpc('delete_box_preview', { p_box_id: boxId })).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) return null; throw fail(r.error, r.status); }
+          return r && r.data && typeof r.data === 'object' ? r.data : null;
+        });
+      },
+      // payload = NapCore.p15.deletePayload(...) -> {ok, replay, box_id, stencil, deleted_at, deleted_by, cancelled_items, counts, empty}
+      deleteBox: function (payload) { return unwrap(nap().rpc('delete_box', { p_payload: payload })); },
+      // admin / super: payload = NapCore.p15.restorePayload(...) -> {ok, replay, box_id, stencil, restored_at, restored_by, overlaps}
+      restoreBox: function (payload) { return unwrap(nap().rpc('restore_box', { p_payload: payload })); },
+      // board: the other active boxes sharing the LP and a NAP number with the box (or with newStencil); [] (.missing without nap-24)
+      npOverlaps: function (boxId, newStencil) { return soft('np_overlaps', { p_box_id: boxId || null, p_new_stencil: newStencil || null }); },
+      // board: overlapping pairs, args = NapCore.p15.listArgs({barangay, limit, offset}); [] (.missing without nap-24)
+      listNpOverlaps: function (args) { return soft('list_np_overlaps', args || {}); },
+      // board: the deleted NAPs, args = NapCore.p15.listArgs({deleted: true, barangay, q, limit, offset}); [] (.missing without nap-24)
+      deletedBoxes: function (args) { return soft('deleted_boxes', args || {}); }
+    };
+  }
+  var createBase15 = create;
+  create = function (client) { var api = createBase15(client), d = p15Api(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
+  // ======================================================================================================================
 
   return { create: create, BUCKET: BUCKET, isAuthError: isAuthError, signInFirst: signInFirst, guardAuth: guardAuth };
 });
