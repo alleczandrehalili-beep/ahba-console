@@ -549,6 +549,27 @@
   var createBase16 = create;
   create = function (client) { var api = createBase16(client), d = p16Api(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
   // ======================================================================================================================
+  // ---------- phase 18: the NAP HISTORY in the NAP detail (nap-26 nap.box_history). Self-contained block: adds one read to every api ----------
+  // A database without nap-26: boxHistory answers {missing: true} (the dashboard then hides the section and never asks again).
+  function p18Api(client) {
+    var nap = function () { return client.schema('nap'); };
+    function missingFn(err) { return /PGRST202|could not find the function|does not exist|42883/i.test(String((err && err.message) || '') + ' ' + String((err && err.code) || '')) && !/^NAP_/.test(String((err && err.message) || '')); }
+    return {
+      // every Board role: {box_id, stencil, limit, last_update: {kind, at, by, names} | null, events: [...]} (no account numbers, photos, remark /
+      // reason / note text or GPS); limit 1..20 (default 10); an inactive / deleted NAP: NAP_BAD_BOX; without nap-26: {missing: true}
+      boxHistory: function (boxId, limit) {
+        var n = Math.floor(Number(limit)), args = { p_box_id: boxId, p_limit: isFinite(n) ? Math.max(1, Math.min(20, n)) : 10 };
+        return Promise.resolve(nap().rpc('box_history', args)).then(function (r) {
+          if (r && r.error) { if (missingFn(r.error)) return { missing: true }; throw fail(r.error, r.status); }
+          if (!r || !r.data || typeof r.data !== 'object' || Array.isArray(r.data)) throw fail({ message: 'NAP_ERROR: empty answer' });
+          return r.data;
+        });
+      }
+    };
+  }
+  var createBase18 = create;
+  create = function (client) { var api = createBase18(client), d = p18Api(client); Object.keys(d).forEach(function (k) { api[k] = d[k]; }); return api; };
+  // ======================================================================================================================
 
   return { create: create, BUCKET: BUCKET, isAuthError: isAuthError, signInFirst: signInFirst, guardAuth: guardAuth };
 });

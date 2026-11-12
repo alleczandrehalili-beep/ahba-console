@@ -1596,7 +1596,78 @@
   })();
   // ======================================================================================================================
 
+  // ---------- phase 18: the NAP HISTORY in the NAP detail (nap-26 nap.box_history). Pure helpers (tested in nap-phase18.test.mjs) ----------
+  // Every Board role (board, viewer, NAP technician) sees at the top of the NAP detail "Last updated by <who> · <date / time>" and a compact
+  // History list (the last LIMIT events, newest first: kind, short change, who, when). ONE nap.box_history read when the detail opens (cached
+  // 60 s per NAP with NapCore.p16's loader: one request in flight, newest wish wins; a database without nap-26: one probe, then the section
+  // stays hidden). The server sends no account numbers, photos, remark / reason / note text or GPS; the client builds every sentence.
+  var P18 = (function () {
+    var LIMIT = 10, MAX = 20, TTL = 60000, NAMES_MAX = 80, CHANGES_SHOWN = 4;
+    var KINDS = ['audit', 'not_found', 'desk', 'stage_set', 'stage_changed', 'stage_cleared', 'pds_mark', 'pds_release', 'pds_clear'];
+    var LABEL = { audit: 'Field audit', not_found: 'Not found (visit)', desk: 'Desk update', stage_set: 'Stage set', stage_changed: 'Stage changed',
+                  stage_cleared: 'Stage cleared', pds_mark: 'PDS marked', pds_release: 'PDS validated', pds_clear: 'PDS cleared' };
+    var SHORT = {}; SHORT[STATUS.AWT] = 'Active w/ tagging'; SHORT[STATUS.AWO] = 'Active w/o tagging'; SHORT[STATUS.VACANT] = 'Vacant';
+    SHORT[STATUS.RELEASED] = 'Released'; SHORT[STATUS.HILOSS] = 'Hi Loss'; SHORT[STATUS.DEFECTIVE] = 'Defective'; SHORT[STATUS.UNVERIFIED] = 'Unverified';
+    function str(v) { return String(v == null ? '' : v); }
+    function n0(v) { var n = Number(v); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+    function label(kind) { return LABEL[str(kind)] || 'Update'; }
+    function status(s) { return SHORT[str(s)] || 'Unverified'; }
+    // 'NOT RFS - Not ready for selling' -> 'NOT RFS'; an unknown code is shown as the code itself (never empty)
+    function stage(code) { var s = P14.stage(code); return s ? s.label.split(' - ')[0] : str(code); }
+    function npPort(e) { return (e.np != null ? 'NP' + n0(e.np) : '') + (e.port != null ? (e.np != null ? ' ' : '') + 'P' + n0(e.port) : ''); }
+    // who: the actor as recorded (team code / dashboard username), plus the technicians a field team typed (bounded)
+    function who(e) {
+      var x = e || {}, by = str(x.by).trim() || 'unknown', nm = str(x.names).replace(/\s+/g, ' ').trim().slice(0, NAMES_MAX);
+      return by + (nm ? ' (' + nm + ')' : '');
+    }
+    // Manila date / time 'YYYY-MM-DD HH:MM' ('' for a bad value)
+    function when(at) { return fmtManila(at); }
+    // the short change of one event (the server only sends what is already stored: counts, old -> new status, stage codes, NP / port)
+    function change(e) {
+      var x = e || {}, k = str(x.kind);
+      if (k === 'audit') {
+        var c = x.counts || {}, parts = [];
+        if (n0(c.free)) parts.push(n0(c.free) + ' Vacant / Released');
+        if (n0(c.active)) parts.push(n0(c.active) + ' Active');
+        if (n0(c.bad)) parts.push(n0(c.bad) + ' Hi Loss / Defective');
+        return npPort(x) + (x.counts ? ' · ' + n0(c.ports) + ' ports read' + (parts.length ? ': ' + parts.join(', ') : '') : '');
+      }
+      if (k === 'not_found') return npPort(x) + ' · could not reach the NAP';
+      if (k === 'desk') {
+        var ch = Array.isArray(x.changes) ? x.changes : [], shown = ch.slice(0, CHANGES_SHOWN).map(function (p) {
+          var to = status(p && p.to), from = p && p.from != null ? status(p.from) : 'Unverified';
+          return 'P' + n0(p && p.port) + ' ' + (from === to ? 'account label updated' : from + ' → ' + to);
+        });
+        return npPort(x) + (shown.length ? ': ' + shown.join('; ') + (ch.length > CHANGES_SHOWN ? '; +' + (ch.length - CHANGES_SHOWN) + ' more' : '') : '');
+      }
+      if (k === 'stage_set') return '→ ' + stage(x.to);
+      if (k === 'stage_changed') return stage(x.from) + ' → ' + stage(x.to);
+      if (k === 'stage_cleared') return stage(x.from) + ' → no stage';
+      if (k === 'pds_mark') return npPort(x) + ' marked PDS';
+      if (k === 'pds_release') return npPort(x) + ' released (PDS mark cleared)';
+      if (k === 'pds_clear') return npPort(x) + ' not PDS (mark cleared)';
+      return '';
+    }
+    function item(e) { var x = e || {}; return { kind: str(x.kind), label: label(x.kind), change: change(x), who: who(x), when: when(x.at) }; }
+    // everything the section shows, as plain text (the dashboard escapes). h = the nap.box_history answer
+    function model(h) {
+      var x = h && typeof h === 'object' && !h.missing ? h : {}, l = x.last_update && typeof x.last_update === 'object' ? x.last_update : null;
+      var items = (Array.isArray(x.events) ? x.events : []).slice(0, MAX).map(item);
+      var m = { has: !!l, lastWho: l ? who(l) : '', lastWhen: l ? when(l.at) : '', lastLabel: l ? label(l.kind) : '', items: items };
+      m.lastText = l ? 'Last updated by ' + m.lastWho + ' · ' + m.lastWhen + ' · ' + m.lastLabel : 'No update recorded yet';
+      return m;
+    }
+    // the request side = NapCore.p16's loader (TTL 60 s, one in flight, newest wins, a missing function = one probe); fetch(id) -> Promise
+    function loader(fetch, o) { var x = o || {}; return P16.loader({ fetch: fetch, ttl: x.ttl || TTL, max: x.max, now: x.now }); }
+    // the RPC arguments (limit clamped like the server: 1 .. 20, default 10)
+    function args(boxId, limit) { var n = Math.floor(Number(limit)); return { p_box_id: boxId, p_limit: isFinite(n) ? Math.max(1, Math.min(MAX, n)) : LIMIT }; }
+    return { LIMIT: LIMIT, MAX: MAX, TTL: TTL, KINDS: KINDS.slice(), LABEL: LABEL, label: label, status: status, stage: stage, who: who, when: when,
+             change: change, item: item, model: model, loader: loader, args: args };
+  })();
+  // ======================================================================================================================
+
   return {
+    p18: P18,
     p17: P17,
     p16: P16,
     p15: P15,

@@ -396,6 +396,19 @@ body.techmap.mapx .mapbox,body.techmap.mapx #map{min-height:0}
 .tm-sheet .legend,.tm-sheet .p14-legend{display:flex;flex-direction:column;gap:8px;font-size:13px;margin:0 0 12px}
 body.tm-open{overflow:hidden}
 body.tm-open .toast{z-index:31}
+/* phase 18 (2026-11-12.1): "Last updated by" + the compact History list at the top of the NAP detail (every role). Self-contained: .p18* */
+.p18{margin:10px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:0}
+.p18[hidden]{display:none}
+.p18-last{font-size:13px;overflow-wrap:anywhere}
+.p18-last b{font-weight:600}
+.p18-h{margin:8px 0 2px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.p18-list{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;overscroll-behavior:contain}
+.p18-list li{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;padding:5px 0;border-top:1px solid var(--line);font-size:12.5px;min-width:0}
+.p18-list li:first-child{border-top:0}
+.p18-k{font-weight:600}
+.p18-c{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.p18-w{flex:0 1 auto;margin-left:auto;color:var(--muted);font-size:12px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tm-sheet .p18-list{max-height:none}
 </style>
 </head>
 <body>
@@ -678,11 +691,11 @@ body.tm-open .toast{z-index:31}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="nap-core.js?v=2026-11-11.3"></script>
-<script src="nap-api.js?v=2026-11-11.3"></script>
+<script src="nap-core.js?v=2026-11-12.1"></script>
+<script src="nap-api.js?v=2026-11-12.1"></script>
 <script>
 'use strict';
-var NAP_DASH_VERSION = '2026-11-11.3';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
+var NAP_DASH_VERSION = '2026-11-12.1';   // bump with every deploy (version-stamp rule, see AHBA_FieldOps_Handoff.md)
 // Same Supabase project as the console and FMS. Confirm these two values equal the console's ahba-cloud.js before deploy (Task 11).
 var SB_URL = 'https://avjzkfxgzeyxtihkofed.supabase.co';
 var SB_KEY = 'sb_publishable_2JM51zp2r5GUICznc6Nz4Q_B4UFS1da';
@@ -1146,6 +1159,7 @@ async function drawDetail(refresh) {
   p12AfterDetail(b);   // phase 12: stencil / location tools + port remarks
   p14AfterDetail(b, ports);   // phase 14: stage row + Set / Move stage, PDS marks of the ports
   p15AfterDetail(b);   // phase 15: Delete NAP + the Duplicate NP notice
+  p18AfterDetail(b, refresh);   // phase 18: "Last updated by" + the History list (every role)
   if (ACC.canHistory) drawHistory(b, tok, refresh);
 }
 // Per-NAP history: the last 5 audits of the selected box; "Tingnan" opens the audit inline (same view as the Audits tab).
@@ -3622,6 +3636,7 @@ async function p14StageSave() {
   toast(res.changed === false ? 'Nothing changed.' : res.stage ? 'Stage of ' + e.stencil + ': ' + Q.label(res.stage) + '.' : 'Stage of ' + e.stencil + ' cleared.');
   await p12Fresh(e.box_id, e.stencil);   // the box's kind / free count follow the stage rule: read its fresh row
   p14LoadSummary();
+  p18Forget(e.box_id);   // phase 18: the stage change is in the NAP's history now
   if (state.sel && state.sel.box_id === e.box_id) drawBoard(false);
 }
 
@@ -3704,6 +3719,7 @@ async function p14AfterPds(id, stencil) {
   if (P14S.flags && P14S.flags.box_id === id) P14S.flags = null;
   p14LoadSummary(); p14QueueLoad(true); if (!$('v-ports').hidden) p14PortsLoad(true);
   if (stencil) await p12Fresh(id, stencil);   // a PDS port is never free: the kind / free count may change
+  p18Forget(id);   // phase 18: the PDS change is in the NAP's history now
   if (state.sel && state.sel.box_id === id) drawBoard(false);
 }
 // "Validate and release": the phase 11 desk editor of that NP, the port prefilled to Released; the mark is cleared after that save
@@ -4488,7 +4504,7 @@ function tmOpen(kind) {
   if (TM.sheet) tmRestore(); else TM.opener = document.activeElement;
   TM.sheet = next;
   TM.title.textContent = R17.SHEET_TITLE[next];
-  if (next === 'detail') tmMove($('detail'));
+  if (next === 'detail') { tmMove($('detail')); p18Kick(); }   // phase 18: the history loads when the detail sheet opens
   else if (next === 'list') { tmMove($('radSec')); tmMove($('blCard')); }
   else {   // the legend: static copies of the status legend and (with nap-23) the stage legend
     [document.querySelector('.bcard-map>.legend'), document.querySelector('.bcard-map>[data-p14-legend]')].forEach(function (n) { if (n) TM.body.appendChild(n.cloneNode(true)); });
@@ -4523,6 +4539,55 @@ function tmClose(fromPop, quiet) {
 tmBuild();
 tmSyncRad();
 if (HANDOFF) tmApply();   // a handoff session is a technician session: decide before anything shows (boot applies it again with the role)
+// =====================================================================================================================================
+
+// ===== phase 18 (2026-11-12.1): the NAP HISTORY in the NAP detail. Self-contained block (CSS .p18*, one #p18Hist element in #detail). =====
+// Every Board role (dispatcher / admin / superadmin, NAP Board viewer, NAP technician incl. the handed-over map view) sees at the top of the NAP
+// detail "Last updated by <who> · <date / time>" (or "No update recorded yet") and a compact History list (the last NapCore.p18.LIMIT events:
+// field audits, not-found visits, desk updates, stage and PDS changes; kind, short change, who, when). No View button, no photos, no account
+// numbers, no remark / reason text (the server never sends them). Dispatchers / admins keep the "Last 5 audits" table with View below it.
+// ONE nap.box_history read when the detail opens (cached 60 s per NAP; one request in flight, newest wins; no polling); a save in the detail
+// (desk update, stage, PDS) drops the cached history of that NAP. The technician map view loads it only when the detail sheet opens. A database
+// without nap-26: one probe, then the section stays hidden and the detail works as before. Every text is escaped.
+var R18 = C.p18;
+var P18S = { ld: R18.loader(function (id) { return api.boxHistory(id, R18.LIMIT); }) };
+function p18Forget(id) { P18S.ld.forget(id); }
+// the history is wanted only when the detail can be seen (the technician map view keeps it in a closed sheet until Open details)
+function p18Visible() { return !(TM.on && TM.sheet !== 'detail'); }
+function p18AfterDetail(b, refresh) {
+  var el = $('detail'); if (!el || !b) return;
+  if (refresh) P18S.ld.forget(b.box_id);
+  if (P18S.ld.isOff()) return;   // no nap-26 on this database: no section at all
+  var old = $('p18Hist'); if (old && old.parentNode) old.parentNode.removeChild(old);
+  var host = document.createElement('section'); host.className = 'p18'; host.id = 'p18Hist'; host.setAttribute('data-box', String(b.box_id));
+  host.setAttribute('aria-label', 'Last update and history'); host.setAttribute('aria-live', 'polite');
+  var head = el.firstElementChild; el.insertBefore(host, head ? head.nextSibling : null);
+  p18Fill(b);
+}
+function p18Fill(b) {
+  var host = $('p18Hist'); if (!host || !b || host.getAttribute('data-box') !== String(b.box_id)) return;
+  var hit = P18S.ld.cached(b.box_id);
+  if (hit) { p18Draw(host, hit); return; }
+  if (host.getAttribute('data-p18') !== 'loading') { host.setAttribute('data-p18', 'loading'); host.innerHTML = '<div class="p18-last meta">Last updated: loading…</div>'; }
+  if (!p18Visible()) return;
+  var id = b.box_id;
+  P18S.ld.request(id, function (res) {
+    var h = $('p18Hist'); if (!h || h.getAttribute('data-box') !== String(id)) return;   // another NAP meanwhile
+    if (res.off || (res.error && res.error.code === 'NAP_BAD_BOX')) { h.hidden = true; h.innerHTML = ''; return; }
+    if (res.error) { h.setAttribute('data-p18', 'err'); h.innerHTML = '<div class="p18-last meta">History not available right now.</div>'; return; }
+    p18Draw(h, res.card);
+  });
+}
+function p18Kick() { if (state.sel) p18Fill(state.sel); }
+function p18Draw(host, h) {
+  var x = R18.model(h);
+  host.setAttribute('data-p18', 'ok'); host.hidden = false;
+  host.innerHTML = '<div class="p18-last">' + (x.has ? 'Last updated by <b>' + esc(x.lastWho) + '</b> · ' + esc(x.lastWhen) + ' · ' + esc(x.lastLabel) : esc(x.lastText)) + '</div>' +
+    (x.items.length ? '<div class="p18-h">History (last ' + esc(x.items.length) + ')</div><ol class="p18-list">' + x.items.map(function (it) {
+      return '<li><span class="p18-k">' + esc(it.label) + '</span>' + (it.change ? '<span class="p18-c">' + esc(it.change) + '</span>' : '') +
+        '<span class="p18-w">' + esc(it.who) + ' · ' + esc(it.when) + '</span></li>';
+    }).join('') + '</ol>' : '');
+}
 // =====================================================================================================================================
 
 boot();
