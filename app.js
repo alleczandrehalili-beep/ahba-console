@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-12.2';
+const APP_VERSION='2026-11-12.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2162,11 +2162,111 @@ async function renderValidation(){
   const nc=$('#valNewCount'); if(nc) nc.textContent=`(${valNewJ.length})`;
   const fc=$('#valFsoiCount'); if(fc) fc.textContent=`(${valFsoiJ.length})`;
   const tabs=$('#valQueueTabs');
-  if(tabs&&!tabs._wired){ tabs._wired=true; tabs.querySelectorAll('[data-vq]').forEach(b=>b.onclick=()=>{ valQueueView=b.dataset.vq; tabs.querySelectorAll('[data-vq]').forEach(x=>x.classList.toggle('active',x===b)); paintValQueue(); }); }
-  paintValQueue();
+  if(tabs&&!tabs._wired){ tabs._wired=true; tabs.querySelectorAll('[data-vq]').forEach(b=>b.onclick=()=>{ valQueueView=b.dataset.vq; tabs.querySelectorAll('[data-vq]').forEach(x=>x.classList.toggle('active',x===b)); if(valQueueView==='dupreg'){ dupRegVisible(true); renderDupRegistry(); } else { dupRegVisible(false); paintValQueue(); } }); }
+  // 🗂 Duplicate registry tab — GC console lang ang nakakakita (owner 2026-11-12)
+  const _drt=$('#valDupRegTab'); if(_drt) _drt.style.display=isGcConsole()?'':'none';
+  if(valQueueView!=='dupreg') paintValQueue();
   refreshValBadge();
 }
 let valQueueView='new', valNewJ=[], valFsoiJ=[];
+// ---------- 🗂 DUPLICATE REGISTRY (owner 2026-11-12) — GC console only ----------
+// Bawat submitted JO na may posibleng duplicate ay tahimik na nakatala sa
+// jo_dup_flags (log_dup_flags, pagkatapos ng submit sa console/mobile). Dito
+// binabasa ng GC ang buong history: sino ang nag-encode, anong address/subscriber
+// ang paulit-ulit, at alin ang na-dispatch/na-reject sa huli.
+let dupRegRows=null, dupRegView='rows', dupRegDaysSel=30, dupRegBusy=false;
+function dupRegVisible(on){
+  const q=$('#valQueuePanel'), d=$('#dupRegPanel');
+  if(q) q.style.display=on?'none':'';
+  if(d) d.style.display=on?'':'none';
+}
+function dupRegWire(){
+  const v=$('#dupRegViews');
+  if(v&&!v._wired){ v._wired=true; v.querySelectorAll('[data-dv]').forEach(b=>b.onclick=()=>{ dupRegView=b.dataset.dv; v.querySelectorAll('[data-dv]').forEach(x=>x.classList.toggle('active',x===b)); dupRegPaint(); }); }
+  const d=$('#dupRegDaysChips');
+  if(d&&!d._wired){ d._wired=true; d.querySelectorAll('[data-dd]').forEach(b=>b.onclick=()=>{ dupRegDaysSel=Number(b.dataset.dd)||0; d.querySelectorAll('[data-dd]').forEach(x=>x.classList.toggle('active',x===b)); dupRegRows=null; renderDupRegistry(); }); }
+  const s=$('#dupRegSearch');
+  if(s&&!s._wired){ s._wired=true; s.oninput=()=>dupRegPaint(); }
+}
+async function renderDupRegistry(){
+  const body=$('#dupRegBody'); if(!body) return;
+  dupRegWire();
+  if(dupRegRows===null){
+    if(dupRegBusy) return;
+    dupRegBusy=true;
+    body.innerHTML='<div class="empty-cell" style="padding:18px">Loading…</div>';
+    try{
+      const r=await fetch(`${SUPA_URL}/rest/v1/rpc/get_dup_registry`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_days:dupRegDaysSel})});
+      if(!r.ok){
+        body.innerHTML='<div style="margin:14px 20px;padding:11px 13px;border:1px solid #e3b23a;background:#fdf6e3;border-radius:8px;font-size:12px">⚠ <b>Backend not ready</b> — run <code>supabase-dup-registry.sql</code> in the Supabase SQL Editor to activate the Duplicate registry. (HTTP '+r.status+')</div>';
+        dupRegBusy=false; return;
+      }
+      const rows=await r.json();
+      dupRegRows=Array.isArray(rows)?rows:[];
+    }catch(e){
+      body.innerHTML='<div class="empty-cell" style="padding:18px">Could not load the registry — '+esc((e&&e.message)||String(e))+'</div>';
+      dupRegBusy=false; return;
+    }
+    dupRegBusy=false;
+  }
+  dupRegPaint();
+}
+function dupRegFiltered(){
+  const q=String((($('#dupRegSearch')||{}).value)||'').trim().toLowerCase();
+  const rows=dupRegRows||[];
+  if(!q) return rows;
+  return rows.filter(r=>[r.job_id,r.matched_jo,r.subscriber,r.matched_subscriber,r.address,r.matched_address,r.encoded_by,r.source]
+    .some(x=>String(x||'').toLowerCase().includes(q)));
+}
+function dupRegPaint(){
+  const body=$('#dupRegBody'); if(!body||dupRegRows===null) return;
+  const rows=dupRegFiltered();
+  const st=r=>{ const s=String(r||'').replace(/_/g,' ').toUpperCase(); return s||'—'; };
+  const lvl=r=>r.level==='block'?'<span class="vbadge ret">BLOCK-level</span>':'<span class="vbadge no">warn</span>';
+  if(dupRegView==='rows'){
+    body.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Flagged</th><th>Work order</th><th>Subscriber / address</th><th>Encoder</th><th>Source</th><th>Matched with</th><th>%</th><th>Level</th></tr></thead><tbody>${
+      rows.length?rows.map(r=>`<tr>
+        <td style="white-space:nowrap">${esc(r.flagged_at||'')}</td>
+        <td><strong>${esc(r.job_id)}</strong><div style="font-size:9px;color:#8a9894">${st(r.job_status)}${r.job_validated?' · VALIDATED':''}${r.job_team?(' · '+esc(r.job_team)):''}</div></td>
+        <td><strong>${esc(r.subscriber||'—')}</strong><div style="font-size:9px;color:#8a9894">${esc(r.address||'')}</div></td>
+        <td>${esc(r.encoded_by||'—')}</td>
+        <td>${esc(r.source||'')}</td>
+        <td><strong>${esc(r.matched_jo)}</strong><div style="font-size:9px;color:#8a9894">${esc(r.matched_subscriber||'—')} · ${st(r.matched_status)}${r.matched_validated?' · VALIDATED':''}</div></td>
+        <td><b>${Number(r.pct)||0}%</b><div style="font-size:9px;color:#8a9894">name ${r.name_pct==null?'—':r.name_pct+'%'} · addr ${r.addr_pct==null?'—':r.addr_pct+'%'}</div></td>
+        <td>${lvl(r)}</td>
+      </tr>`).join(''):'<tr><td colspan="8" class="empty-cell">No flagged submissions in this period.</td></tr>'
+    }</tbody></table></div>`;
+    return;
+  }
+  const label=dupRegView==='addr'?'Address':dupRegView==='subs'?'Subscriber':'Encoder';
+  const keyOf=r=>dupRegView==='addr'?(r.address||''):dupRegView==='subs'?(r.subscriber||''):(r.encoded_by||'');
+  const g=new Map();
+  rows.forEach(r=>{
+    const raw=String(keyOf(r)).trim(); const k=(raw||'—').toUpperCase();
+    let v=g.get(k);
+    if(!v){ v={key:raw||'—',n:0,jos:new Set(),encs:new Set(),maxPct:0,blocks:0,last:''}; g.set(k,v); }
+    v.n++; v.jos.add(r.job_id); v.jos.add(r.matched_jo); v.encs.add(r.encoded_by||'—');
+    v.maxPct=Math.max(v.maxPct,Number(r.pct)||0);
+    if(r.level==='block') v.blocks++;
+    if(!v.last) v.last=r.flagged_at||'';   // rows ay naka-sort desc by date — unang tama = pinakabago
+  });
+  const list=[...g.values()].sort((a,b)=>b.n-a.n||b.maxPct-a.maxPct);
+  const encCol=dupRegView!=='enc';
+  body.innerHTML=`<div class="table-wrap"><table><thead><tr><th>${label}</th><th>Flags</th><th>JOs involved</th>${encCol?'<th>Encoders</th>':''}<th>Max %</th><th>🚨 Block-level</th><th>Latest</th></tr></thead><tbody>${
+    list.length?list.map(v=>{
+      const jos=[...v.jos]; const encs=[...v.encs];
+      return `<tr>
+        <td><strong${v.n>=2?' style="color:#c2503a"':''}>${esc(v.key)}</strong></td>
+        <td><b${v.n>=2?' style="color:#c2503a"':''}>${v.n}</b></td>
+        <td>${jos.length}<div style="font-size:9px;color:#8a9894">${jos.slice(0,3).map(esc).join(', ')}${jos.length>3?' +'+(jos.length-3)+' more':''}</div></td>
+        ${encCol?`<td>${encs.slice(0,3).map(esc).join(', ')}${encs.length>3?' +'+(encs.length-3):''}</td>`:''}
+        <td><b>${v.maxPct}%</b></td>
+        <td>${v.blocks||'—'}</td>
+        <td style="white-space:nowrap">${esc(v.last)}</td>
+      </tr>`;
+    }).join(''):`<tr><td colspan="${encCol?7:6}" class="empty-cell">No flagged submissions in this period.</td></tr>`
+  }</tbody></table></div>`;
+}
 // District/Barangay viewing filters (owner 2026-09-23): para agad makita ng validator
 // at dispatcher kung saang lugar ang mga JO na pinapasok ng sales.
 let valDist='', valBrgy='';
@@ -3536,11 +3636,14 @@ async function editRejectedOrder(jobId){
   } else { setv('ticket_no',j.ticket_no); setv('slr_note',note); }
   $$('#orderModal [data-cnt]').forEach(b=>b.textContent='keeping existing');
 }
-// ---------- Strict duplicate check on NEW encodes (2026-09-05) ----------
+// ---------- Duplicate check (2026-09-05; policy rework 2026-11-12) ----------
 // Server-side RPC scans ALL JOs all-time (any status, soft-deleted excluded) —
 // one logic shared with mobile, no client row caps. Fails OPEN if the RPC is
 // missing/unreachable (the insert itself would fail too if the API were down).
-let ordDupAck=null;   // set by "Proceed anyway" — allows a WARN-level match through once
+// Owner 2026-11-12: the ENCODER no longer sees any duplicate % and is never
+// blocked — every encode pushes through. The check now runs SILENTLY AFTER a
+// successful submit (dupLogFlags → jo_dup_flags table, GC-only). The VALIDATOR
+// keeps the live % in openValidate, including the 100%-superadmin approve gate.
 async function dupCheckJO(p,client,excludeId){
   try{
     const {data,error}=await client.rpc('check_duplicate_jo',{
@@ -3552,42 +3655,21 @@ async function dupCheckJO(p,client,excludeId){
     return data;
   }catch(err){ console.warn('duplicate check unavailable:',err); return null; }
 }
-function ordDupClear(){ ordDupAck=null; const p=$('#ordDupPanel'); if(p){p.style.display='none';p.innerHTML='';} }
-function renderDupPanel(dup){
-  const p=$('#ordDupPanel'); if(!p) return;
-  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const chip=(ok,label)=>`<span style="margin-right:10px;white-space:nowrap">${ok===null?'– ':(ok?'✓ ':'✗ ')}${label}</span>`;
-  // 🔓 Override (owner 2026-10-03, dating superadmin-only 2026-09-25): i-exempt ang LUMANG
-  // JO sa dup check (mananatili itong kita sa system — flag lang, hindi delete) para payagan
-  // ang re-encode. Pwede na rin ito sa DISPATCHER at VALIDATOR upon request ng sales agent;
-  // laging nakatala sa history ng lumang JO kung SINO ang nag-allow.
-  const canOverride=!!(window.dashUser&&(dashUser.is_super||dashCanEdit('validation')||hasDispatchAccess(dashUser)));
-  const row=m=>`<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(0,0,0,.08)">
-      <b>${m.pct}% match</b> — ${esc(m.id)} · ${esc(String(m.status||'').toUpperCase())} · encoded ${esc(m.encoded_on)} by ${esc(m.encoded_by)}<br>
-      ${esc(m.name)} — ${esc(m.address)}<br>
-      <span style="font-size:11px">${chip(m.same_name,'name '+m.name_pct+'%')}${chip(m.bday,'birthday')}${chip(m.contact,'contact')}${chip(m.email,'email')}${chip(m.same_address,'address '+m.addr_pct+'%')}</span>
-      ${(m.level==='block'&&canOverride)?`<div style="margin-top:7px"><button type="button" class="secondary-btn" data-dupex="${esc(m.id)}" style="height:32px;font-size:11px;color:#c2503a;border-color:#f0c3ba">🔓 Allow re-encode — exempt this old JO from the duplicate check</button></div>`:''}
-    </div>`;
-  const blocked=!!dup.blocked;
-  // Owner 2026-10-01 (NABOR incident): BACKEND (console) na lang ang pwedeng mag-encode ng
-  // duplicate — may "Proceed anyway" kahit BLOCK-level; naka-🚨 pa rin sa history, dadaan pa
-  // rin sa Validator, at ang 100% match ay Superadmin approval pa rin. Sales (mobile) ay
-  // hard-blocked na ulit.
-  const head=blocked
-    ? '🚫 <b>Duplicate found.</b> This subscriber already exists in the system. Backend may still proceed — the VALIDATOR will review it, and a 100% match needs SUPERADMIN approval.'
-    : '⚠️ <b>Possible duplicate found.</b> Review the match below before proceeding.';
-  p.innerHTML=`<div style="border:1px solid ${blocked?'#c2503a':'#b8860b'};background:${blocked?'#fdf0ee':'#fdf6e3'};color:#3a3a3a;border-radius:8px;padding:10px 12px;font-size:12px">
-      ${head}${(dup.matches||[]).slice(0,3).map(row).join('')}
-      <div style="margin-top:9px"><button type="button" class="secondary-btn" id="ordDupProceed">${blocked?'⚠ Proceed anyway — send to Validator':'Proceed anyway'}</button></div>
-    </div>`;
-  p.style.display='';
-  const go=$('#ordDupProceed');
-  if(go) go.onclick=()=>{ go.disabled=true; go.textContent='Submitting…'; ordDupAck=(dup.matches&&dup.matches[0])||{pct:0,id:'?'}; $('#orderForm').requestSubmit($('#orderSubmit')); };
-  p.querySelectorAll('[data-dupex]').forEach(b=>b.onclick=()=>dupExemptOld(b.dataset.dupex));
-  try{ p.scrollIntoView({block:'nearest'}); }catch(err){}
+function ordDupClear(){ const p=$('#ordDupPanel'); if(p){p.style.display='none';p.innerHTML='';} }
+// 🗂 Tahimik na duplicate logging (owner 2026-11-12) — tumatakbo PAGKATAPOS ng
+// matagumpay na submit, fire-and-forget: hindi hinihintay, walang UI, walang
+// history line (para hindi makita ng encoder ang %). Ang GC-only na Duplicate
+// registry tab (Validation page) ang nagbabasa ng jo_dup_flags.
+async function dupLogFlags(jobId,p,client,source){
+  try{
+    const dup=await dupCheckJO(p,client,jobId);
+    if(!dup||!dup.matches||!dup.matches.length) return;
+    const {error}=await client.rpc('log_dup_flags',{p_job_id:jobId,p_matches:dup.matches,p_source:source||'console'});
+    if(error) console.warn('dup registry log unavailable:',error.message);
+  }catch(e){ console.warn('dup registry log unavailable:',e); }
 }
-// Superadmin override: i-exempt ang lumang JO sa duplicate check, itala sa history nito,
-// tapos awtomatikong i-re-check ang encode (tuloy kung wala nang ibang nakaharang).
+// Override: i-exempt ang lumang JO sa duplicate check, itala sa history nito.
+// (Ginagamit pa rin sa JO detail — jdDupExempt; nililinis nito ang VALIDATOR view.)
 async function dupExemptCore(oldId){
   if(!confirm(`Allow re-encode?\n\nThe old JO ${oldId} will be EXEMPTED from the duplicate check. It stays visible everywhere in the system — only the duplicate check will skip it.\n\nYour name will be logged in this JO's history as the one who allowed it.`)) return false;
   const client=sbc(); if(!client){ showToast('Cloud client still loading — try again'); return false; }
@@ -3600,12 +3682,6 @@ async function dupExemptCore(oldId){
     const _j=findJob(oldId); if(_j) _j.dup_exempt=true;
     return true;
   }catch(e){ showToast('Override failed: '+(e.message||e)); return false; }
-}
-async function dupExemptOld(oldId){
-  if(!(await dupExemptCore(oldId))) return;
-  showToast('Override saved — re-checking the encode…');
-  ordDupClear();
-  $('#orderForm').requestSubmit($('#orderSubmit'));
 }
 // 🔓 From the JO DETAIL modal (owner 2026-10-03): dispatcher/validator exempts the old JO
 // na sinabi ng sales agent, nang hindi na kailangang i-type ulit ang buong encode form.
@@ -3673,19 +3749,12 @@ async function submitOrderInner(e){
   const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
   const btn=$('#orderSubmit'); btn.disabled=true; btn.textContent='Submitting…';
   const restoreBtn=()=>{ btn.disabled=false; btn.textContent=(ordType==='SLI'?'Submit for validation':'Dispatch Load'); };
-  // Duplicate check — NEW encodes only, skipped once after "Proceed anyway" on a warning.
-  if(!ordEditId && !ordDupAck){
-    btn.textContent='Checking for duplicates…';
-    const dup=await dupCheckJO({first:fn,middle:t(f.middle_name),last:ln,birth:bday,primary:pno,ocn:ono,email:email,
-      house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:brgy,district:dist,orderType:ordType},client);
-    if(dup && dup.matches && dup.matches.length){
-      renderDupPanel(dup);
-      if(dup.blocked){ err('Duplicate found — review the match above, then press "Proceed anyway — send to Validator" if this should still be encoded.'); restoreBtn(); return; }
-      err('Possible duplicate — review the match above, then press "Proceed anyway" or correct the details.');
-      restoreBtn(); return;
-    }
-    ordDupClear();
-  }
+  // Owner 2026-11-12: WALANG duplicate gate sa encoder — lahat ng encode ay tuloy.
+  // Ang check ay tahimik na tatakbo PAGKATAPOS ng matagumpay na submit (dupLogFlags)
+  // at mapupunta sa GC-only Duplicate registry; ang VALIDATOR pa rin ang live na
+  // nakakakita ng % at nagdedesisyon bago ang dispatch.
+  const dupPayload={first:fn,middle:t(f.middle_name),last:ln,birth:bday,primary:pno,ocn:ono,email:email,
+    house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:brgy,district:dist,orderType:ordType};
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
   const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
@@ -3737,11 +3806,10 @@ async function submitOrderInner(e){
       const {error}=await client.from('jobs').insert(job); if(error) throw error;
       // Bakas sa history kung SINO ang console user na nag-encode (monitoring, owner 2026-09-24).
       { const _u=window.dashUser||{}; histLog(jobId,`Encoded via console by ${_u.display_name||_u.username||'Console'}`); }
-      // Leave a trace for the Validator when a warned duplicate was pushed through.
-      if(ordDupAck) histLog(jobId, ordDupAck.level==='block'
-        ? `🚨 DUPLICATE ${ordDupAck.pct}% — match with ${ordDupAck.id} (backend proceeded; VALIDATOR DECISION REQUIRED)`
-        : `Encoded with duplicate warning: ${ordDupAck.pct}% match with ${ordDupAck.id}`);
     }
+    // 🗂 Duplicate registry (owner 2026-11-12): tahimik, fire-and-forget — hindi
+    // naaantala ang submit at hindi nakikita ng encoder ang resulta.
+    try{ dupLogFlags(targetId, dupPayload, client, ordEditId?'console-edit':'console'); }catch(_de){}
     if(ordType==='SLI') for(const cat of ['id','billing','premise']){
       for(let i=0;i<ordDocs[cat].length;i++){
         const blob=await compressImage(ordDocs[cat][i]);
