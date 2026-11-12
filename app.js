@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-05.1';
+const APP_VERSION='2026-11-12.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2935,6 +2935,17 @@ async function openGallery(jobId){
   $('#photoSub').textContent='Loading current photos…';$('#photoGrid').innerHTML='<div class="none">Loading current photos…</div>';
   const _SI=(typeof QaSubscriberInfo!=='undefined')?QaSubscriberInfo:null;
   const _si=$('#photoSubInfo'); if(_si) _si.innerHTML=(_SI&&j.id)?_SI.render(j):'';   // full subscriber info (owner 2026-10-22) — the row is already in memory
+  // 📦 WIMS quick view (owner 2026-11-12): makita agad ng validator ang kabuuang
+  // gamit ng team sa JO — parehong renderer ng JO modal (may Edit/History na rin)
+  const _wg=$('#photoWims');
+  if(_wg){
+    _wg.innerHTML='<div class="none" style="padding:8px">Loading WIMS declaration…</div>';
+    const _wjo=(j.job_order_no||j.ticket_no||j.id||'').trim();
+    fetch(`${SUPA_URL}/rest/v1/rpc/jo_materials`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Profile':'wims','Content-Type':'application/json'},body:JSON.stringify({p_jo:_wjo})})
+      .then(r=>r.ok?r.json():Promise.reject(new Error('HTTP '+r.status)))
+      .then(rows=>{ if(seq!==openGallery._seq)return; _wg.innerHTML=(rows&&rows.length)?wimsMaterialsHTML(rows):'<div class="none" style="padding:8px;color:#8a9894">No WIMS material report was filed for this JO.</div>'; })
+      .catch(()=>{ if(seq===openGallery._seq) _wg.innerHTML='<div class="none" style="padding:8px;color:#8a9894">WIMS report could not be loaded.</div>'; });
+  }
   const vb=$('#validateBtn');vb.style.display='none';vb.onclick=null;
   const rb=$('#returnBtn'); if(rb){ rb.style.display='none'; rb.onclick=null; }
   openModal($('#photoModal'));
