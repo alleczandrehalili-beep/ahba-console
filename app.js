@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-14.1';
+const APP_VERSION='2026-11-14.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1061,17 +1061,53 @@ function jobCard(j){
       <span>🕒 ${enc}</span>
     </div>${action}</article>`;
 }
+// 📅 Date picker sa Field teams (owner 2026-11-14): kapag IBANG petsa ang pinili,
+// hinihila ang loads ng araw na iyon mula sa server at IYON ang binibilang ng cards;
+// kapag TODAY (default), eksaktong dating live na bilang (jobs global) — walang fetch.
+// Ang team detail modal ay nananatiling live/ngayon (gate log, chat, atbp.).
+let teamsDateSel='', teamsDateJobs=null;   // ''=today(live) · [..]=loads ng piniling araw · null habang naglo-load
+async function teamsSetDate(d){
+  const today=manilaToday();
+  if(!d||d===today){ teamsDateSel=''; teamsDateJobs=null; renderTeams($('#teamSearch')?.value||''); return; }
+  teamsDateSel=d; teamsDateJobs=null;
+  renderTeams($('#teamSearch')?.value||'');   // '…' muna habang hinihila
+  const seq=(teamsSetDate._seq=(teamsSetDate._seq||0)+1);
+  const fs=(d+'T00:00:00+08:00').replace('+','%2B'), es=(d+'T23:59:59.999+08:00').replace('+','%2B');
+  const q=`or=(and(load_date.gte.${d},load_date.lte.${d}),and(load_date.is.null,updated_at.gte.${fs},updated_at.lte.${es}))`;
+  let all=[];
+  try{
+    for(let offset=0; offset<10000; offset+=1000){
+      const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id,team,status,load_date,updated_at,deleted_at&${q}&limit=1000&offset=${offset}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const page=await r.json();
+      all=all.concat(page);
+      if(page.length<1000) break;
+    }
+  }catch(e){
+    if(seq!==teamsSetDate._seq) return;
+    showToast('Could not load '+d+' — '+(e.message||e));
+    teamsDateSel=''; teamsDateJobs=null; const _te=$('#teamsDate'); if(_te) _te.value=today;
+    renderTeams($('#teamSearch')?.value||''); return;
+  }
+  if(seq!==teamsSetDate._seq) return;   // mas bago nang petsa ang pinili habang hinihila ito
+  const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
+  teamsDateJobs=all.filter(j=>!j.deleted_at && j.team && dayOf(j)===d);
+  renderTeams($('#teamSearch')?.value||'');
+}
 function renderTeams(filter=''){
+  const sel=teamsDateSel;
+  const src=sel?teamsDateJobs:jobs;   // null habang naglo-load ang ibang petsa
+  const loadLabel=sel?(sel+' load'):'Today’s load';
   $('#teamGrid').innerHTML=teams.filter(t=>(t.name+t.area+t.code).toLowerCase().includes(filter.toLowerCase())).map(t=>{
     const s=shiftByTeam[t.code]||{};
     const online=!!s.online;
     const crew=teamCrew(t.code);
-    const todayJobs=jobs.filter(j=>j.team===t.code).length;
+    const todayJobs=src?src.filter(j=>j.team===t.code).length:null;
     const cardStyle=online?'style="cursor:pointer;background:#e9f9f0;border:1px solid #a8e6c9"':'style="cursor:pointer"';
     const vchip=teamCounted(t.code)?' <span class="status completed">✓ Deployed</span>':(online?' <span class="status pending">Pending</span>':'');
     const badge=(online?'<span class="status en-route">● Online</span>':'<span class="status offline">Offline</span>')+vchip;
     const acctLine=online&&s.account?`<div class="team-info"><span>Account<strong>${s.account}</strong></span><span>Crew<strong>${crew||'—'}</strong></span></div>`:'';
-    return `<article class="team-card" data-team="${t.code}" ${cardStyle}><div class="team-card-head"><span class="team-avatar" style="background:${online?'#18a57b':t.color}">${t.short}</span><div><h3>${t.name}</h3><p>${online?'On shift':'Not signed in'} · ${t.area}</p></div></div>${badge}<div class="load-row"><span>Today’s load</span><b>${todayJobs} jobs</b></div><div class="load-bar"><span style="width:${Math.min(todayJobs/5*100,100)}%"></span></div>${acctLine}</article>`;
+    return `<article class="team-card" data-team="${t.code}" ${cardStyle}><div class="team-card-head"><span class="team-avatar" style="background:${online?'#18a57b':t.color}">${t.short}</span><div><h3>${t.name}</h3><p>${online?'On shift':'Not signed in'} · ${t.area}</p></div></div>${badge}<div class="load-row"><span>${loadLabel}</span><b>${todayJobs==null?'…':todayJobs+' jobs'}</b></div><div class="load-bar"><span style="width:${todayJobs==null?0:Math.min(todayJobs/5*100,100)}%"></span></div>${acctLine}</article>`;
   }).join('')||'<div class="empty-row">No teams match your search.</div>';
   $$('#teamGrid [data-team]').forEach(c=>c.onclick=()=>openTeamDetail(c.dataset.team));
 }
@@ -5421,6 +5457,7 @@ function init(){
 
   // Search + filters
   $('#teamSearch').oninput=e=>renderTeams(e.target.value);
+  { const _te=$('#teamsDate'); if(_te){ _te.value=manilaToday(); _te.max=manilaToday(); _te.onchange=e=>teamsSetDate(e.target.value); } }
   $('#jobSearch').oninput=applyJobTableFilter;
   $$('#jobFilters button').forEach(b=>b.onclick=()=>{$$('#jobFilters button').forEach(x=>x.classList.remove('active'));b.classList.add('active');applyJobTableFilter()});
 
