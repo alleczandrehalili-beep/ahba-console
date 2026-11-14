@@ -502,6 +502,7 @@
         <article class="panel full-table">
           <div class="filter-row"><div><h2 style="font:800 13px Manrope;margin:0">Weekly load log</h2><p style="font-size:10px;color:#8a9894;margin:4px 0 0">Click a load to see its full details and history.</p></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select id="histfType" style="height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:11px;color:#52635f;background:#fff"><option value="">Both (SLI + SLR + all)</option><option value="SLI">SLI JO only</option><option value="SLR">SLR JO only</option></select>
               <select id="histfStatus" style="height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:11px;color:#52635f;background:#fff"><option value="">All statuses</option><option value="completed">Completed</option><option value="negative">Incomplete</option><option value="cancelled">Cancelled</option><option value="pending">Pending</option><option value="assigned">Assigned</option><option value="en-route">En route</option><option value="on-site">On site</option><option value="in-progress">In progress</option></select>
               <select id="histfTeam" style="height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px;font-size:11px;color:#52635f;background:#fff;max-width:160px"><option value="">All teams</option></select>
             </div>
@@ -863,7 +864,7 @@
   <script src="hr-sheets.js?v=2026-11-12.1"></script>
   <script src="console-hr.js?v=2026-11-12.1"></script>
   <script src="hr-entry.js?v=2026-11-12.1"></script>
-  <script src="app.js?v=2026-11-12.3"></script>
+  <script src="app.js?v=2026-11-14.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ahba-cloud.js?v=2026-11-12.1"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->

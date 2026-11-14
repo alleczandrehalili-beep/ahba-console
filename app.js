@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-12.3';
+const APP_VERSION='2026-11-14.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3379,18 +3379,36 @@ async function renderHistory(){
     let delOpt=stSel.querySelector('option[value="deleted"]');
     if(isSuper){ if(!delOpt){ delOpt=document.createElement('option'); delOpt.value='deleted'; stSel.appendChild(delOpt); } delOpt.textContent=`🗑 Deleted (${histDeleted.length})`; }
     else if(delOpt){ if(stSel.value==='deleted') stSel.value=''; delOpt.remove(); }
-    if(!stSel.dataset.wired){ stSel.dataset.wired='1'; stSel.onchange=renderHistoryRows; if(teamSel) teamSel.onchange=renderHistoryRows; }
+    if(!stSel.dataset.wired){ stSel.dataset.wired='1'; stSel.onchange=renderHistoryRows; if(teamSel) teamSel.onchange=renderHistoryRows; const tySel=$('#histfType'); if(tySel) tySel.onchange=renderHistoryRows; }
   }
   renderHistoryRows();
 }
-// Render the weekly-load-log table from histJobs, applying the Status + Team filters.
+// JO type ng isang load para sa Billing filter (owner 2026-11-14): console encodes
+// carry load_type (SLI/Migration/SLR/Transfer/IPTV); mobile sales encodes have no
+// load_type → service_type 'Installation' = SLI; technician repair tickets are
+// SLRT-* ids with service_type 'SLR'.
+function histJoType(j){
+  const lt=String((j&&j.load_type)||'').trim().toUpperCase();
+  if(lt) return lt;
+  if(String((j&&j.id)||'').toUpperCase().startsWith('SLRT-')) return 'SLR';
+  const svc=String((j&&j.service_type)||'').trim().toUpperCase();
+  if(svc.includes('SLR')) return 'SLR';
+  if(svc.includes('INSTALL')) return 'SLI';
+  if(svc.includes('MIGRA')) return 'MIGRATION';
+  if(svc.includes('TRANSFER')) return 'TRANSFER';
+  if(svc.includes('IPTV')) return 'IPTV';
+  return '';
+}
+// Render the weekly-load-log table from histJobs, applying the JO-type + Status + Team filters.
 function renderHistoryRows(){
   const body=$('#historyBody'); if(!body) return;
   const st=($('#histfStatus')&&$('#histfStatus').value)||'', tm=($('#histfTeam')&&$('#histfTeam').value)||'';
+  const ty=($('#histfType')&&$('#histfType').value)||'';
   const dayOf=j=> j.load_date?String(j.load_date).slice(0,10) : (j.updated_at?new Date(j.updated_at).toLocaleDateString('en-CA',{timeZone:TZ}):'');
   let rows;
   if(st==='deleted'){ rows=(histDeleted||[]); }                 // Superadmin: the soft-deleted loads
   else { rows=(histJobs||[]); if(st) rows=rows.filter(j=>(j.status||'')===st); }
+  if(ty) rows=rows.filter(j=>histJoType(j)===ty);               // SLI only / SLR only (blank = both/all)
   if(tm) rows=rows.filter(j=>(j.team||'')===tm);
   if(!rows.length){ body.innerHTML=`<tr><td colspan="8" class="empty-cell">No loads match the filter.</td></tr>`; return; }
   body.innerHTML=rows.map(j=>{
