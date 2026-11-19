@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-20.4';
+const APP_VERSION='2026-11-20.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1355,8 +1355,10 @@ function tlPassFilter(j){
 // Org directory + which one is the GC. Loaded once after login; RLS returns only the orgs the user sees.
 let orgById={}, gcOrgId='';
 async function loadOrgMap(){
-  try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name&order=code.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
-    (r.ok?await r.json():[]).forEach(o=>{ orgById[o.id]={code:o.code,name:o.name}; if(o.code==='AHBA') gcOrgId=o.id; });
+  try{ const r=await fetch(`${SUPA_URL}/rest/v1/orgs?select=id,code,name,active&order=code.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    // Retired/suspended subcons (owner 2026-11-20): nananatili sa orgById para BUO ang
+    // history labels, pero ang mga PICKER/FILTER ay active orgs lang (orgActiveIds).
+    (r.ok?await r.json():[]).forEach(o=>{ orgById[o.id]={code:o.code,name:o.name,active:o.active!==false}; if(o.code==='AHBA') gcOrgId=o.id; });
   }catch(e){}
   try{ tlBuildOrgFilter(); }catch(e){}
   try{ napViewNav(); }catch(e){}   // NAP VIEW needs gcOrgId (GC check)
@@ -1378,9 +1380,10 @@ async function loadSecReq(){
 }
 // GC-only "For Dispatch" org picker — shown ONLY when the user can SEE >1 org (i.e. the GC dispatcher).
 // Options: "AHBA + MSA-SLI" (all) · "AHBA" (GC only) · "MSA - SLI" (all subcons only) · each subcon by name.
+function orgActiveIds(){ return Object.keys(orgById).filter(id=>orgById[id].active!==false); }
 function tlBuildOrgFilter(){
   const sel=$('#tlfOrg'); if(!sel) return;
-  const ids=Object.keys(orgById);
+  const ids=orgActiveIds();   // retired subcons ay wala na sa filter (owner 2026-11-20)
   if(ids.length<2){ sel.style.display='none'; sel.value=''; return; }
   const cur=sel.value;
   const subs=ids.filter(id=>id!==gcOrgId).sort((a,b)=>String(orgById[a].name||'').localeCompare(String(orgById[b].name||'')));
@@ -3970,17 +3973,51 @@ function taMode(rows,team,field){
 // 👥 Most-used crew ng isang team sa buwan (owner 2026-11-20): top driver + top 2
 // technicians (tech1+tech2 pinagsama) mula sa Start-shift declarations, may bilang
 // kung ilang araw ginamit. HTML-escaped dito mismo — diretso sa cell ang output.
-function taCrewLine(rows,team){
+// NAME MERGING (owner 2026-11-20 fix): ang mga variant ng IISANG tao ay pinagsasama
+// — parehong APELYIDO (huling salita) + parehong unang 3 letra ng FIRST name (hal.
+// "RANDY SAHAM" = "RANDY JULBASARI SAHAM"; "LEEJHON" = "LEE JOHN BARADILLO") —
+// pero ang magkaibang tao na magkapareho ng apelyido ay HINDI (ELIJAH vs ELJERALF
+// EMILIA). Display = canonical na pangalan mula sa crew_roster kung may tumugma;
+// kung wala, ang pinakamadalas na variant.
+function taCrewKey(name){
+  const w=String(name||'').trim().toUpperCase().replace(/[^A-ZÑ ]+/g,' ').replace(/ +/g,' ').trim().split(' ');
+  if(!w.length||!w[0]) return '';
+  return w[w.length-1]+'|'+w[0].slice(0,3);
+}
+function taCrewLine(rows,team,rosterNames){
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const cnt=fields=>{ const c={}; rows.forEach(r=>{ if(r.username!==team) return;
-    fields.forEach(f=>{ const v=String(r[f]||'').trim().toUpperCase(); if(v) c[v]=(c[v]||0)+1; }); }); return c; };
-  const top=(c,n)=>Object.keys(c).sort((a,b)=>c[b]-c[a]).slice(0,n).map(k=>esc(k)+' <span style="color:#8a9894">('+c[k]+'×)</span>');
+  const roster=rosterNames||[];
+  const cnt=fields=>{
+    const g={};   // key -> {n, variants:{name:count}}
+    rows.forEach(r=>{ if(r.username!==team) return;
+      fields.forEach(f=>{ const v=String(r[f]||'').trim().toUpperCase().replace(/ +/g,' '); if(!v) return;
+        const k=taCrewKey(v); if(!k) return;
+        const e=g[k]||(g[k]={n:0,variants:{}}); e.n++; e.variants[v]=(e.variants[v]||0)+1; }); });
+    return g;
+  };
+  const disp=e=>{
+    const vars=Object.keys(e.variants);
+    const canon=roster.find(rn=>vars.includes(String(rn).trim().toUpperCase().replace(/ +/g,' ')));
+    if(canon) return String(canon).trim().toUpperCase();
+    return vars.sort((a,b)=>e.variants[b]-e.variants[a]||b.length-a.length)[0];
+  };
+  const top=(g,n)=>Object.values(g).sort((a,b)=>b.n-a.n).slice(0,n).map(e=>esc(disp(e))+' <span style="color:#8a9894">('+e.n+'×)</span>');
   const d=top(cnt(['crew_driver']),1), t=top(cnt(['crew_tech1','crew_tech2']),2);
   if(!d.length && !t.length) return '—';
   const parts=[];
   if(d.length) parts.push('🚗 '+d.join(', '));
   if(t.length) parts.push('🔧 '+t.join('<br>&nbsp;&nbsp;&nbsp;'));
   return parts.join('<br>');
+}
+// Canonical roster names para sa display (cached; fail-open sa [])
+let taRosterCache=null;
+async function taFetchRoster(){
+  if(taRosterCache) return taRosterCache;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/crew_roster?select=name&active=eq.true`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    taRosterCache=r.ok?(await r.json()).map(x=>x.name).filter(Boolean):[];
+  }catch(e){ taRosterCache=[]; }
+  return taRosterCache;
 }
 const taMonthList=(from,to)=>{ const out=[]; let [y,m]=from.split('-').map(Number); const [ty,tm]=to.split('-').map(Number);
   while(y<ty||(y===ty&&m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>=12) break; } return out; };
@@ -4028,7 +4065,8 @@ async function teamAnalyzeRun(){
       // 👥 Crew names (owner 2026-11-20): most-used Driver/Technicians per team-month
       // mula sa Start-shift declarations (attendance) — kapareho ng Excel export.
       const _cw=await taFetchCrew(months[i]).catch(()=>[]);
-      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON', crewHtml:taCrewLine(_cw,t.team)}));
+      const _ros=await taFetchRoster();
+      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON', crewHtml:taCrewLine(_cw,t.team,_ros)}));
     }
   }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
   if(!taRows.length){ body.innerHTML='No team activity found for '+taFrom+' → '+taTo+'.'; return; }
@@ -4090,7 +4128,7 @@ function taPaint(){
               <td>${num(t.dispatched)}</td><td>${num(t.installs)}</td><td><b>${crv(t)}</b></td>
               <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
               <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
-              <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('');
+              <td style="max-width:280px;white-space:normal">${(t.areas&&t.areas.length)?`<details><summary style="cursor:pointer;color:#11825f;font-weight:700;font-size:11px;white-space:nowrap">📍 ${t.areas.length} area${t.areas.length===1?'':'s'} — view</summary><div style="margin-top:5px;font-size:11px;color:#5a6a66;line-height:1.5">${esc(t.areas.join(', '))}</div></details>`:'—'}</td></tr>`).join('');
         }).join('');
   };
   const sortOpts=Object.keys(TA_SORTS).map(k=>`<option value="${k}" ${k===taSortKey?'selected':''}>${TA_SORTS[k].label}</option>`).join('');
@@ -4792,7 +4830,7 @@ async function renderSecReqCard(){
     body.innerHTML='<span style="color:#c2503a;font-size:11px">⚠ Backend not ready — run <b>supabase-secondary-contact.sql</b> in the SQL editor first. (GC encodes already require the secondary contact regardless.)</span>';
     return;
   }
-  const ids=Object.keys(orgById);
+  const ids=orgActiveIds();   // retired subcons wala na sa secondary-contact card (owner 2026-11-20)
   const subs=ids.filter(id=>id!==gcOrgId).sort((a,b)=>String(orgById[a].name||'').localeCompare(String(orgById[b].name||'')));
   const esc=s=>String(s||'').replace(/</g,'&lt;');
   const rows=[];
@@ -4838,11 +4876,13 @@ async function renderGcWorkAccounts(){
   // Superadmin (platform admin) sees every org's work accounts — assign each to GC or a specific subcon.
   const was=await scFetch(`work_accounts?select=*&order=name.asc`);
   // Org dropdown options: GC first, then subcons A→Z.
-  const oids=Object.keys(orgById).sort((a,b)=> a===gcOrgId?-1 : b===gcOrgId?1 : String(orgById[a].name||orgById[a].code||'').localeCompare(String(orgById[b].name||orgById[b].code||'')));
+  const oids=orgActiveIds().sort((a,b)=> a===gcOrgId?-1 : b===gcOrgId?1 : String(orgById[a].name||orgById[a].code||'').localeCompare(String(orgById[b].name||orgById[b].code||'')));   // retired subcons hindi na mapagpipilian (owner 2026-11-20)
   const orgLabel=oid=>{ const o=orgById[oid]||{}; return oid===gcOrgId?'AHBA (GC)':(o.name||o.code||oid); };
   body.innerHTML=was.length?was.map(w=>{
     const active=w.active!==false, shared=!!w.shared;
-    const orgOpts=oids.map(oid=>`<option value="${oid}" ${String(w.org_id)===String(oid)?'selected':''}>${esc(orgLabel(oid))}</option>`).join('');
+    // Kung naka-assign sa RETIRED org ang account, ipakita pa rin ito sa dropdown (may label) para hindi mawala ang current value
+    const _wOids=oids.includes(String(w.org_id))||!orgById[w.org_id]?oids:[String(w.org_id)].concat(oids);
+    const orgOpts=_wOids.map(oid=>`<option value="${oid}" ${String(w.org_id)===String(oid)?'selected':''}>${esc(orgLabel(oid))}${orgById[oid]&&orgById[oid].active===false?' (retired)':''}</option>`).join('');
     const orgSel=`<select class="perm-sel" data-gcwaorg="${w.id}" style="padding:5px 8px;max-width:180px">${orgOpts}</select>`;
     const actBtn=`<button class="assign-btn" data-gcwaact="${w.id}" data-gcwaval="${active?'0':'1'}" style="${active?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':'color:#a4690f;border-color:#f0d9a8'}">${active?'Active':'Off'}</button>`;
     const shareBtn=`<button class="assign-btn" data-gcwashare="${w.id}" data-gcwaval="${shared?'0':'1'}" style="${shared?'background:#e7f7ef;border-color:#c4ecd9;color:#11825f':''}">${shared?'✓ Shared':'Make shared'}</button>`;
@@ -4872,9 +4912,10 @@ async function renderWaLocks(){
   }catch(e){}
   const [accts,techs]=await Promise.all([
     scFetch('work_accounts?select=name,active&order=name.asc'),
-    scFetch('technicians?select=username,role&order=username.asc')
+    scFetch('technicians?select=username,role,org_id&order=username.asc')
   ]);
-  const users=(techs||[]).filter(t=>t.username&&String(t.role||'technician')!=='sales_agent').map(t=>t.username);
+  // Retired orgs' users ay wala na sa picker (owner 2026-11-20) — history untouched
+  const users=(techs||[]).filter(t=>t.username&&String(t.role||'technician')!=='sales_agent'&&!(t.org_id&&orgById[t.org_id]&&orgById[t.org_id].active===false)).map(t=>t.username);
   const us=$('#waLockUser'); if(us) us.innerHTML='<option value="">— Select user —</option>'+users.map(u=>`<option>${esc(u)}</option>`).join('');
   const act=(accts||[]).filter(a=>a.active!==false&&a.name).map(a=>a.name);
   const as=$('#waLockAcct'); if(as) as.innerHTML='<option value="">— Select work account —</option>'+act.map(a=>`<option>${esc(a)}</option>`).join('');
