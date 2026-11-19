@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-20.2';
+const APP_VERSION='2026-11-20.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2212,8 +2212,12 @@ let valQueueView='new', valNewJ=[], valFsoiJ=[];
 // ang paulit-ulit, at alin ang na-dispatch/na-reject sa huli.
 let dupRegRows=null, dupRegView='rows', dupRegDaysSel=30, dupRegBusy=false;
 function dupRegVisible(on){
+  // Owner 2026-11-20 fix: HUWAG itago ang buong queue panel — nasa loob nito ang
+  // mismong tabs row (NEW encoded / FSOI / Duplicate registry), kaya nawawala ang
+  // mga chip at hindi na makabalik ang user. Ang unang filter-row (tabs) ay laging
+  // kita; ang district/barangay filters at ang table lang ang itinatago.
   const q=$('#valQueuePanel'), d=$('#dupRegPanel');
-  if(q) q.style.display=on?'none':'';
+  if(q) Array.prototype.forEach.call(q.children,(ch,i)=>{ if(i>0) ch.style.display=on?'none':''; });
   if(d) d.style.display=on?'':'none';
 }
 function dupRegWire(){
@@ -4273,12 +4277,12 @@ async function openSlrDetail(id){
     .then(r=>r.ok?r.json():[])
     .then(rows=>{ const wv=document.getElementById('slrWims'); if(!wv) return;
       if(!rows||!rows.length){ wv.innerHTML='<span style="color:#8a9894">No WIMS usage report yet — appears once the ticket is closed with declared materials.</span>'; return; }
-      const SKIP=['jo_number','subscriber','account_no','team','technician','work_account','completed_at','photos','iptv_count'];
-      const nice=k=>k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-      wv.innerHTML=rows.map(r0=>Object.entries(r0)
-        .filter(([k,v])=>v!=null&&v!==''&&v!==0&&!SKIP.includes(k))
-        .map(([k,v])=>`<div style="display:flex;justify-content:space-between;border-bottom:1px solid #eef1ed;padding:3px 0"><span>${nice(k)}</span><b>${esc(v)}</b></div>`).join(''))
-        .join('<hr style="border:0;border-top:1px dashed #dfe5df">'); })
+      // Owner 2026-11-20: parehong renderer na ng JO/QA modals (wimsMaterialsHTML) —
+      // kasama na ang "✏️ Edit declared materials" + History buttons. Ang tunay na
+      // gate ay ang server (edit_install_report + WIMS-schema RLS): tanging mga
+      // console user na may WIMS access (warehouse team / superadmin) ang makakapag-save;
+      // ang iba ay makakakita ng "WIMS console access is required" na toast.
+      wv.innerHTML=wimsMaterialsHTML(rows); })
     .catch(()=>{ const wv=document.getElementById('slrWims'); if(wv) wv.textContent='Could not load materials.'; });
 }
 // Dispatcher notification: badge + toast — bawat 2 minuto habang bukas ang console.
