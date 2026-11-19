@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-20.3';
+const APP_VERSION='2026-11-20.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3967,6 +3967,21 @@ function taMode(rows,team,field){
   let best='',bn=0; for(const k in c){ if(c[k]>bn){ best=k; bn=c[k]; } }
   return best||'—';
 }
+// 👥 Most-used crew ng isang team sa buwan (owner 2026-11-20): top driver + top 2
+// technicians (tech1+tech2 pinagsama) mula sa Start-shift declarations, may bilang
+// kung ilang araw ginamit. HTML-escaped dito mismo — diretso sa cell ang output.
+function taCrewLine(rows,team){
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const cnt=fields=>{ const c={}; rows.forEach(r=>{ if(r.username!==team) return;
+    fields.forEach(f=>{ const v=String(r[f]||'').trim().toUpperCase(); if(v) c[v]=(c[v]||0)+1; }); }); return c; };
+  const top=(c,n)=>Object.keys(c).sort((a,b)=>c[b]-c[a]).slice(0,n).map(k=>esc(k)+' <span style="color:#8a9894">('+c[k]+'×)</span>');
+  const d=top(cnt(['crew_driver']),1), t=top(cnt(['crew_tech1','crew_tech2']),2);
+  if(!d.length && !t.length) return '—';
+  const parts=[];
+  if(d.length) parts.push('🚗 '+d.join(', '));
+  if(t.length) parts.push('🔧 '+t.join('<br>&nbsp;&nbsp;&nbsp;'));
+  return parts.join('<br>');
+}
 const taMonthList=(from,to)=>{ const out=[]; let [y,m]=from.split('-').map(Number); const [ty,tm]=to.split('-').map(Number);
   while(y<ty||(y===ty&&m<=tm)){ out.push(y+'-'+String(m).padStart(2,'0')); m++; if(m>12){m=1;y++;} if(out.length>=12) break; } return out; };
 const taMonthLabel=ym=>{ const [y,m]=ym.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m-1]+' '+y; };
@@ -4010,40 +4025,94 @@ async function teamAnalyzeRun(){
     await ensureFreshTok();
     for(let i=0;i<months.length;i++){
       body.innerHTML=`Crunching ${taMonthLabel(months[i])}… (${i+1}/${months.length})`;
-      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON'}));
+      // 👥 Crew names (owner 2026-11-20): most-used Driver/Technicians per team-month
+      // mula sa Start-shift declarations (attendance) — kapareho ng Excel export.
+      const _cw=await taFetchCrew(months[i]).catch(()=>[]);
+      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON', crewHtml:taCrewLine(_cw,t.team)}));
     }
   }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
   if(!taRows.length){ body.innerHTML='No team activity found for '+taFrom+' → '+taTo+'.'; return; }
+  taPaint();
+}
+// 🔀 Sort + filter per section (owner 2026-11-20): ang team ordering sa loob ng
+// bawat section ay sumusunod sa piniling metric (aggregate sa buong piniling
+// range), may ↑/↓ toggle at team-name filter. Re-render lang mula sa cached
+// taRows — walang muling fetch.
+let taSortKey='installs', taSortDir=-1, taQuery='';
+const TA_SORTS={
+  installs:{label:'Installs (completed)',dir:-1},
+  dispatched:{label:'Loads dispatched',dir:-1},
+  rate:{label:'Completion rate',dir:-1},
+  att_hours:{label:'Total hours logged',dir:-1},
+  avg_daily:{label:'Avg daily hours',dir:-1},
+  hpi:{label:'Hours per install',dir:1},
+  awh:{label:'Avg work hrs per JO',dir:1},
+  name:{label:'Team name',dir:1},
+};
+function taAgg(rows){
+  const s=f=>rows.reduce((a,r)=>a+(+r[f]||0),0);
+  const inst=s('installs'), disp=s('dispatched'), hrs=s('att_hours'), days=s('att_days');
+  const w=rows.map(r=>+r.avg_work_hours).filter(v=>Number.isFinite(v)&&v>0);
+  return {
+    installs:inst, dispatched:disp,
+    rate:disp>0?inst/disp:-1,
+    att_hours:hrs,
+    avg_daily:days>0?hrs/days:-1,
+    hpi:(inst>0&&hrs>0)?hrs/inst:Infinity,
+    awh:w.length?w.reduce((a,b)=>a+b,0)/w.length:Infinity,
+  };
+}
+function taPaint(){
+  const body=document.getElementById('taBody'); if(!body||!taRows.length) return;
   const esc=v=>String(v==null?'':v).replace(/</g,'&lt;');
   const num=v=>(v==null?'—':v);
+  const q=taQuery.trim().toUpperCase();
   // Monthly breakdown per team: team section row, tapos isang hilera bawat buwan (pinakabago muna).
   const section=(label,icon,rows)=>{
-    if(!rows.length) return '';
-    const teams=[...new Set(rows.map(r=>r.team))].sort((a,b)=>{
-      const ta=rows.filter(r=>r.team===a).reduce((s,r)=>s+(+r.installs||0),0);
-      const tb=rows.filter(r=>r.team===b).reduce((s,r)=>s+(+r.installs||0),0);
-      return tb-ta||a.localeCompare(b);
+    const allTeams=[...new Set(rows.map(r=>r.team))];
+    const teams=allTeams.filter(t=>!q||String(t).toUpperCase().includes(q)).sort((a,b)=>{
+      if(taSortKey==='name') return taSortDir*a.localeCompare(b);
+      const va=taAgg(rows.filter(r=>r.team===a))[taSortKey];
+      const vb=taAgg(rows.filter(r=>r.team===b))[taSortKey];
+      const cmp=va<vb?-1:(va>vb?1:0);
+      return (cmp*taSortDir) || a.localeCompare(b);   // dir -1 = highest first · +1 = lowest first
     });
+    if(!allTeams.length) return '';
     const crv=t=>((+t.dispatched||0)>0?(Math.round(((+t.installs||0)/(+t.dispatched))*1000)/10)+'%':'—');
-    return `<tr><td colspan="10" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length} team${teams.length===1?'':'s'}</td></tr>`
+    return `<tr><td colspan="11" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length}${q?' / '+allTeams.length:''} team${teams.length===1?'':'s'}</td></tr>`
+      + (teams.length?'':`<tr><td colspan="11" class="empty-cell">No team matches the filter.</td></tr>`)
       + teams.map(tm=>{
           const mr=rows.filter(r=>r.team===tm).sort((a,b)=>b.month.localeCompare(a.month));
-          return `<tr><td colspan="10" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
+          return `<tr><td colspan="11" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
             + mr.map(t=>`<tr>
               <td style="padding-left:26px;color:#52635f">${taMonthLabel(t.month)}</td>
+              <td style="white-space:normal;min-width:180px;font-size:11px;line-height:1.5">${t.crewHtml||'—'}</td>
               <td>${num(t.dispatched)}</td><td>${num(t.installs)}</td><td><b>${crv(t)}</b></td>
               <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
               <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
               <td style="max-width:280px;white-space:normal">${esc((t.areas||[]).join(', ')||'—')}</td></tr>`).join('');
         }).join('');
   };
-  body.innerHTML=`<div class="table-wrap"><table><thead><tr>
-      <th>Team · Month</th><th>Loads<br>dispatched</th><th>Installs<br>(completed)</th><th>Completion<br>rate</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
+  const sortOpts=Object.keys(TA_SORTS).map(k=>`<option value="${k}" ${k===taSortKey?'selected':''}>${TA_SORTS[k].label}</option>`).join('');
+  body.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <span style="font:800 9px 'DM Sans',sans-serif;letter-spacing:.08em;color:#8a9894">SORT TEAMS BY</span>
+      <select id="taSortSel" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font-size:11px;background:#fff">${sortOpts}</select>
+      <button type="button" id="taSortDirBtn" class="secondary-btn" style="height:32px;padding:0 10px;font-size:11px">${taSortDir===-1?'↓ Highest first':'↑ Lowest first'}</button>
+      <input id="taTeamQ" placeholder="Filter team name…" value="${esc(taQuery)}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:11px;min-width:170px">
+    </div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Team · Month</th><th>Crew<br>(most used)</th><th>Loads<br>dispatched</th><th>Installs<br>(completed)</th><th>Completion<br>rate</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
     </tr></thead><tbody>
       ${section('AHBA TEAMS','🏢',taRows.filter(r=>r.group==='AHBA'))}
       ${section('SUBCONTRACTORS','🤝',taRows.filter(r=>r.group==='SUBCON'))}
     </tbody></table></div>
-    <div style="font-size:10px;color:#8a9894;margin-top:8px">Installs & dispatched exclude SLR tickets · Hours per install = total logged hours ÷ completed installs · Avg work hrs per JO = start-of-work → completed (from JO history, same-day; outliers over 12h excluded) · Areas = distinct barangays of completed JOs · All times Manila.</div>`;
+    <div style="font-size:10px;color:#8a9894;margin-top:8px">Installs & dispatched exclude SLR tickets · Crew = most-used names from Start-shift declarations (🚗 driver · 🔧 technicians, bilang = days used sa buwan) · Hours per install = total logged hours ÷ completed installs · Avg work hrs per JO = start-of-work → completed (from JO history, same-day; outliers over 12h excluded) · Areas = distinct barangays of completed JOs · All times Manila.</div>`;
+  const ss=document.getElementById('taSortSel');
+  if(ss) ss.onchange=()=>{ taSortKey=ss.value; taSortDir=TA_SORTS[taSortKey].dir; taPaint(); };
+  const db=document.getElementById('taSortDirBtn');
+  if(db) db.onclick=()=>{ taSortDir=-taSortDir; taPaint(); };
+  const tq=document.getElementById('taTeamQ');
+  if(tq){ tq.oninput=()=>{ taQuery=tq.value; const v=tq.value; taPaint(); const t2=document.getElementById('taTeamQ'); if(t2){ t2.focus(); t2.value=v; try{ t2.setSelectionRange(v.length,v.length); }catch(_e){} } }; }
 }
 // EXPORT = laging YTD (Enero → kasalukuyang buwan): isang sheet BAWAT BUWAN + TOTAL sheet.
 async function teamAnalyzeExport(){
