@@ -1142,6 +1142,10 @@
     if(e.target.id==='stkTeam'){renderCpeStats();renderMatList();}
     if(e.target.id==='matLoc')renderMatList();
     if(e.target.id==='audTeam')loadTeamAudit();
+    if(e.target.hasAttribute&&e.target.hasAttribute('data-bulkreason')){
+      var _ifw=e.target.closest('td').querySelector('[data-instfields]');
+      if(_ifw) _ifw.style.display=(e.target.value==='installed')?'inline':'none';
+    }
     if(e.target.id==='issBox'){curBox=e.target.value||null;pick={};renderCap();renderUnits();}
     if((e.target.id==='stkFrom'||e.target.id==='stkTo')&&stockView==='team'){renderCpeStats();}
   });
@@ -1302,8 +1306,15 @@
         }).join('');
         var bulkBar=(g.cpe&&g.cpe.length)?('<tr style="background:#f3fbf7"><td colspan="3" style="padding:9px">'+
           '<label style="font-size:11.5px;font-weight:700;color:#102925;cursor:pointer"><input type="checkbox" data-cpeall style="vertical-align:middle"> Select all CPE ('+g.cpe.length+')</label>'+
-          '<select data-bulkreason style="padding:6px;font-size:11px;margin-left:12px"><option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option></select> '+
+          '<select data-bulkreason style="padding:6px;font-size:11px;margin-left:12px"><option value="">— reason —</option><option value="defective">Defective</option><option value="excess">Excess</option><option value="installed">Installed — ideklara ang subscriber</option></select> '+
           '<input data-bulknote placeholder="remarks" style="width:150px;padding:6px;font-size:11px"> '+
+          // 🏠 INSTALLED (owner 2026-11-20): console user ang magde-declare kung
+          // saang subscriber nagamit — IBAS + Name + Date Installed (required)
+          '<span data-instfields style="display:none">'+
+            '<input data-instacct placeholder="IBAS Number *" style="width:130px;padding:6px;font-size:11px"> '+
+            '<input data-instname placeholder="Subscriber Name *" style="width:170px;padding:6px;font-size:11px"> '+
+            '<input data-instdate type="date" title="Date Installed" style="padding:6px;font-size:11px"> '+
+          '</span>'+
           '<button class="chip" data-bulkret data-team="'+g.tid+'">↩ Return selected (<span data-bulkcnt>0</span>)</button></td></tr>'):'';
         var kitsN=kitTot[g.tid]||0;
         var kitRow=kitsN?('<tr><td>🧰 Standard kits issued (total)</td><td class="tnum"><b>'+kitsN+'</b> kit(s)</td>'+
@@ -1354,7 +1365,25 @@
     if(!serials.length){ toast('Tick at least one CPE first',true); return; }
     var reason=((box.querySelector('[data-bulkreason]')||{}).value||'');
     var note=((box.querySelector('[data-bulknote]')||{}).value||'').trim();
-    if(!reason){ toast('Select the return REASON first (defective / excess)',true); return; }
+    if(!reason){ toast('Select the return REASON first (defective / excess / installed)',true); return; }
+    if(reason==='installed'){
+      // 🏠 console-declared install: IISANG subscriber bawat declaration
+      var acct=((box.querySelector('[data-instacct]')||{}).value||'').trim();
+      var nm=((box.querySelector('[data-instname]')||{}).value||'').trim();
+      var dt=((box.querySelector('[data-instdate]')||{}).value||'').trim();
+      if(!acct||!nm||!dt){ toast('IBAS Number, Subscriber Name at Date Installed — required lahat',true); return; }
+      if(!window.confirm('Mark '+serials.length+' CPE as INSTALLED?\n\n'+serials.join('\n')+'\n\nSubscriber: '+nm+'\nIBAS: '+acct+'\nDate: '+dt+(note?('\nRemarks: '+note):'')+'\n\nMawawala sila sa on-hand ng team at magkakaroon ng install record.')) return;
+      btn.disabled=true; btn.textContent='Saving…';
+      rpc('mark_cpe_installed',{p_serials:serials,p_account:acct,p_subscriber:nm,p_date:dt,p_note:note||null})
+        .then(function(){ toast('✓ '+serials.length+' CPE marked INSTALLED — may install record na kay '+nm); loadTeamAudit(); loadReports(); })
+        .catch(function(e){
+          var m=String(e.message||'');
+          if(/could not find the function|schema cache/i.test(m)) toast('Run wims-MARK-installed.sql in the SQL Editor first',true);
+          else toast('Failed: '+m,true);
+        })
+        .then(function(){ btn.disabled=false; btn.innerHTML='↩ Return selected (<span data-bulkcnt>0</span>)'; });
+      return;
+    }
     var eff=(reason==='defective')?'They will be marked DEFECTIVE — no longer issuable.':'They return to issuable stock.';
     if(!window.confirm('Return '+serials.length+' CPE as '+reason.toUpperCase()+'?\n\n'+serials.join('\n')+(note?('\nRemarks: '+note):'')+'\n'+eff)) return;
     btn.disabled=true; btn.textContent='Filing request…';
