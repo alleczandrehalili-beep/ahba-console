@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-20.5';
+const APP_VERSION='2026-11-20.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4125,7 +4125,7 @@ function taPaint(){
             + mr.map(t=>`<tr>
               <td style="padding-left:26px;color:#52635f">${taMonthLabel(t.month)}</td>
               <td style="white-space:normal;min-width:180px;font-size:11px;line-height:1.5">${t.crewHtml||'—'}</td>
-              <td>${num(t.dispatched)}</td><td>${num(t.installs)}</td><td><b>${crv(t)}</b></td>
+              <td><b>${num(t.installs)}</b></td><td><b>${crv(t)}</b></td><td>${num(t.dispatched)}</td>
               <td>${num(t.att_days)}</td><td>${num(t.att_hours)}</td><td>${num(t.avg_daily_hours)}</td>
               <td>${num(t.hours_per_install)}</td><td>${num(t.avg_work_hours)}</td>
               <td style="max-width:280px;white-space:normal">${(t.areas&&t.areas.length)?`<details><summary style="cursor:pointer;color:#11825f;font-weight:700;font-size:11px;white-space:nowrap">📍 ${t.areas.length} area${t.areas.length===1?'':'s'} — view</summary><div style="margin-top:5px;font-size:11px;color:#5a6a66;line-height:1.5">${esc(t.areas.join(', '))}</div></details>`:'—'}</td></tr>`).join('');
@@ -4139,7 +4139,7 @@ function taPaint(){
       <input id="taTeamQ" placeholder="Filter team name…" value="${esc(taQuery)}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:11px;min-width:170px">
     </div>
     <div class="table-wrap"><table><thead><tr>
-      <th>Team · Month</th><th>Crew<br>(most used)</th><th>Loads<br>dispatched</th><th>Installs<br>(completed)</th><th>Completion<br>rate</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
+      <th>Team · Month</th><th>Crew<br>(most used)</th><th>Installs<br>(completed)</th><th>Completion<br>rate</th><th>Loads<br>dispatched</th><th>Days<br>logged</th><th>Total hours<br>logged</th><th>Avg daily<br>hours</th><th>Hours per<br>install</th><th>Avg work hrs<br>per JO</th><th>Areas covered</th>
     </tr></thead><tbody>
       ${section('AHBA TEAMS','🏢',taRows.filter(r=>r.group==='AHBA'))}
       ${section('SUBCONTRACTORS','🤝',taRows.filter(r=>r.group==='SUBCON'))}
