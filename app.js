@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-14.2';
+const APP_VERSION='2026-11-20.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4697,6 +4697,7 @@ async function renderAccess(){
   $$('#accessWrap [data-xorg]').forEach(b=>b.onclick=()=>toggleCrossOrg(b.dataset.xorg, b.dataset.xon!=='1'));
   renderAccounts();   // field/mobile accounts list now lives inside Access Control
   renderGcWorkAccounts();   // GC's own work-account pool manager (superadmin only)
+  renderWaLocks();   // 🔒 auto-assigned work account per user (superadmin only, owner 2026-11-20)
   renderSecReqCard();   // Secondary-contact requirement per contractor (superadmin only)
   if(window.dashUser&&window.dashUser.is_super){ const ar=$('#auditRefresh'); if(ar) ar.onclick=renderAuditLog; renderAuditLog(); }
 }
@@ -4780,6 +4781,58 @@ async function renderGcWorkAccounts(){
   $$('#gcWaBody [data-gcwashare]').forEach(b=>b.onclick=()=>gcSetWorkAccount(b.dataset.gcwashare,{shared:b.dataset.gcwaval==='1'}));
   $$('#gcWaBody [data-gcwaren]').forEach(b=>b.onclick=()=>gcRenameWorkAccount(b.dataset.gcwaren,b.dataset.gcwaname));
   $$('#gcWaBody [data-gcwadel]').forEach(b=>b.onclick=()=>gcRemoveWorkAccount(b.dataset.gcwadel));
+}
+// 🔒 AUTO-ASSIGNED WORK ACCOUNT PER USER (owner 2026-11-20) — superadmin only.
+// Isang row bawat field user sa public.work_account_locks: sa bawat log-in,
+// awtomatikong napipili ang account sa Start-shift; Locked = hindi mapapalitan.
+// Writes ay dumadaan sa set_work_account_lock RPC (superadmin-gated sa server).
+async function renderWaLocks(){
+  const panel=$('#acWaLock'), body=$('#waLockBody');
+  if(!panel||!body) return;
+  const isSuper=!!(window.dashUser&&window.dashUser.is_super);
+  panel.style.display=isSuper?'':'none';
+  if(!isSuper) return;
+  let locks=null;
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/work_account_locks?select=*&order=username.asc`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(r.ok) locks=await r.json();
+  }catch(e){}
+  const [accts,techs]=await Promise.all([
+    scFetch('work_accounts?select=name,active&order=name.asc'),
+    scFetch('technicians?select=username,role&order=username.asc')
+  ]);
+  const users=(techs||[]).filter(t=>t.username&&String(t.role||'technician')!=='sales_agent').map(t=>t.username);
+  const us=$('#waLockUser'); if(us) us.innerHTML='<option value="">— Select user —</option>'+users.map(u=>`<option>${esc(u)}</option>`).join('');
+  const act=(accts||[]).filter(a=>a.active!==false&&a.name).map(a=>a.name);
+  const as=$('#waLockAcct'); if(as) as.innerHTML='<option value="">— Select work account —</option>'+act.map(a=>`<option>${esc(a)}</option>`).join('');
+  if(locks===null){
+    body.innerHTML='<tr><td colspan="5" class="empty-row">⚠ Backend not ready — run <b>supabase-work-account-locks.sql</b> in the Supabase SQL Editor to enable auto-assignment.</td></tr>';
+  } else {
+    body.innerHTML=locks.length?locks.map(l=>`<tr>
+      <td><strong>${esc(l.username)}</strong></td>
+      <td>${esc(l.account)}</td>
+      <td>${l.locked?'<span class="status completed">🔒 Locked</span>':'<span class="status pending">Default only</span>'}</td>
+      <td style="font-size:10px;color:#8a9894">${esc(l.updated_by||'—')}${l.updated_at?(' · '+fmtWhen(l.updated_at)):''}</td>
+      <td><div class="row-actions"><button class="assign-btn" data-walockt="${esc(l.username)}" data-walocka="${esc(l.account)}" data-walockv="${l.locked?'0':'1'}">${l.locked?'Unlock':'Lock'}</button><button class="assign-btn" style="color:#c2503a;border-color:#f0c3ba" data-walockdel="${esc(l.username)}">Remove</button></div></td>
+    </tr>`).join(''):'<tr><td colspan="5" class="empty-row">No assignments yet — pick a user and a work account above.</td></tr>';
+  }
+  $$('#waLockBody [data-walockt]').forEach(b=>b.onclick=()=>waLockSet(b.dataset.walockt,b.dataset.walocka,b.dataset.walockv==='1'));
+  $$('#waLockBody [data-walockdel]').forEach(b=>b.onclick=()=>{ if(confirm('Remove the auto-assignment for '+b.dataset.walockdel+'?\n\nBabalik sila sa libreng pagpili ng work account sa log-in.')) waLockSet(b.dataset.walockdel,'',true); });
+  const sv=$('#waLockSave');
+  if(sv&&!sv._wired){ sv._wired=true; sv.onclick=()=>{
+    const u=(($('#waLockUser')||{}).value)||'', a=(($('#waLockAcct')||{}).value)||'', lk=!!(($('#waLockLocked')||{}).checked);
+    if(!u||!a){ showToast('Piliin muna ang field user at work account'); return; }
+    waLockSet(u,a,lk);
+  }; }
+}
+async function waLockSet(username,account,locked){
+  try{
+    const r=await fetch(`${SUPA_URL}/rest/v1/rpc/set_work_account_lock`,{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json'},body:JSON.stringify({p_username:username,p_account:account,p_locked:locked})});
+    const d=await r.json().catch(()=>null);
+    if(!r.ok) throw new Error((d&&(d.message||d.hint))||('HTTP '+r.status));
+    showToast(typeof d==='string'?d:'Saved');
+    renderWaLocks();
+  }catch(e){ showToast('❌ '+(e.message||e)); }
 }
 async function gcAddWorkAccount(){
   if(!(window.dashUser&&window.dashUser.is_super)){ showToast('Superadmin only'); return; }
