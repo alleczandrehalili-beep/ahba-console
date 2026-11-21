@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.15';
+const APP_VERSION='2026-11-21.16';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4517,6 +4517,7 @@ async function renderSlrTickets(force){
   if(slrSfQ){ const q=slrSfQ.toUpperCase(); list=list.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(t=>(t.ticket_no||'')+' '+t.id).join(' ')].join(' ').toUpperCase().includes(q)); }
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
   const asOf=slrSfRows.map(r=>r.as_of).filter(Boolean).sort().pop();
+  const lastAct=slrSfRows.reduce((m,r)=>{ const d=slrSfDay(r.dispatched_at)||slrSfDay(r.opened_at); return d>m?d:m; },'');
   const who=[...new Set([].concat(slrRows.map(t=>t.team),uni.map(u=>u.sf&&u.sf.last.technician)).filter(Boolean))].sort();
   const stLbl={open:'Open',completed:'Completed',cancelled:'Cancelled / Negative',all:'All'};
   const stCls={open:'pending',completed:'completed',cancelled:'cancelled'};
@@ -4547,7 +4548,7 @@ async function renderSlrTickets(force){
       <td><span class="status ${stCls[u.state]||''}">${u.aging!=null?u.aging.toFixed(1)+'d':'—'}</span></td>
       <td>${srcTag[u.source]||''}</td>
       <td><button class="assign-btn" data-uniview="${i}">View</button></td></tr>`).join('')
-      ||'<tr><td colspan="10" style="padding:14px;color:#8a9894">No tickets match the filters.</td></tr>'}
+      ||`<tr><td colspan="10" style="padding:14px;color:#8a9894">No tickets match — status <b>${stLbl[slrSfSt]}</b>${(slrSfFrom||slrSfTo)?` · range <b>${slrSfFrom||'…'} → ${slrSfTo||'…'}</b>`:''}. ${lastAct?`Latest SalesForce activity on record: <b>${lastAct}</b> — the uploaded file has nothing after that date; upload a newer extract to see recent dispatches. `:''}Try the <b>All</b> chip or widen the range.</td></tr>`}
     </tbody></table></div>`;
   renderSlrTickets._list=list;
   const si=$('#slrUniSearch'); if(si) si.oninput=()=>{ slrSfQ=si.value.trim(); clearTimeout(renderSlrTickets._t);
