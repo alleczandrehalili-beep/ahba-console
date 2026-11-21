@@ -851,9 +851,241 @@
   const dOnly = v => v? String(v).slice(0,10) : '';
   const dTime = v => v? String(v).replace('T',' ').slice(0,16) : '';
 
+  /* AHBA FieldSales — self-contained xlsx writer with a live Excel PivotTable.
+     Developed and schema-tested here, then transplanted verbatim into
+     console-sat.js. Deliberately does NOT touch console-sli-reports.js: that
+     module's pivot writer is hard-wired to one measure, and this report needs
+     two (loads encoded + loads completed).
+
+     buildSalesWorkbook(spec) -> { 'path/in/zip': 'xml string', ... }
+
+     spec = {
+       sheets: [ {name, headers, rows, cols?, freeze?, filter?} ],   // data sheets
+       pivot:  { name, source, rowFields:[...], data:[{field,subtotal?,name}] }
+     }
+     The pivot sheet is written first; `source` names one of `sheets` and is used
+     whole as the pivot cache, so Excel's "Show Details" (double-click a value)
+     drills through to the full job-order rows on a new sheet.
+  */
+  function buildSalesWorkbook(spec){
+    const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+    const RNS='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const PKG='http://schemas.openxmlformats.org/package/2006/relationships';
+    const REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+    const CT='application/vnd.openxmlformats-officedocument.spreadsheetml.';
+
+    const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                          .replace(/"/g,'&quot;').replace(/\r/g,'').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g,'');
+    const colName=i=>{ let s='',n=i; for(;;){ s=String.fromCharCode(65+n%26)+s; n=Math.floor(n/26)-1; if(n<0) break; } return s; };
+
+    const STYLES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<styleSheet xmlns="'+NS+'"><fonts count="2"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font>'
+      +'<font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>'
+      +'<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
+      +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+      +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+      +'<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+      +'<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+      +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+
+    function cell(ref,v,bold){
+      if(v===''||v===null||v===undefined) return '';
+      const s=bold?' s="1"':'';
+      if(typeof v==='number'&&isFinite(v)) return '<c r="'+ref+'"'+s+'><v>'+v+'</v></c>';
+      return '<c r="'+ref+'"'+s+' t="inlineStr"><is><t xml:space="preserve">'+esc(v)+'</t></is></c>';
+    }
+    /* headers + rows -> worksheet xml */
+    function dataSheet(s){
+      const H=s.headers, B=s.rows, last=colName(Math.max(H.length-1,0));
+      let x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="'+NS+'">';
+      if(s.freeze!==false) x+='<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>';
+      if(s.cols&&s.cols.length) x+='<cols>'+s.cols.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
+      x+='<sheetData><row r="1">'+H.map((h,i)=>cell(colName(i)+'1',h,true)).join('')+'</row>';
+      B.forEach((r,ri)=>{
+        const cs=H.map((_,ci)=>cell(colName(ci)+(ri+2),r[ci])).join('');
+        if(cs) x+='<row r="'+(ri+2)+'">'+cs+'</row>';
+      });
+      x+='</sheetData>';
+      if(s.filter!==false&&H.length) x+='<autoFilter ref="A1:'+last+(B.length+1)+'"/>';
+      return x+'</worksheet>';
+    }
+
+    /* ---------- the pivot ---------- */
+    const P=spec.pivot;
+    const src=spec.sheets.find(s=>s.name===P.source);
+    if(!src) throw new Error('pivot source sheet "'+P.source+'" not in the workbook');
+    const H=src.headers, B=src.rows, NF=H.length, N=B.length;
+    const rfI=P.rowFields.map(n=>{ const i=H.indexOf(n); if(i<0) throw new Error('pivot row field "'+n+'" not on '+P.source); return i; });
+    const dfI=P.data.map(d=>{ const i=H.indexOf(d.field); if(i<0) throw new Error('pivot value field "'+d.field+'" not on '+P.source); return i; });
+
+    /* shared items for the row fields, built in display order so an item's
+       cache index is also its position in the pivot — no second mapping. */
+    const SH={};
+    rfI.forEach((i,k)=>{
+      const seen=[...new Set(B.map(r=>r[i]===''||r[i]==null?'':String(r[i])))];
+      seen.sort((a,b)=> k===0 ? b.localeCompare(a) : a.localeCompare(b));  // dates newest first
+      SH[i]={list:seen, idx:new Map(seen.map((v,j)=>[v,j]))};
+    });
+    const key=(r,i)=>r[i]===''||r[i]==null?'':String(r[i]);
+
+    /* cacheFields: shared strings for row fields, numeric ranges for numbers */
+    const cacheFields=H.map((name,i)=>{
+      if(SH[i]) return '<cacheField name="'+esc(name)+'" numFmtId="0"><sharedItems count="'+SH[i].list.length+'">'
+        +SH[i].list.map(v=>'<s v="'+esc(v)+'"/>').join('')+'</sharedItems></cacheField>';
+      const vs=B.map(r=>r[i]).filter(v=>typeof v==='number'&&isFinite(v));
+      if(vs.length===N&&N){
+        const ci=vs.every(Number.isInteger)?' containsInteger="1"':'';
+        return '<cacheField name="'+esc(name)+'" numFmtId="0"><sharedItems containsSemiMixedTypes="0" containsString="0" containsNumber="1"'
+          +ci+' minValue="'+Math.min.apply(null,vs)+'" maxValue="'+Math.max.apply(null,vs)+'"/></cacheField>';
+      }
+      if(vs.length){
+        const ci=vs.every(Number.isInteger)?' containsInteger="1"':'';
+        return '<cacheField name="'+esc(name)+'" numFmtId="0"><sharedItems containsMixedTypes="1" containsNumber="1"'
+          +ci+' minValue="'+Math.min.apply(null,vs)+'" maxValue="'+Math.max.apply(null,vs)+'"/></cacheField>';
+      }
+      const lt=B.some(r=>String(r[i]==null?'':r[i]).length>255)?' longText="1"':'';
+      return '<cacheField name="'+esc(name)+'" numFmtId="0"><sharedItems'+lt+'/></cacheField>';
+    }).join('');
+
+    const records=B.map(r=>'<r>'+H.map((_,i)=>{
+      if(SH[i]) return '<x v="'+SH[i].idx.get(key(r,i))+'"/>';
+      const v=r[i];
+      if(v===''||v===null||v===undefined) return '<m/>';
+      if(typeof v==='number'&&isFinite(v)) return '<n v="'+v+'"/>';
+      return '<s v="'+esc(v)+'"/>';
+    }).join('')+'</r>').join('');
+
+    const srcLast=colName(Math.max(NF-1,0));
+    const cacheDef='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<pivotCacheDefinition xmlns="'+NS+'" xmlns:r="'+RNS+'" r:id="rId1" refreshedBy="AHBA FieldOps"'
+      +' createdVersion="8" refreshedVersion="8" minRefreshableVersion="3" refreshOnLoad="1" recordCount="'+N+'">'
+      +'<cacheSource type="worksheet"><worksheetSource ref="A1:'+srcLast+(N+1)+'" sheet="'+esc(P.source)+'"/></cacheSource>'
+      +'<cacheFields count="'+NF+'">'+cacheFields+'</cacheFields></pivotCacheDefinition>';
+    const cacheRecs='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<pivotCacheRecords xmlns="'+NS+'" xmlns:r="'+RNS+'" count="'+N+'">'+records+'</pivotCacheRecords>';
+
+    /* row items — tabular layout: every leaf row carries its full path, with a
+       subtotal row after each group on every level except the innermost. */
+    const tree=new Map();   // lvl0 -> Map(lvl1 -> Set(lvl2...))
+    B.forEach(r=>{
+      let m=tree;
+      rfI.forEach((i,k)=>{
+        const v=SH[i].idx.get(key(r,i));
+        if(k===rfI.length-1){ (m.get(v)||m.set(v,true)); }
+        else { if(!m.has(v)) m.set(v,new Map()); m=m.get(v); }
+      });
+    });
+    const sortedKeys=m=>[...m.keys()].sort((a,b)=>a-b);
+    const ri=[]; let prev=[];
+    function emit(path,leaf){
+      let r=0; while(r<prev.length&&r<path.length&&prev[r]===path[r]) r++;
+      if(leaf&&r===path.length) r=path.length-1;          // identical path can't happen, but stay safe
+      ri.push('<i'+(r?' r="'+r+'"':'')+'>'+path.slice(r).map(v=>'<x v="'+v+'"/>').join('')+'</i>');
+      prev=path.slice();
+    }
+    function subtotal(path){
+      let r=0; while(r<prev.length&&r<path.length&&prev[r]===path[r]) r++;
+      if(r>=path.length) r=path.length-1;
+      ri.push('<i t="default"'+(r?' r="'+r+'"':'')+'>'+path.slice(r).map(v=>'<x v="'+v+'"/>').join('')+'</i>');
+      prev=path.slice();
+    }
+    const SUB=new Set(P.subtotal||[0]);   // which row-field levels carry a subtotal row
+    function walk(m,path){
+      sortedKeys(m).forEach(v=>{
+        const p=path.concat([v]), kid=m.get(v);
+        if(kid===true||p.length===rfI.length) emit(p,true);
+        else { walk(kid,p); if(SUB.has(p.length-1)) subtotal(p); }
+      });
+    }
+    walk(tree,[]);
+    ri.push('<i t="grand"><x/></i>');
+
+    const pivotFields=H.map((_,i)=>{
+      const k=rfI.indexOf(i);
+      if(k>=0){
+        const sub=SUB.has(k)&&k<rfI.length-1;   // innermost field never subtotals
+        return '<pivotField axis="axisRow" compact="0" outline="0" showAll="0"'+(sub?'':' defaultSubtotal="0"')
+          +'><items count="'+(SH[i].list.length+(sub?1:0))+'">'
+          +SH[i].list.map((_v,j)=>'<item x="'+j+'"/>').join('')+(sub?'<item t="default"/>':'')
+          +'</items></pivotField>';
+      }
+      if(dfI.indexOf(i)>=0) return '<pivotField dataField="1" compact="0" showAll="0"/>';
+      return '<pivotField compact="0" showAll="0"/>';
+    }).join('');
+
+    const nCols=rfI.length+P.data.length;
+    const pivotTable='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<pivotTableDefinition xmlns="'+NS+'" name="SalesRecord" cacheId="1" dataOnRows="0" applyNumberFormats="0"'
+      +' applyBorderFormats="0" applyFontFormats="0" applyPatternFormats="0" applyAlignmentFormats="0"'
+      +' applyWidthHeightFormats="1" dataCaption="Values" updatedVersion="8" minRefreshableVersion="3"'
+      +' useAutoFormatting="1" itemPrintTitles="1" createdVersion="8" indent="0" compact="0" compactData="0"'
+      +' outline="0" outlineData="0" multipleFieldFilters="0">'
+      +'<location ref="A1:'+colName(nCols-1)+(1+ri.length)+'" firstHeaderRow="1" firstDataRow="1" firstDataCol="'+rfI.length+'"/>'
+      +'<pivotFields count="'+NF+'">'+pivotFields+'</pivotFields>'
+      +'<rowFields count="'+rfI.length+'">'+rfI.map(i=>'<field x="'+i+'"/>').join('')+'</rowFields>'
+      +'<rowItems count="'+ri.length+'">'+ri.join('')+'</rowItems>'
+      +'<colFields count="1"><field x="-2"/></colFields>'
+      +'<colItems count="'+P.data.length+'">'
+      +P.data.map((_d,k)=>k===0?'<i><x/></i>':'<i i="'+k+'"><x v="'+k+'"/></i>').join('')
+      +'</colItems>'
+      +'<dataFields count="'+P.data.length+'">'
+      +P.data.map((d,k)=>'<dataField name="'+esc(d.name)+'" fld="'+dfI[k]+'"'
+          +(d.subtotal&&d.subtotal!=='sum'?' subtotal="'+d.subtotal+'"':'')+' baseField="0" baseItem="0"/>').join('')
+      +'</dataFields>'
+      +'<pivotTableStyleInfo name="PivotStyleMedium9" showRowHeaders="1" showColHeaders="1" showRowStripes="0"'
+      +' showColStripes="0" showLastColumn="1"/></pivotTableDefinition>';
+
+    /* ---------- package ---------- */
+    const rels=items=>'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="'+PKG+'">'
+      +items.map(a=>'<Relationship Id="'+a[0]+'" Type="'+REL+a[1]+'" Target="'+a[2]+'"/>').join('')+'</Relationships>';
+
+    const names=[P.name].concat(spec.sheets.map(s=>s.name));
+    const F={};
+    let ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      +'<Default Extension="xml" ContentType="application/xml"/>'
+      +'<Override PartName="/xl/workbook.xml" ContentType="'+CT+'sheet.main+xml"/>'
+      +'<Override PartName="/xl/styles.xml" ContentType="'+CT+'styles+xml"/>'
+      +'<Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="'+CT+'pivotCacheDefinition+xml"/>'
+      +'<Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="'+CT+'pivotCacheRecords+xml"/>'
+      +'<Override PartName="/xl/pivotTables/pivotTable1.xml" ContentType="'+CT+'pivotTable+xml"/>';
+
+    /* sheet 1 is the pivot's home: Excel paints it from pivotTable1.xml */
+    F['xl/worksheets/sheet1.xml']='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="'+NS+'">'
+      +'<cols>'+P.rowFields.map((_n,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="24" customWidth="1"/>').join('')
+      +P.data.map((_d,i)=>'<col min="'+(P.rowFields.length+i+1)+'" max="'+(P.rowFields.length+i+1)+'" width="17" customWidth="1"/>').join('')
+      +'</cols><sheetData/></worksheet>';
+    ct+='<Override PartName="/xl/worksheets/sheet1.xml" ContentType="'+CT+'worksheet+xml"/>';
+    F['xl/worksheets/_rels/sheet1.xml.rels']=rels([['rId1','pivotTable','../pivotTables/pivotTable1.xml']]);
+
+    spec.sheets.forEach((s,i)=>{
+      F['xl/worksheets/sheet'+(i+2)+'.xml']=dataSheet(s);
+      ct+='<Override PartName="/xl/worksheets/sheet'+(i+2)+'.xml" ContentType="'+CT+'worksheet+xml"/>';
+    });
+
+    F['[Content_Types].xml']=ct+'</Types>';
+    F['_rels/.rels']=rels([['rId1','officeDocument','xl/workbook.xml']]);
+    F['xl/styles.xml']=STYLES;
+    F['xl/workbook.xml']='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="'+NS+'" xmlns:r="'+RNS+'">'
+      +'<bookViews><workbookView activeTab="0"/></bookViews><sheets>'
+      +names.map((n,i)=>'<sheet name="'+esc(n)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')
+      +'</sheets><calcPr calcId="191029"/><pivotCaches><pivotCache cacheId="1" r:id="rIdPC1"/></pivotCaches></workbook>';
+    F['xl/_rels/workbook.xml.rels']=rels(
+      names.map((_n,i)=>['rId'+(i+1),'worksheet','worksheets/sheet'+(i+1)+'.xml'])
+        .concat([['rId'+(names.length+1),'styles','styles.xml'],
+                 ['rIdPC1','pivotCacheDefinition','pivotCache/pivotCacheDefinition1.xml']]));
+    F['xl/pivotTables/pivotTable1.xml']=pivotTable;
+    F['xl/pivotTables/_rels/pivotTable1.xml.rels']=rels([['rId1','pivotCacheDefinition','../pivotCache/pivotCacheDefinition1.xml']]);
+    F['xl/pivotCache/pivotCacheDefinition1.xml']=cacheDef;
+    F['xl/pivotCache/pivotCacheRecords1.xml']=cacheRecs;
+    F['xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels']=rels([['rId1','pivotCacheRecords','pivotCacheRecords1.xml']]);
+    return F;
+  }
+
   async function exportAG(){
     if(!AG) return;
-    try{ await ensureXLSX(); }catch(_){ (window.showToast||alert)('Excel library failed to load'); return; }
+    try{ await ensureJSZip(); }catch(_){ (window.showToast||alert)('Excel library failed to load'); return; }
     const btn=$('#agXl'); const lbl=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='Pulling full detail…';}
     let DET=[];
     try{ DET=await fetchDetail(); }
@@ -862,16 +1094,20 @@
     if(btn){btn.disabled=false;btn.textContent=lbl;}
     const {agents, byB}=agRoll();
     const touched=new Set(Object.keys(byB));
-    const wb=XLSX.utils.book_new();
-    /* ---- Pivot ----
-       Date x sales agent x referral agent, with loads encoded and completed.
-       Written as static values with subtotals rather than a live Excel
-       PivotTable: the console's existing pivot writer is hard-wired to one
-       measure (DATE rows x STATUS columns, count of JO), and two measures do
-       not fit it. Bending someone else's live module for this would be a
-       bigger change than the report is worth. `Pivot data` beside it is the
-       same aggregation flat, ready to drop into Excel's own PivotTable if a
-       different cut is wanted. */
+    const SHEETS=[];
+    const tbl=(name,objs,opts)=>{
+      const H=[],seen=new Set();
+      objs.forEach(o=>Object.keys(o).forEach(k=>{ if(!seen.has(k)){seen.add(k);H.push(k);} }));
+      return Object.assign({name,headers:H,rows:objs.map(o=>H.map(k=>o[k]===undefined?'':o[k]))},opts||{});
+    };
+    const pct=(n,d)=>d? +(n/d*100).toFixed(1) : 0;
+
+    /* ---- Summary ----
+       The same cut as the live pivot, pre-totalled, so the figures read
+       straight off the sheet without Excel refreshing anything. The `Pivot`
+       sheet beside it is a real Excel PivotTable over `Job orders`:
+       double-click any value and Excel drops the job orders behind it onto a
+       new sheet, in full. */
     const PV={};
     DET.forEach(j=>{
       const d=dOnly(j.created_at); if(!d) return;
@@ -883,47 +1119,40 @@
     });
     const flat=Object.values(PV).sort((a,b)=>
       b.d.localeCompare(a.d) || a.u.localeCompare(b.u) || a.rf.localeCompare(b.rf));
-
-    const pct=(n,d)=>d? +(n/d*100).toFixed(1) : 0;
     const PH=['DATE','SALES AGENT','REFERRAL AGENT','LOADS ENCODED','LOADS COMPLETED','COMPLETION %'];
-    const rows=[PH];
+    const srows=[];
     let gE=0,gC=0, dI=0;
     while(dI<flat.length){
       const day=flat[dI].d;
       const dayRows=flat.filter(r=>r.d===day);
       let dE=0,dC=0, first=true;
-      let aI=0;
-      const agents=[...new Set(dayRows.map(r=>r.u))];
-      agents.forEach(u=>{
+      [...new Set(dayRows.map(r=>r.u))].forEach(u=>{
         const ar=dayRows.filter(r=>r.u===u);
         let aE=0,aC=0;
         ar.forEach(r=>{
-          rows.push([first?day:'', ar.indexOf(r)===0?u:'', r.rf, r.enc, r.done, pct(r.done,r.enc)]);
+          srows.push([first?day:'', ar.indexOf(r)===0?u:'', r.rf, r.enc, r.done, pct(r.done,r.enc)]);
           first=false; aE+=r.enc; aC+=r.done;
         });
-        if(ar.length>1) rows.push(['', u+' — total', '', aE, aC, pct(aC,aE)]);
-        dE+=aE; dC+=aC; aI++;
+        if(ar.length>1) srows.push(['', u+' — total', '', aE, aC, pct(aC,aE)]);
+        dE+=aE; dC+=aC;
       });
-      rows.push([day+' — TOTAL','','',dE,dC,pct(dC,dE)]);
-      rows.push([]);
+      srows.push([day+' — TOTAL','','',dE,dC,pct(dC,dE)]);
+      srows.push([]);
       gE+=dE; gC+=dC;
       dI+=dayRows.length;
     }
-    rows.push(['GRAND TOTAL','','',gE,gC,pct(gC,gE)]);
-    const pvSheet=XLSX.utils.aoa_to_sheet(rows);
-    pvSheet['!cols']=[{wch:16},{wch:26},{wch:28},{wch:15},{wch:16},{wch:14}];
-    pvSheet['!freeze']={xSplit:0,ySplit:1};
-    XLSX.utils.book_append_sheet(wb, pvSheet, 'Pivot');
+    srows.push(['GRAND TOTAL','','',gE,gC,pct(gC,gE)]);
+    SHEETS.push({name:'Summary', headers:PH, rows:srows, filter:false,
+      cols:[17,26,28,15,16,14]});
 
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(flat.map(r=>({
-      'DATE':r.d,'SALES AGENT':r.u,'REFERRAL AGENT':r.rf,
-      'LOADS ENCODED':r.enc,'LOADS COMPLETED':r.done,'COMPLETION %':pct(r.done,r.enc)
-    }))), 'Pivot data');
-
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DET.map(j=>({
+    /* `Job orders` is the pivot's source range, so it carries the day stamp and
+       the two 1/0 count columns the pivot sums. */
+    SHEETS.push(tbl('Job orders', DET.map(j=>({
       'WO ID':j.id||'', 'JOB ORDER NO.':j.job_order_no||'', 'REF NO.':j.ref_no||'', 'NEW REF #':j.new_ref||'',
       'IBASS ACCT NO.':j.ibass_acct_no||'',
-      'DATE ENCODED':dTime(j.created_at), 'DATE VALIDATED':dTime(j.validated_at),
+      'DATE ENCODED':dTime(j.created_at), 'DATE ENCODED (DAY)':dOnly(j.created_at)||'',
+      'LOAD COUNT':1, 'COMPLETED COUNT':AG_DONE.has((j.status||'').toLowerCase())?1:0,
+      'DATE VALIDATED':dTime(j.validated_at),
       'DATE DISPATCHED':dOnly(j.load_date)||dTime(j.scheduled_at),
       'DATE COMPLETED':dTime(j.completed_at), 'DATE INCOMPLETE':dTime(j.negative_at),
       'LAST UPDATED':dTime(j.updated_at),
@@ -943,45 +1172,72 @@
       'PRIORITY':j.priority||'', 'ACCOUNT':j.work_account||'',
       'MODE OF PAYMENT':j.payment_mode||'', 'AMOUNT':j.payment_amount==null?'':j.payment_amount, 'AR NO.':j.ar_no||'',
       'VALIDATED':j.validated?'YES':'', 'INCOMPLETE REMARK':j.negative_remark||'', 'SPECIAL NOTE':j.special_note||''
-    }))), 'Job orders');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agents.slice().sort((a,b)=>b.jos-a.jos).map(a=>({
+    }))));
+
+    SHEETS.push(tbl('Per agent', agents.slice().sort((a,b)=>b.jos-a.jos).map(a=>({
       'AGENT':a.u,'SOURCE':a.console?'console / import':'field agent','JOB ORDERS':a.jos,'COMPLETED':a.done,
       'COMPLETION %':+a.rate.toFixed(2),'IN FLIGHT':a.open,'CANCELLED / REJECTED':a.dead,
       'BARANGAYS':a.nb,'DISTRICTS':a.nd,
       'TOP BARANGAYS':a.top.map(([b,c])=>`${(R.find(r=>r.c===b)||{n:b}).n} (${c})`).join(', ')
-    }))), 'Per agent');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ranked().map(r=>{
+    }))));
+    SHEETS.push(tbl('Barangay coverage', ranked().map(r=>{
       const e=byB[r.c];
       return {'BARANGAY':r.n,'DISTRICT':r.d,'PORTS':r.p,'ACTIVE':r.a,'SATURATION %':+r.sat.toFixed(2),
         'GAP TO 10%':Math.round(r.gap),'JOB ORDERS':e?e.jos:0,'COMPLETED':e?e.done:0,
         'AGENTS WORKING IT':e?Object.keys(e.agents).length:0,
         'JO PER 100 GAP':r.gap>0?+((e?e.jos:0)/r.gap*100).toFixed(1):'',
         'NO ACTIVITY':e?'':'YES','WIN-BACK':r.w,'REACTIVATE':r.x,'MIGRATE':r.mig};
-    })), 'Barangay coverage');
+    })));
     const RL2=agRoll();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.days.map(d=>{
+    SHEETS.push(tbl('Day by day', RL2.days.map(d=>{
       const o={'DATE':d.d,'WEEKDAY':new Date(d.d+'T00:00:00Z').toLocaleDateString('en-US',{weekday:'long',timeZone:'UTC'}),
         'ENCODED':d.jos,'COMPLETED':d.done,'COMPLETION %':d.jos?+(d.done/d.jos*100).toFixed(2):0,
         'CANCELLED / REJECTED':d.dead,'AGENTS':Object.keys(d.agents).length};
       RL2.statuses.forEach(st=>{ o[(ST_LABEL[st]||st).toUpperCase()]=d.st[st]||0; });
       return o;
-    })), 'Day by day');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.sources.map(e=>({
+    })));
+    SHEETS.push(tbl('Source of sales', RL2.sources.map(e=>({
       'SOURCE OF SALES':e.k,'JOB ORDERS':e.jos,'COMPLETED':e.done,'COMPLETION %':+e.rate.toFixed(2),
       'NAMED REFERRERS':e.nref,'AGENTS':e.na
-    }))), 'Source of sales');
+    }))));
     if(RL2.referrers.length)
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.referrers.map(r=>({
+      SHEETS.push(tbl('Referrers', RL2.referrers.map(r=>({
         'REFERRER':r.k,'SOURCE':r.src,'JOB ORDERS':r.jos,'COMPLETED':r.done,'COMPLETION %':+r.rate.toFixed(2),
         'BARANGAYS':r.nb,'ENCODED BY':Object.keys(r.agents).join(', ')
-      }))), 'Referrers');
+      }))));
     const cov=[]; RL2.agents.forEach(a=>Object.entries(a.brgys)
       .sort((x,y)=>y[1]-x[1]).forEach(([b,c])=>{ const r=R.find(z=>z.c===b);
         cov.push({'AGENT':a.u,'SOURCE':a.console?'console / import':'field agent',
           'BARANGAY':r?r.n:b,'DISTRICT':r?r.d:'','JOB ORDERS':c,
           'BARANGAY SATURATION %':r?+r.sat.toFixed(2):'','BARANGAY GAP':r?Math.round(r.gap):''});}));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cov), 'Areas covered');
-    XLSX.writeFile(wb, `AHBA_sales_record_${agFrom}_to_${agTo}.xlsx`);
+    SHEETS.push(tbl('Areas covered', cov));
+
+    if(btn){btn.disabled=true;btn.textContent='Building the pivot…';}
+    let parts;
+    try{
+      parts=buildSalesWorkbook({sheets:SHEETS, pivot:{
+        name:'Pivot', source:'Job orders',
+        rowFields:['DATE ENCODED (DAY)','SALES AGENT','REFERRAL NAME'],
+        subtotal:[0],
+        data:[{field:'LOAD COUNT',name:'Loads encoded'},
+              {field:'COMPLETED COUNT',name:'Loads completed'}]
+      }});
+    }catch(e){
+      if(btn){btn.disabled=false;btn.textContent=lbl;}
+      (window.showToast||alert)('Could not build the pivot: '+(e.message||e)); return;
+    }
+    const zip=new JSZip();
+    Object.keys(parts).forEach(k=>zip.file(k,parts[k]));
+    let blob;
+    try{ blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',
+      mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}); }
+    catch(e){ if(btn){btn.disabled=false;btn.textContent=lbl;}
+      (window.showToast||alert)('Could not write the workbook: '+(e.message||e)); return; }
+    if(btn){btn.disabled=false;btn.textContent=lbl;}
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=`AHBA_sales_record_${agFrom}_to_${agTo}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
   }
 
   /* ---------- render + wiring ---------- */
