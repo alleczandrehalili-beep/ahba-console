@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-11-21.12" />
+  <link rel="stylesheet" href="styles.css?v=2026-11-21.13" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -329,7 +329,7 @@
       </section>
 
       <section id="workordersPage" class="page">
-        <div class="page-toolbar"><div><h2>Work orders</h2><p>All installation and repair requests.</p></div><div class="toolbar-actions"><input type="date" id="woDate" title="Filter work orders by date (load date, or encoded date if not yet loaded)" style="height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff"><button class="secondary-btn" id="woExtract" title="Extract raw work-order data — every column plus the full JO history/status trail — to Excel"><i data-icon="arrow"></i>Extract</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>New work order</button></div></div>
+        <div class="page-toolbar"><div><h2>Work orders</h2><p>All installation and repair requests.</p></div><div class="toolbar-actions"><label style="display:inline-flex;align-items:center;gap:7px;height:40px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap" title="Filter work orders by date range (load date, or encoded date if not yet loaded)">From <input type="date" id="woFrom" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label><label style="display:inline-flex;align-items:center;gap:7px;height:40px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap">To <input type="date" id="woTo" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label><button class="secondary-btn" id="woExtract" title="Extract raw work-order data — every column plus the full JO history/status trail — to Excel"><i data-icon="arrow"></i>Extract</button><button class="primary-btn" data-action="new-order"><i data-icon="plus"></i>New work order</button></div></div>
         <article class="panel full-table"><div class="filter-row"><div class="search-box"><i data-icon="search"></i><input id="jobSearch" placeholder="Search subscriber, ID, or area"></div><div class="filter-chips" id="jobFilters"><button class="active" data-filter="all">All</button><button data-filter="installation">Installation</button><button data-filter="repair">Repair</button><button data-filter="pending">Pending</button></div></div><div class="table-wrap"><table><thead><tr><th>Work order</th><th>Subscriber</th><th>Service</th><th>Location</th><th>Team</th><th>Status</th><th>Schedule</th></tr></thead><tbody id="workOrderBody"></tbody></table><div class="empty-row" id="workOrderEmpty" hidden>No work orders match your filters.</div></div></article>
       </section>
 
@@ -867,21 +867,21 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-11-21.12"></script>
-  <script src="qa-photo-corrections.js?v=2026-11-21.12"></script>
-  <script src="hr-core.js?v=2026-11-21.12"></script>
-  <script src="hr-api.js?v=2026-11-21.12"></script>
-  <script src="hr-attendance-import.js?v=2026-11-21.12"></script>
-  <script src="hr-sheets.js?v=2026-11-21.12"></script>
-  <script src="console-hr.js?v=2026-11-21.12"></script>
-  <script src="hr-entry.js?v=2026-11-21.12"></script>
-  <script src="console-sli-reports.js?v=2026-11-21.12"></script>
-  <script src="app.js?v=2026-11-21.12"></script>
+  <script src="qa-wims-export.js?v=2026-11-21.13"></script>
+  <script src="qa-photo-corrections.js?v=2026-11-21.13"></script>
+  <script src="hr-core.js?v=2026-11-21.13"></script>
+  <script src="hr-api.js?v=2026-11-21.13"></script>
+  <script src="hr-attendance-import.js?v=2026-11-21.13"></script>
+  <script src="hr-sheets.js?v=2026-11-21.13"></script>
+  <script src="console-hr.js?v=2026-11-21.13"></script>
+  <script src="hr-entry.js?v=2026-11-21.13"></script>
+  <script src="console-sli-reports.js?v=2026-11-21.13"></script>
+  <script src="app.js?v=2026-11-21.13"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-11-21.12"></script>
+  <script src="ahba-cloud.js?v=2026-11-21.13"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-11-21.12"></script><script src="qa-subscriber-info.js?v=2026-11-21.12"></script><script src="qa-api.js?v=2026-11-21.12"></script><script src="console-qa.js?v=2026-11-21.12"></script><script src="console-qa-findings.js?v=2026-11-21.12"></script>
-  <script src="fms-core.js?v=2026-11-21.12"></script><script src="fms-api.js?v=2026-11-21.12"></script><script src="console-fms.js?v=2026-11-21.12"></script>
-  <script src="sat-data.js?v=2026-11-21.12"></script><script src="console-sat.js?v=2026-11-21.12"></script>
+  <script src="qa-core.js?v=2026-11-21.13"></script><script src="qa-subscriber-info.js?v=2026-11-21.13"></script><script src="qa-api.js?v=2026-11-21.13"></script><script src="console-qa.js?v=2026-11-21.13"></script><script src="console-qa-findings.js?v=2026-11-21.13"></script>
+  <script src="fms-core.js?v=2026-11-21.13"></script><script src="fms-api.js?v=2026-11-21.13"></script><script src="console-fms.js?v=2026-11-21.13"></script>
+  <script src="sat-data.js?v=2026-11-21.13"></script><script src="console-sat.js?v=2026-11-21.13"></script>
 </body>
 </html>

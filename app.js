@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.12';
+const APP_VERSION='2026-11-21.13';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1281,12 +1281,12 @@ const woRowDate=j=> j.load_date ? String(j.load_date).slice(0,10)
 function applyJobTableFilter(){
   const chip=$('#jobFilters .active'), f=chip?chip.dataset.filter:'all';
   const q=($('#jobSearch')?.value||'').toLowerCase().trim();
-  const d=$('#woDate')?.value||'';
+  const dfrom=$('#woFrom')?.value||'', dto=$('#woTo')?.value||'';
   let shown=0;
   $$('#workOrderBody tr').forEach(r=>{
     const matchesChip = f==='all' || (f==='pending'?r.dataset.status==='pending':r.dataset.type===f);
     const matchesText = !q || r.dataset.text.includes(q);
-    const matchesDate = !d || r.dataset.date===d;
+    const matchesDate = (!dfrom&&!dto) || (r.dataset.date && (!dfrom||r.dataset.date>=dfrom) && (!dto||r.dataset.date<=dto));
     const show=matchesChip&&matchesText&&matchesDate;
     r.style.display=show?'':'none';
     if(show) shown++;
@@ -1300,13 +1300,13 @@ function applyJobTableFilter(){
 const WO_EXTRACT_LEAD=['id','status','priority','load_type','load_date','schedule','scheduled_at','team','created_by','work_account','crew_driver','crew_tech1','crew_tech2','subscriber','plan','type','area','address','district','city','brgy','village','street_name','house_no','ibass_acct_no','job_order_no','vas_no','ref_no','new_ref','primary_no','other_contact_no','email','created_at','validated','validated_at','validated_by','dispatch_status','dispatch_count','completed_at','negative_at','negative_remark','cancel_remark','qa_status','qa_assessment','qa_inspected_at','payment_mode','payment_amount','ar_no','amount_to_collect','remittance_received','remittance_received_by','remittance_received_at','updated_at'];
 async function extractWorkOrders(){
   const btn=$('#woExtract'); if(btn&&btn.disabled) return;
-  const d=$('#woDate')?.value||'';
+  const f=$('#woFrom')?.value||'', tto=$('#woTo')?.value||'';
   const prev=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent='Extracting…'; }
   try{
     try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
     let list;
-    if(d){
-      list=await AHBACloud.getJobsRawByDate(d);
+    if(f||tto){
+      list=await AHBACloud.getJobsRawByDate(f||tto, tto||f);
     }else{
       const vis=new Set($$('#workOrderBody tr').filter(r=>r.style.display!=='none').map(r=>r.dataset.jobid));
       list=jobs.filter(j=>vis.has(j.id));
@@ -1331,7 +1331,7 @@ async function extractWorkOrders(){
     XLSX.utils.book_append_sheet(wb,ws2,'JO History (per move)');
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'}));
-    a.download=`AHBA_WorkOrders_RAW_${d||manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+    a.download=`AHBA_WorkOrders_RAW_${(f||tto)?(f||tto)+'_to_'+(tto||f):manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`${list.length} work order${list.length===1?'':'s'} extracted (with full history)`);
   }catch(e){ showToast('Extract failed: '+(e&&e.message||e)); }
@@ -4512,7 +4512,7 @@ async function renderSlrTickets(force){
   const cnt={open:0,completed:0,cancelled:0}; uni.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
   let list=uni;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
-  if(slrSfD) list=list.filter(u=>slrSfDayMatch(u.received,slrSfD));
+  if(slrSfFrom||slrSfTo) list=list.filter(u=>slrSfInRange(u.received,slrSfFrom,slrSfTo));
   if(slrUniWho) list=list.filter(u=>u.tech===slrUniWho||u.fo.some(t=>t.team===slrUniWho));
   if(slrSfQ){ const q=slrSfQ.toUpperCase(); list=list.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(t=>(t.ticket_no||'')+' '+t.id).join(' ')].join(' ').toUpperCase().includes(q)); }
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
@@ -4530,8 +4530,8 @@ async function renderSlrTickets(force){
     </div>
     <div class="filter-row" style="align-items:center">
       <select id="slrUniWho" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff;max-width:230px"><option value="">All teams / technicians</option>${who.map(n=>`<option ${slrUniWho===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
-      <select id="slrSfDMode" title="Filter by one day or a whole month" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;color:#52635f;background:#fff"><option value="date" ${slrSfDMode==='date'?'selected':''}>Day</option><option value="month" ${slrSfDMode==='month'?'selected':''}>Month</option></select>
-      <input type="${slrSfDMode}" id="slrSfDate" title="Filter by received ${slrSfDMode==='month'?'month':'date'}" value="${esc(slrSfD)}" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff">
+      <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap" title="Received-date range — set From only, To only, or both">From <input type="date" id="slrSfFrom" value="${esc(slrSfFrom)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
+      <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap">To <input type="date" id="slrSfTo" value="${esc(slrSfTo)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
     </div>
@@ -4554,8 +4554,8 @@ async function renderSlrTickets(force){
     renderSlrTickets._t=setTimeout(()=>{ renderSlrTickets().then(()=>{ const n=$('#slrUniSearch'); if(n){ n.focus(); try{ n.setSelectionRange(n.value.length,n.value.length); }catch(e){} } }); },300); };
   $$('#slrUniStChips [data-unist]').forEach(b=>b.onclick=()=>{ slrSfSt=b.dataset.unist; renderSlrTickets(); });
   const ws=$('#slrUniWho'); if(ws) ws.onchange=()=>{ slrUniWho=ws.value; renderSlrTickets(); };
-  const di=$('#slrSfDate'); if(di) di.onchange=()=>{ slrSfD=di.value; renderSlrTickets(); };
-  const dm=$('#slrSfDMode'); if(dm) dm.onchange=()=>{ slrSfDMode=dm.value; slrSfD=''; renderSlrTickets(); };
+  const df=$('#slrSfFrom'); if(df) df.onchange=()=>{ slrSfFrom=df.value; renderSlrTickets(); };
+  const dt=$('#slrSfTo'); if(dt) dt.onchange=()=>{ slrSfTo=dt.value; renderSlrTickets(); };
   const sy=$('#slrSfSync'); if(sy) sy.onclick=()=>renderSlrTickets(true);
   w.querySelectorAll('[data-uniview]').forEach(b=>b.onclick=()=>{ const u=renderSlrTickets._list[+b.dataset.uniview]; if(!u) return; if(u.fo.length) openSlrDetail(u.fo[0].id); else slrSfCaseDetail(u.sf); });
   slrBadgePaint();
@@ -4580,7 +4580,7 @@ async function exportSlrTickets(){
 }
 // ═════════ SLR · SalesForce unified monitoring (owner-approved design 2026-11-21) ═════════
 // docs/superpowers/specs/2026-11-21-slr-unified-monitoring-design.md
-let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfD='', slrSfDMode='date', slrUniWho='';
+let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfFrom='', slrSfTo='', slrUniWho='';
 // '10/1/2026, 12:07 AM' → ISO pinned sa Manila (+08:00). Tumatanggap din ng Excel date serial.
 function slrSfDateIso(v){
   if(v==null||v==='') return null;
@@ -4592,8 +4592,9 @@ function slrSfDateIso(v){
   return `${m[3]}-${p(m[1])}-${p(m[2])}T${p(h)}:${m[5]}:${m[6]||'00'}+08:00`;
 }
 const slrSfDay=iso=>iso?new Date(iso).toLocaleDateString('en-CA',{timeZone:TZ}):'';
-// Tumatanggap ng ARAW (YYYY-MM-DD) o BUONG BUWAN (YYYY-MM) ang received-date filter.
-const slrSfDayMatch=(iso,sel)=>{ if(!sel) return true; const d=slrSfDay(iso); return sel.length===7 ? d.slice(0,7)===sel : d===sel; };
+// From/To range (owner 2026-11-21): saklaw ng dalawang petsa ang received-date filter;
+// blangkong From = walang simula, blangkong To = hanggang ngayon. Walang petsa ang row → labas kapag may filter.
+const slrSfInRange=(iso,f,t)=>{ if(!f&&!t) return true; const d=slrSfDay(iso); if(!d) return false; return (!f||d>=f)&&(!t||d<=t); };
 // I-parse ang aging export (array-of-arrays): hanapin ang header row by COLUMN NAMES
 // (hindi position — lumilipat ang layout ng SalesForce reports), laktawan ang Total row.
 function slrSfParse(aoa){
@@ -6177,7 +6178,8 @@ function init(){
   { const _te=$('#teamsDate'); if(_te){ _te.value=manilaToday(); _te.max=manilaToday(); _te.onchange=e=>teamsSetDate(e.target.value); } }
   $('#jobSearch').oninput=applyJobTableFilter;
   $$('#jobFilters button').forEach(b=>b.onclick=()=>{$$('#jobFilters button').forEach(x=>x.classList.remove('active'));b.classList.add('active');applyJobTableFilter()});
-  const _wd=$('#woDate'); if(_wd) _wd.onchange=applyJobTableFilter;
+  const _wf=$('#woFrom'); if(_wf) _wf.onchange=applyJobTableFilter;
+  const _wt=$('#woTo'); if(_wt) _wt.onchange=applyJobTableFilter;
   const _wx=$('#woExtract'); if(_wx) _wx.onclick=extractWorkOrders;
 
   $('#autoAssignBtn').onclick=()=>{const pending=jobs.find(j=>j.status==='pending');pending?openAssign(pending.id):showToast('No unassigned jobs in the queue')};

@@ -130,10 +130,12 @@
   // Kasama ang JO kapag load_date = araw na iyon O na-encode sa araw na iyon,
   // kaya kahit petsa na lampas na sa live window ay makukuha pa rin. Walang
   // bagong pinto ito — RLS pa rin ang pumipigil sa hindi dapat makakita.
-  async function getJobsRawByDate(d) {
-    const startMs = new Date(d + 'T00:00:00+08:00').getTime();
-    const start = new Date(startMs).toISOString(), end = new Date(startMs + 86400000).toISOString();
-    const orExpr = 'or=(load_date.eq.' + d + ',and(created_at.gte.' + start + ',created_at.lt.' + end + '))';
+  async function getJobsRawByDate(from, to) {
+    to = to || from;
+    if (String(from) > String(to)) { const sw = from; from = to; to = sw; }
+    const start = new Date(from + 'T00:00:00+08:00').toISOString();
+    const end = new Date(new Date(to + 'T00:00:00+08:00').getTime() + 86400000).toISOString();
+    const orExpr = 'or=(and(load_date.gte.' + from + ',load_date.lte.' + to + '),and(created_at.gte.' + start + ',created_at.lt.' + end + '))';
     const rows = [];
     for (let off = 0; off < 10000; off += 1000) {
       const page = await request('jobs?select=*&deleted_at=is.null&' + orExpr + '&order=created_at.asc&limit=1000&offset=' + off);
