@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.13';
+const APP_VERSION='2026-11-21.14';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4512,7 +4512,7 @@ async function renderSlrTickets(force){
   const cnt={open:0,completed:0,cancelled:0}; uni.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
   let list=uni;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
-  if(slrSfFrom||slrSfTo) list=list.filter(u=>slrSfInRange(u.received,slrSfFrom,slrSfTo));
+  if(slrSfFrom||slrSfTo) list=list.filter(u=>slrDaysInRange(u.days,slrSfFrom,slrSfTo));
   if(slrUniWho) list=list.filter(u=>u.tech===slrUniWho||u.fo.some(t=>t.team===slrUniWho));
   if(slrSfQ){ const q=slrSfQ.toUpperCase(); list=list.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(t=>(t.ticket_no||'')+' '+t.id).join(' ')].join(' ').toUpperCase().includes(q)); }
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
@@ -4530,7 +4530,7 @@ async function renderSlrTickets(force){
     </div>
     <div class="filter-row" style="align-items:center">
       <select id="slrUniWho" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff;max-width:230px"><option value="">All teams / technicians</option>${who.map(n=>`<option ${slrUniWho===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
-      <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap" title="Received-date range — set From only, To only, or both">From <input type="date" id="slrSfFrom" value="${esc(slrSfFrom)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
+      <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap" title="Shows cases RECEIVED or DISPATCHED within the range — set From only, To only, or both">From <input type="date" id="slrSfFrom" value="${esc(slrSfFrom)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
       <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap">To <input type="date" id="slrSfTo" value="${esc(slrSfTo)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
@@ -4592,9 +4592,10 @@ function slrSfDateIso(v){
   return `${m[3]}-${p(m[1])}-${p(m[2])}T${p(h)}:${m[5]}:${m[6]||'00'}+08:00`;
 }
 const slrSfDay=iso=>iso?new Date(iso).toLocaleDateString('en-CA',{timeZone:TZ}):'';
-// From/To range (owner 2026-11-21): saklaw ng dalawang petsa ang received-date filter;
-// blangkong From = walang simula, blangkong To = hanggang ngayon. Walang petsa ang row → labas kapag may filter.
-const slrSfInRange=(iso,f,t)=>{ if(!f&&!t) return true; const d=slrSfDay(iso); if(!d) return false; return (!f||d>=f)&&(!t||d<=t); };
+// From/To range (owner 2026-11-21): tumutugma ang row kapag may ACTIVITY sa saklaw —
+// na-RECEIVE o na-DISPATCH sa loob ng range (ang aging file ay puno ng lumang received
+// dates, pero ang hanap ng owner ay "ano ang na-dispatch sa araw na ito at status nito").
+const slrDaysInRange=(days,f,t)=>{ if(!f&&!t) return true; return (days||[]).some(d=>d&&(!f||d>=f)&&(!t||d<=t)); };
 // I-parse ang aging export (array-of-arrays): hanapin ang header row by COLUMN NAMES
 // (hindi position — lumilipat ang layout ng SalesForce reports), laktawan ang Total row.
 function slrSfParse(aoa){
@@ -4713,7 +4714,9 @@ function slrUniBuild(sfRows, foRows, nowMs){
     let aging=c?c.aging:null;
     if(!c&&t&&t.created_at){ const end=(foSt==='completed'&&t.completed_at)?new Date(t.completed_at).getTime():nowMs;
       aging=Math.max(0,(end-new Date(t.created_at).getTime())/86400000); }
-    return { sf:c, fo:u.fo, state, received, aging,
+    const days=c?[...new Set([slrSfDay(c.opened)].concat((c.appts||[]).map(a=>slrSfDay(a.dispatched_at))).filter(Boolean))]
+               :[slrSfDay(t&&t.created_at)].filter(Boolean);
+    return { sf:c, fo:u.fo, state, received, aging, days,
       source:c?(u.fo.length?'both':'sf'):'fieldops',
       id:c?c.case_no:(t.ticket_no||t.id),
       sub:c?(c.account_name||''):(t.subscriber||''),
