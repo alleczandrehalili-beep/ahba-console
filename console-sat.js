@@ -496,7 +496,7 @@
      projection, paginated, fetched only when the tab is opened, because 98.5%
      of this project's Supabase egress is already PostgREST.
      ====================================================================== */
-  let AG=null, agDays=90, agBusy=false, agErr='', agSort='jos';
+  let AG=null, agDays=90, agBusy=false, agErr='', agSort='jos', agView='day', agAgent='';
   const AG_DONE=new Set(['completed']);
   const AG_DEAD=new Set(['cancelled','negative','rejected']);
 
@@ -504,7 +504,7 @@
     agBusy=true; agErr=''; paint();
     try{
       const from=new Date(Date.now()-agDays*864e5).toISOString();
-      const sel='created_by,encoded_by,brgy,district,status,load_type,created_at';
+      const sel='created_by,encoded_by,brgy,district,status,load_type,created_at,source_of_sales,referral_name';
       const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
       const rows=[];
       for(let off=0; off<40000; off+=1000){
@@ -526,6 +526,11 @@
       .replace(/Ñ/g,'N').replace(/['.]/g,'').replace(/\s+/g,' ')
       .replace(/^STO /,'SANTO ').replace(/^STA /,'SANTA ').replace(/\(.*?\)/g,'').trim();
 
+  const dayKey = iso => String(iso||'').slice(0,10);
+  const ST_LABEL = {for_validation:'For validation',pending:'For dispatch',assigned:'Assigned',
+    'en-route':'En route','on-site':'On site','in-progress':'In progress',completed:'Completed',
+    negative:'Incomplete',cancelled:'Cancelled',rejected:'Rejected'};
+
   function agRoll(){
     const byA={}, byB={};
     AG.forEach(j=>{
@@ -545,7 +550,44 @@
       return Object.assign(a,{ nb:bl.length, top:bl.slice(0,3), nd:Object.keys(a.dists).length,
         rate: a.jos? a.done/a.jos*100 : 0 });
     });
-    return {agents, byB};
+    /* day by day: every encode date in the window, split by status */
+    const byD={}, stSeen={};
+    AG.forEach(j=>{
+      const d=dayKey(j.created_at); if(!d) return;
+      const st=(j.status||'').toLowerCase()||'(none)';
+      stSeen[st]=1;
+      const e=byD[d]||(byD[d]={d,jos:0,done:0,dead:0,st:{},agents:{}});
+      e.jos++; e.st[st]=(e.st[st]||0)+1;
+      if(AG_DONE.has(st)) e.done++; else if(AG_DEAD.has(st)) e.dead++;
+      const u=(j.created_by||'').trim(); if(u) e.agents[u]=1;
+    });
+    const days=Object.values(byD).sort((a,b)=>b.d.localeCompare(a.d));
+    const statuses=Object.keys(stSeen).sort((a,b)=>
+      AG.filter(j=>(j.status||'').toLowerCase()===b).length - AG.filter(j=>(j.status||'').toLowerCase()===a).length);
+
+    /* referrals: source of sales, and the named referrer inside it */
+    const bySrc={}, byRef={};
+    AG.forEach(j=>{
+      const st=(j.status||'').toLowerCase();
+      const src=(j.source_of_sales||'').trim()||'(not stated)';
+      const e=bySrc[src]||(bySrc[src]={k:src,jos:0,done:0,refs:{},agents:{}});
+      e.jos++; if(AG_DONE.has(st)) e.done++;
+      const u=(j.created_by||'').trim(); if(u) e.agents[u]=1;
+      const rn=(j.referral_name||'').trim();
+      if(rn){
+        e.refs[rn]=(e.refs[rn]||0)+1;
+        const r=byRef[rn]||(byRef[rn]={k:rn,src,jos:0,done:0,brgys:{},agents:{}});
+        r.jos++; if(AG_DONE.has(st)) r.done++;
+        const b=normB(j.brgy); if(b) r.brgys[b]=1;
+        if(u) r.agents[u]=1;
+      }
+    });
+    const sources=Object.values(bySrc).map(e=>Object.assign(e,{nref:Object.keys(e.refs).length,
+      na:Object.keys(e.agents).length, rate:e.jos?e.done/e.jos*100:0})).sort((a,b)=>b.jos-a.jos);
+    const referrers=Object.values(byRef).map(r=>Object.assign(r,{nb:Object.keys(r.brgys).length,
+      na:Object.keys(r.agents).length, rate:r.jos?r.done/r.jos*100:0})).sort((a,b)=>b.jos-a.jos);
+
+    return {agents, byB, days, statuses, sources, referrers};
   }
 
   function viewAG(){
@@ -572,7 +614,8 @@
         <select id="agDays">${[30,90,180,365].map(d=>`<option value="${d}" ${agDays===d?'selected':''}>Last ${d} days</option>`).join('')}</select>
         <button class="sat-btn" id="agGo">Reload</button></div></div>`;
 
-    const {agents, byB}=agRoll();
+    const RL=agRoll();
+    const {agents, byB, days, statuses, sources, referrers}=RL;
     const tot=agents.reduce((t,a)=>({jos:t.jos+a.jos,done:t.done+a.done,dead:t.dead+a.dead,open:t.open+a.open}),
       {jos:0,done:0,dead:0,open:0});
     const real=agents.filter(a=>!a.console);
@@ -587,7 +630,7 @@
       agents:Object.keys(byB[r.c].agents).length}));
     const mismatch=effort.slice().sort((a,b)=>(b.jos/Math.max(1,b.gap))-(a.jos/Math.max(1,a.gap)));
 
-    return `
+    const head = `
     <div class="sat-card">
       <h3>Sales personnel — last ${agDays} days</h3>
       <p class="sat-cap">Every job order in the window, grouped by who encoded it. Console and import rows are kept
@@ -606,8 +649,91 @@
         <div class="sat-kpi"><span class="k">Barangays touched</span><span class="v">${touched.size}</span>
           <span class="n">of ${R.length} in Quezon City</span></div>
       </div>
-    </div>
+      <div class="sat-tabs" style="margin:12px 0 0">
+        ${[['day','Day by day'],['agent','Per agent'],['ref','Referrals'],['cov','Areas covered']]
+          .map(([k,l])=>`<button class="sat-tab ${agView===k?'on':''}" data-agv="${k}">${l}</button>`).join('')}
+      </div>
+    </div>`;
 
+    /* ---- day by day: every encode date, split by status ---- */
+    const vDay = () => `<div class="sat-card">
+      <h3>Day by day — job orders encoded</h3>
+      <p class="sat-cap">By the date the job order was encoded, with the status each one is in <b>today</b> — not the
+        status it had on that day. A recent day therefore looks unfinished because it is, not because it went badly.</p>
+      <div class="sat-scroll"><table class="sat-tbl"><thead><tr><th>Date</th><th>Encoded</th>
+        ${statuses.map(st=>`<th>${esc(ST_LABEL[st]||st)}</th>`).join('')}<th>Completion %</th><th>Agents</th></tr></thead><tbody>
+        ${days.map(d=>`<tr><td class="mono">${esc(d.d)} <span class="sat-faint sat-xs">${new Date(d.d+'T00:00:00Z').toLocaleDateString('en-US',{weekday:'short',timeZone:'UTC'})}</span></td>
+          <td class="num"><b>${n0(d.jos)}</b></td>
+          ${statuses.map(st=>`<td class="num ${AG_DONE.has(st)?'sat-ok':AG_DEAD.has(st)?'sat-no':''}">${d.st[st]?n0(d.st[st]):'<span class="sat-faint">·</span>'}</td>`).join('')}
+          <td class="num">${d.jos?n1(d.done/d.jos*100):0}%</td>
+          <td class="num">${Object.keys(d.agents).length}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td><b>Total</b></td><td class="num"><b>${n0(days.reduce((x,d)=>x+d.jos,0))}</b></td>
+        ${statuses.map(st=>`<td class="num"><b>${n0(days.reduce((x,d)=>x+(d.st[st]||0),0))}</b></td>`).join('')}
+        <td class="num"><b>${tot.jos?n1(tot.done/tot.jos*100):0}%</b></td><td class="num">—</td></tr></tfoot></table></div>
+      <p class="sat-cap" style="margin-top:8px">${days.length} days with activity in the window.
+        Busiest: <b>${esc(days.slice().sort((a,b)=>b.jos-a.jos)[0].d)}</b> with
+        ${n0(days.slice().sort((a,b)=>b.jos-a.jos)[0].jos)} encoded.
+        Average <b>${n1(tot.jos/days.length)}</b> a day across days that had any.</p>
+    </div>`;
+
+    /* ---- referrals ---- */
+    const vRef = () => {
+      const named=referrers.length, unnamed=tot.jos-referrers.reduce((s,r)=>s+r.jos,0);
+      return `<div class="sat-card">
+        <h3>Source of sales</h3>
+        <p class="sat-cap">Where the job order came from, as encoded on the form. <b>${n0(unnamed)}</b> of
+          ${n0(tot.jos)} carry no named referrer.</p>
+        <table class="sat-tbl"><thead><tr><th style="text-align:left">Source</th><th>Job orders</th><th>Completed</th>
+          <th>Completion %</th><th>Named referrers</th><th>Agents</th></tr></thead><tbody>
+          ${sources.map(e=>`<tr><td><b>${esc(e.k)}</b></td><td class="num">${n0(e.jos)}</td>
+            <td class="num sat-ok">${n0(e.done)}</td><td class="num">${n1(e.rate)}%</td>
+            <td class="num">${n0(e.nref)}</td><td class="num">${n0(e.na)}</td></tr>`).join('')}
+        </tbody></table></div>
+      ${named?`<div class="sat-card">
+        <h3>Named referrers — ${named}</h3>
+        <p class="sat-cap">Each person credited in <span class="mono">referral_name</span>, what they brought in, and
+          which agent encoded it. This is the commission trail.</p>
+        <div class="sat-scroll"><table class="sat-tbl"><thead><tr><th style="text-align:left">Referrer</th>
+          <th style="text-align:left">Source</th><th>Job orders</th><th>Completed</th><th>Completion %</th>
+          <th>Barangays</th><th style="text-align:left">Encoded by</th></tr></thead><tbody>
+          ${referrers.slice(0,60).map(r=>`<tr><td><b>${esc(r.k)}</b></td><td class="sat-xs">${esc(r.src)}</td>
+            <td class="num">${n0(r.jos)}</td><td class="num sat-ok">${n0(r.done)}</td>
+            <td class="num">${n1(r.rate)}%</td><td class="num">${n0(r.nb)}</td>
+            <td class="sat-xs">${Object.keys(r.agents).slice(0,3).map(esc).join(' · ')||'<span class="sat-faint">—</span>'}</td></tr>`).join('')}
+        </tbody></table></div>
+        ${referrers.length>60?`<p class="sat-cap" style="margin-top:7px">Showing the 60 busiest of ${referrers.length}. The export carries all of them.</p>`:''}
+      </div>`:`<div class="sat-card"><div class="sat-box warn"><b>No job order in this window carries a named referrer.</b>
+        <span class="mono">referral_name</span> is empty throughout, so there is no commission trail to report —
+        either referrals are not being encoded, or they are going in under source of sales alone.</div></div>`}`;
+    };
+
+    /* ---- areas covered, per agent ---- */
+    const vCov = () => {
+      const list = agAgent ? agents.filter(a=>a.u===agAgent) : agents.slice().sort((a,b)=>b.nb-a.nb);
+      return `<div class="sat-card">
+        <h3>Areas covered</h3>
+        <p class="sat-cap">Every barangay each agent encoded in, with that barangay's saturation beside it — so a wide
+          reach into saturated ground reads differently from a narrow one into empty ground.</p>
+        <div class="sat-ctl"><span class="lbl">Agent</span>
+          <select id="agWho"><option value="">All agents</option>
+            ${agents.slice().sort((a,b)=>b.jos-a.jos).map(a=>`<option value="${esc(a.u)}" ${agAgent===a.u?'selected':''}>${esc(a.u)} (${a.jos})</option>`).join('')}
+          </select></div>
+        ${list.map(a=>{
+          const bl=Object.entries(a.brgys).sort((x,y)=>y[1]-x[1]);
+          const gapReached=bl.reduce((s,[b])=>{const r=R.find(z=>z.c===b); return s+(r?r.gap:0);},0);
+          return `<div class="sat-agent">
+            <div class="sat-ah"><b>${esc(typeof agentLabel==='function'?agentLabel(a.u):a.u)}</b>
+              ${a.console?'<span class="pill p-gry">console / import</span>':''}
+              <s>${n0(a.jos)} JOs · ${n0(a.nb)} barangays · ${n0(a.nd)} districts · ${n1(a.rate)}% completed
+                 · ${n0(gapReached)} of gap reached</s></div>
+            <div class="sat-pills">${bl.map(([b,c])=>{const r=R.find(z=>z.c===b);
+              return `<span class="pill ${r?satCls(r.sat):'p-gry'}">${esc(r?r.n:b)} <b>${c}</b>${r?` <s>${n1(r.sat)}%</s>`:''}</span>`;}).join(' ')}</div>
+          </div>`;}).join('')}
+      </div>`;
+    };
+
+    /* ---- per agent: the original monitoring view ---- */
+    const vAgent = () => `
     ${blind.length?`<div class="sat-card">
       <h3>Barangays with opportunity and no sales activity — ${blind.length}</h3>
       <p class="sat-cap">These have a real gap to 10% and <b>not one job order</b> from anybody in the last ${agDays} days.
@@ -677,6 +803,9 @@
             .map(([u,c])=>`${esc(u)} <b>${c}</b>`).join(' · ')}</td></tr>`).join('')}
       </tbody></table></div>
     </div>`;
+
+    return head + (agView==='day'?vDay() : agView==='ref'?vRef() : agView==='cov'?vCov() : vAgent());
+
   }
 
   async function exportAG(){
@@ -699,6 +828,29 @@
         'JO PER 100 GAP':r.gap>0?+((e?e.jos:0)/r.gap*100).toFixed(1):'',
         'NO ACTIVITY':e?'':'YES','WIN-BACK':r.w,'REACTIVATE':r.x,'MIGRATE':r.mig};
     })), 'Barangay coverage');
+    const RL2=agRoll();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.days.map(d=>{
+      const o={'DATE':d.d,'WEEKDAY':new Date(d.d+'T00:00:00Z').toLocaleDateString('en-US',{weekday:'long',timeZone:'UTC'}),
+        'ENCODED':d.jos,'COMPLETED':d.done,'COMPLETION %':d.jos?+(d.done/d.jos*100).toFixed(2):0,
+        'CANCELLED / REJECTED':d.dead,'AGENTS':Object.keys(d.agents).length};
+      RL2.statuses.forEach(st=>{ o[(ST_LABEL[st]||st).toUpperCase()]=d.st[st]||0; });
+      return o;
+    })), 'Day by day');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.sources.map(e=>({
+      'SOURCE OF SALES':e.k,'JOB ORDERS':e.jos,'COMPLETED':e.done,'COMPLETION %':+e.rate.toFixed(2),
+      'NAMED REFERRERS':e.nref,'AGENTS':e.na
+    }))), 'Source of sales');
+    if(RL2.referrers.length)
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(RL2.referrers.map(r=>({
+        'REFERRER':r.k,'SOURCE':r.src,'JOB ORDERS':r.jos,'COMPLETED':r.done,'COMPLETION %':+r.rate.toFixed(2),
+        'BARANGAYS':r.nb,'ENCODED BY':Object.keys(r.agents).join(', ')
+      }))), 'Referrers');
+    const cov=[]; RL2.agents.forEach(a=>Object.entries(a.brgys)
+      .sort((x,y)=>y[1]-x[1]).forEach(([b,c])=>{ const r=R.find(z=>z.c===b);
+        cov.push({'AGENT':a.u,'SOURCE':a.console?'console / import':'field agent',
+          'BARANGAY':r?r.n:b,'DISTRICT':r?r.d:'','JOB ORDERS':c,
+          'BARANGAY SATURATION %':r?+r.sat.toFixed(2):'','BARANGAY GAP':r?Math.round(r.gap):''});}));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cov), 'Areas covered');
     XLSX.writeFile(wb, `AHBA_sales_record_${agDays}d_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
@@ -727,7 +879,9 @@
       const d=$('#agDays'); if(d) d.onchange=e=>{agDays=+e.target.value;};
       const g=$('#agGo'); if(g) g.onclick=fetchAgents;
       const x=$('#agXl'); if(x) x.onclick=exportAG;
+      $$('#satRoot .sat-tab[data-agv]').forEach(b=>b.onclick=()=>{agView=b.dataset.agv;paint();});
       $$('#agTbl th').forEach(th=>th.onclick=()=>{agSort=th.dataset.gk;paint();});
+      const w=$('#agWho'); if(w) w.onchange=e=>{agAgent=e.target.value;paint();};
     }
   }
   function mount(){

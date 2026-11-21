@@ -291,3 +291,11 @@ html,body{overflow-x:hidden;max-width:100%}
 .sat-det span:first-child{color:#6d7d78}
 .sat-det span:last-child{font-weight:600;font-variant-numeric:tabular-nums}
 #satCv{max-width:100%;border-radius:10px;background:#f7faf8;border:1px solid #e3e8e2;display:block}
+
+.sat-agent{border-top:1px solid #f1f4f1;padding:10px 0}
+.sat-agent:first-of-type{border-top:0}
+.sat-ah{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;font-size:12.5px}
+.sat-ah s{text-decoration:none;color:#9aa8a3;font-size:10.5px}
+.sat-pills .pill s{text-decoration:none;opacity:.7;font-weight:400;margin-left:2px}
+.sat-tbl tfoot td{border-top:1.5px solid #e3e8e2;padding:6px 7px;font-variant-numeric:tabular-nums}
+.sat-tbl tfoot td.num{text-align:right}
