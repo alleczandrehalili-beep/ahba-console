@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.2';
+const APP_VERSION='2026-11-21.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -5610,7 +5610,7 @@ function init(){
   const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
   const _se=$('#slrExport'); if(_se) _se.onclick=exportSlrTickets;
   const _tan=$('#teamAnalyzeBtn'); if(_tan) _tan.onclick=teamAnalyzeOpen;
-  const _trp=$('#teamReportsBtn'); if(_trp) _trp.onclick=()=>{ if(!window.SliReports){ showToast('Reports module failed to load — refresh the page'); return; } SliReports.open({url:SUPA_URL,key:SUPA_KEY,token:dashTok,manilaToday,ensureJSZip,loadAgentNames,upperRows,jobToRow,showToast}); };
+  const _trp=$('#teamReportsBtn'); if(_trp) _trp.onclick=()=>{ if(!window.SliReports){ showToast('Reports module failed to load — refresh the page'); return; } SliReports.open({url:SUPA_URL,key:SUPA_KEY,token:dashTok,manilaToday,ensureJSZip,loadAgentNames,upperRows,jobToRow,showToast,statusLabel,slrFmt}); };
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
   $$('#orderModal input[inputmode="numeric"]').forEach(el=>el.oninput=()=>{el.value=el.value.replace(/\D/g,'').slice(0,11)});
   // Phase 2B: ang expense ay "recorded" na LANG kapag kumpirmado ng server; kapag pumalya,

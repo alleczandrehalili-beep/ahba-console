@@ -42,3 +42,12 @@ test('month helpers',()=>{
   assert.deepEqual(R.monthList('2026-07','2026-11'),['2026-07','2026-08','2026-09','2026-10','2026-11']);
   assert.equal(R.lastDay('2026-02'),28); assert.equal(R.colName(45),'AT');
 });
+test('SLR tickets xlsx: pivot per AHBA_SLR team using TICKET NO',()=>{
+  const mk=(d,team,st,no)=>({'DATE':d,'TICKET NO':no,'TICKET ID':'SLRT-'+no,'TEAM':team,'STATUS':st,'SERVICE DONE':'X\nY'});
+  const {headers,body}=R.normalize([mk('2026-11-02','AHBA_SLR001','COMPLETED','SA-1'),mk('2026-11-02','AHBA_SLR001','CANCELLED','SA-2'),mk('2026-11-03','AHBA_SLR002','COMPLETED','SA-3'),mk('2026-11-03','AHBA_SLI001','COMPLETED','SA-4')]);
+  const {parts,teams,sheetNames}=R.buildXlsxParts(headers,body,{teamTest:t=>/^AHBA_SLR/.test(t),teamField:'TEAM',countField:'TICKET NO',dataSheet:'SLR Tickets',emptyMsg:'none'});
+  assert.deepEqual(teams,['AHBA_SLR001','AHBA_SLR002']); assert.equal(sheetNames.at(-1),'SLR Tickets');
+  const p=parts['xl/pivotTables/pivotTable1.xml'];
+  assert.ok(p.includes('name="Count of TICKET NO"')); assert.ok(parts['xl/pivotCache/pivotCacheDefinition1.xml'].includes('sheet="SLR Tickets"'));
+  assert.ok(parts['xl/worksheets/sheet1.xml'].includes('TEAM')&&parts['xl/worksheets/sheet1.xml'].includes('Count of TICKET NO'));
+});

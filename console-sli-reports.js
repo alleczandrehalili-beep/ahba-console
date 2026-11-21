@@ -88,12 +88,13 @@
     return x+'</worksheet>';
   }
 
-  function buildXlsxParts(headers,body){
+  function buildXlsxParts(headers,body,opts){
+    const O=Object.assign({teamTest:isSli,teamField:'TEAM ASSIGNED',countField:'JOB ORDER NO.',dataSheet:'Load History',emptyMsg:'No AHBA_SLI teams in this month'},opts||{});
     const NF=headers.length, N=body.length;
-    const iD=headers.indexOf('DATE'), iS=headers.indexOf('STATUS'), iT=headers.indexOf('TEAM ASSIGNED'), iJ=headers.indexOf('JOB ORDER NO.');
-    if([iD,iS,iT,iJ].some(i=>i<0)) throw new Error('Load History columns missing');
-    const teams=[...new Set(body.map(r=>r[iT]).filter(isSli))].sort(cmpStr);
-    if(!teams.length) throw new Error('No AHBA_SLI teams in this month');
+    const iD=headers.indexOf('DATE'), iS=headers.indexOf('STATUS'), iT=headers.indexOf(O.teamField), iJ=headers.indexOf(O.countField);
+    if([iD,iS,iT,iJ].some(i=>i<0)) throw new Error(O.dataSheet+' columns missing');
+    const teams=[...new Set(body.map(r=>r[iT]).filter(O.teamTest))].sort(cmpStr);
+    if(!teams.length) throw new Error(O.emptyMsg);
     // shared items (first appearance) + display order (sorted)
     const sh={}, disp={}, pos={};
     [iD,iS,iT].forEach(i=>{ const m=new Map(); body.forEach(r=>{ if(!m.has(r[i])) m.set(r[i],m.size); }); sh[i]=m;
@@ -106,8 +107,8 @@
       const sts=[...new Set(tr.map(r=>r[iS]))].sort(cmpStr);
       const cnt={}; tr.forEach(r=>{ const d=r[iD]; (cnt[d]||(cnt[d]={}))[r[iS]]=((cnt[d]||{})[r[iS]]||0)+1; });
       const dates=Object.keys(cnt).sort(cmpStr), lab=s=>s===''?'(blank)':s;
-      const R=[]; R[0]=[{v:'TEAM ASSIGNED',s:1},{v:t}];
-      R[2]=[{v:'Count of JOB ORDER NO.'},{v:'Column Labels'}];
+      const R=[]; R[0]=[{v:O.teamField,s:1},{v:t}];
+      R[2]=[{v:'Count of '+O.countField},{v:'Column Labels'}];
       R[3]=[{v:'Row Labels',s:1},...sts.map(s=>({v:lab(s),s:1})),{v:'Grand Total',s:1}];
       const tot={}; let r0=4;
       dates.forEach(d=>{ const row=[{v:d,s:2}]; let n=0;
@@ -122,7 +123,7 @@
     // --- Load History sheet
     const LH=[headers.map(h=>({v:h,s:1}))].concat(body.map(r=>r.map(v=>({v}))));
     sheets.push(sheetXml(LH,{freezeRow:true,autoFilter:`A1:${lastCol}${N+1}`}));
-    const sheetNames=teams.concat(['Load History']);
+    const sheetNames=teams.concat([O.dataSheet]);
     // --- pivot cache
     const cf=headers.map((name,i)=>{
       if(sh[i]) return `<cacheField name="${escAttr(name)}" numFmtId="0"><sharedItems count="${sh[i].size}">${[...sh[i].keys()].map(x=>`<s v="${escAttr(x)}"/>`).join('')}</sharedItems></cacheField>`;
@@ -133,7 +134,7 @@
       const lt=body.some(r=>String(r[i]).length>255)?' longText="1"':'';
       return `<cacheField name="${escAttr(name)}" numFmtId="0"><sharedItems${lt}/></cacheField>`;
     }).join('');
-    const cdef=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotCacheDefinition xmlns="${NS}" xmlns:r="${RNS}" r:id="rId1" refreshedBy="AHBA FieldOps" refreshedDate="46340.6" createdVersion="8" refreshedVersion="8" minRefreshableVersion="3" refreshOnLoad="1" recordCount="${N}"><cacheSource type="worksheet"><worksheetSource ref="A1:${lastCol}${N+1}" sheet="Load History"/></cacheSource><cacheFields count="${NF}">${cf}</cacheFields></pivotCacheDefinition>`;
+    const cdef=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotCacheDefinition xmlns="${NS}" xmlns:r="${RNS}" r:id="rId1" refreshedBy="AHBA FieldOps" refreshedDate="46340.6" createdVersion="8" refreshedVersion="8" minRefreshableVersion="3" refreshOnLoad="1" recordCount="${N}"><cacheSource type="worksheet"><worksheetSource ref="A1:${lastCol}${N+1}" sheet="${escAttr(O.dataSheet)}"/></cacheSource><cacheFields count="${NF}">${cf}</cacheFields></pivotCacheDefinition>`;
     const recs=body.map(r=>'<r>'+r.map((v,i)=>sh[i]?`<x v="${sh[i].get(v)}"/>`:(typeof v==='number'?`<n v="${v}"/>`:`<s v="${escAttr(v)}"/>`)).join('')+'</r>').join('');
     const crec=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotCacheRecords xmlns="${NS}" xmlns:r="${RNS}" count="${N}">${recs}</pivotCacheRecords>`;
     // --- pivot tables
@@ -146,7 +147,7 @@
         return '<pivotField showAll="0"/>'; }).join('');
       const ri=m.dates.map(d=>{const p=pos[iD].get(d);return p>0?`<i><x v="${p}"/></i>`:'<i><x/></i>';}).join('');
       const ci=m.sts.map(s=>{const p=pos[iS].get(s);return p>0?`<i><x v="${p}"/></i>`:'<i><x/></i>';}).join('');
-      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotTableDefinition xmlns="${NS}" name="PivotTable${k}" cacheId="1" applyNumberFormats="0" applyBorderFormats="0" applyFontFormats="0" applyPatternFormats="0" applyAlignmentFormats="0" applyWidthHeightFormats="1" dataCaption="Values" updatedVersion="8" minRefreshableVersion="3" useAutoFormatting="1" itemPrintTitles="1" createdVersion="8" indent="0" outline="1" outlineData="1" multipleFieldFilters="0"><location ref="${m.ref}" firstHeaderRow="1" firstDataRow="2" firstDataCol="1" rowPageCount="1" colPageCount="1"/><pivotFields count="${NF}">${pf}</pivotFields><rowFields count="1"><field x="${iD}"/></rowFields><rowItems count="${m.dates.length+1}">${ri}<i t="grand"><x/></i></rowItems><colFields count="1"><field x="${iS}"/></colFields><colItems count="${m.sts.length+1}">${ci}<i t="grand"><x/></i></colItems><pageFields count="1"><pageField fld="${iT}" hier="-1"/></pageFields><dataFields count="1"><dataField name="Count of JOB ORDER NO." fld="${iJ}" subtotal="count" baseField="0" baseItem="0"/></dataFields><pivotTableStyleInfo name="PivotStyleMedium4" showRowHeaders="1" showColHeaders="1" showRowStripes="0" showColStripes="0" showLastColumn="1"/></pivotTableDefinition>`;
+      return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<pivotTableDefinition xmlns="${NS}" name="PivotTable${k}" cacheId="1" applyNumberFormats="0" applyBorderFormats="0" applyFontFormats="0" applyPatternFormats="0" applyAlignmentFormats="0" applyWidthHeightFormats="1" dataCaption="Values" updatedVersion="8" minRefreshableVersion="3" useAutoFormatting="1" itemPrintTitles="1" createdVersion="8" indent="0" outline="1" outlineData="1" multipleFieldFilters="0"><location ref="${m.ref}" firstHeaderRow="1" firstDataRow="2" firstDataCol="1" rowPageCount="1" colPageCount="1"/><pivotFields count="${NF}">${pf}</pivotFields><rowFields count="1"><field x="${iD}"/></rowFields><rowItems count="${m.dates.length+1}">${ri}<i t="grand"><x/></i></rowItems><colFields count="1"><field x="${iS}"/></colFields><colItems count="${m.sts.length+1}">${ci}<i t="grand"><x/></i></colItems><pageFields count="1"><pageField fld="${iT}" hier="-1"/></pageFields><dataFields count="1"><dataField name="Count of ${escAttr(O.countField)}" fld="${iJ}" subtotal="count" baseField="0" baseItem="0"/></dataFields><pivotTableStyleInfo name="PivotStyleMedium4" showRowHeaders="1" showColHeaders="1" showRowStripes="0" showColStripes="0" showLastColumn="1"/></pivotTableDefinition>`;
     };
     const rels=items=>`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${PKG}">`+items.map(([id,t,g])=>`<Relationship Id="${id}" Type="${REL}${t}" Target="${g}"/>`).join('')+'</Relationships>';
     const F={};
@@ -258,11 +259,31 @@
     return all.filter(j=>{ const d=dayOf(j); return d&&d>=from&&d<=to&&!j.deleted_at; });
   }
 
+  // ---------- SLR tickets (jobs with load_type SLR-TICKET), by created date (Manila) ----------
+  const SLR_HEADERS=['DATE','TICKET NO','TICKET ID','TEAM','STATUS','SUBSCRIBER','IBAS ACCOUNT','CONTACT','ADDRESS','SERVICE DONE','CREATED','COMPLETED'];
+  const isSlr=t=>/^AHBA_SLR/i.test(String(t||''));
+  async function fetchSlr(ctx,from,to){
+    const fs=(from+'T00:00:00+08:00').replace('+','%2B'), es=(to+'T23:59:59.999+08:00').replace('+','%2B');
+    let all=[];
+    for(let off=0;off<30000;off+=1000){
+      const r=await fetch(`${ctx.url}/rest/v1/jobs?select=*&load_type=eq.SLR-TICKET&deleted_at=is.null&created_at=gte.${fs}&created_at=lte.${es}&order=id.asc&limit=1000&offset=${off}`,{headers:{apikey:ctx.key,Authorization:'Bearer '+ctx.token()}});
+      if(!r.ok) throw new Error('SLR tickets fetch failed (HTTP '+r.status+')');
+      const page=await r.json(); all=all.concat(page); if(page.length<1000) break;
+    }
+    return all;
+  }
+  const slrRows=(ctx,tickets)=>ctx.upperRows(tickets.map(t=>({
+    'DATE':t.created_at?new Date(t.created_at).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'}):'',
+    'TICKET NO':t.ticket_no||'','TICKET ID':t.id,'TEAM':t.team||'','STATUS':ctx.statusLabel(t.status||''),
+    'SUBSCRIBER':t.subscriber||'','IBAS ACCOUNT':t.ibass_acct_no||'','CONTACT':t.primary_no||'','ADDRESS':t.address||'',
+    'SERVICE DONE':t.service_remarks||'','CREATED':ctx.slrFmt(t.created_at),'COMPLETED':t.completed_at?ctx.slrFmt(t.completed_at):''})));
+  const SLR_OPTS={teamTest:isSlr,teamField:'TEAM',countField:'TICKET NO',dataSheet:'SLR Tickets',emptyMsg:'No AHBA_SLR teams in this month'};
+
   const loadScript=src=>new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.async=true; s.onload=res; s.onerror=()=>rej(new Error('load failed: '+src)); document.head.appendChild(s); });
   let _pdfP=null;
   const ensureJsPdf=()=>window.jspdf?Promise.resolve():(_pdfP||(_pdfP=loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')));
 
-  async function generate(ctx,from,to,wantXlsx,wantPdf,progress){
+  async function generate(ctx,from,to,wantXlsx,wantPdf,progress,wantSlr){
     if(from>to){ const t=from; from=to; to=t; }
     const months=monthList(from,to);
     const today=ctx.manilaToday(), curM=today.slice(0,7);
@@ -302,6 +323,24 @@
       }
       summary.push(`${mName} ${yy}: ${rk.teams} teams · ${fmt(rk.A)} assigned · ${fmt(rk.C)} completed (${pc(rk.C/rk.A)})`);
     }
+    if(wantSlr){
+      progress('Fetching SLR tickets…');
+      const sRows=slrRows(ctx,await fetchSlr(ctx,rangeFrom,rangeTo));
+      for(const m of months){
+        const [yy,mm]=m.split('-'); const mName=MONTH_NAMES[+mm-1];
+        const rows=sRows.filter(r=>monthKey(r['DATE'])===m);
+        if(!rows.length){ summary.push(`SLR ${mName} ${yy}: no tickets`); continue; }
+        const {headers,body}=normalize(rows);
+        let parts; try{ parts=buildXlsxParts(headers,body,SLR_OPTS).parts; }catch(e){ summary.push(`SLR ${mName} ${yy}: no AHBA_SLR team tickets`); continue; }
+        progress(`Building SLR Excel — ${mName} ${yy}…`);
+        const x=new JSZip(); Object.keys(parts).forEach(k=>x.file(k,parts[k]));
+        const buf=await x.generateAsync({type:'uint8array',compression:'DEFLATE'});
+        const partial=m===curM, day=today.slice(8,10).replace(/^0/,'');
+        zip.file(`SLR/AHBA_SLR_TICKETS_${mName.toUpperCase()}${partial?' 1-'+day:''} ${yy}.xlsx`,buf);
+        const stI=headers.indexOf('STATUS'); const by={}; body.forEach(r=>{ by[r[stI]]=(by[r[stI]]||0)+1; });
+        summary.push(`SLR ${mName} ${yy}: ${fmt(body.length)} tickets · `+Object.keys(by).sort().map(k=>`${k.toLowerCase()} ${by[k]}`).join(', '));
+      }
+    }
     if(!Object.keys(zip.files).length) throw new Error('Nothing to export for this range');
     progress('Zipping…');
     const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
@@ -317,7 +356,7 @@
     const inp='border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px';
     ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-        <div><h3 style="margin:0;font-size:16px">📑 GC SLI Reports</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">One click · per month: Team Performance Excel (PivotTable per AHBA_SLI team + Load History) and the Dual Ranking PDF. Superadmin only.</p></div>
+        <div><h3 style="margin:0;font-size:16px">📑 GC SLI Reports</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">One click · per month: Team Performance Excel (PivotTable per AHBA_SLI team + Load History), the Dual Ranking PDF and the SLR Tickets Excel (PivotTable per AHBA_SLR team + tickets). Superadmin only.</p></div>
         <button class="secondary-btn" id="sliRepClose" style="height:32px">✕</button>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center">
@@ -327,8 +366,9 @@
       <div style="display:flex;gap:16px;margin-top:12px;font-size:12px;color:#33433f">
         <label><input type="checkbox" id="sliRepX" checked> Excel (PivotTables)</label>
         <label><input type="checkbox" id="sliRepP" checked> PDF (Dual Ranking)</label>
+        <label><input type="checkbox" id="sliRepS" checked> SLR Tickets (Excel)</label>
       </div>
-      <p style="font-size:10px;color:#8a9894;margin:10px 0 0">Max 12 months. The current month covers day 1 up to today. Everything downloads as one ZIP (Excel/ and PDF/ folders). The Excel refreshes its PivotTables when opened — click <b>Enable Editing</b> if Excel shows Protected View.</p>
+      <p style="font-size:10px;color:#8a9894;margin:10px 0 0">Max 12 months. The current month covers day 1 up to today. Everything downloads as one ZIP (Excel/, PDF/ and SLR/ folders). The Excel refreshes its PivotTables when opened — click <b>Enable Editing</b> if Excel shows Protected View.</p>
       <div style="display:flex;gap:8px;align-items:center;margin-top:14px"><button class="primary-btn" id="sliRepGo" style="height:38px">Generate reports</button><span id="sliRepMsg" style="font-size:11px;color:#5a6a66"></span></div>
       <ul id="sliRepOut" style="margin:12px 0 0;padding-left:18px;font-size:11px;color:#33433f"></ul>
     </div>`;
@@ -338,11 +378,11 @@
     $('sliRepClose').onclick=()=>ov.remove();
     $('sliRepGo').onclick=async()=>{
       const btn=$('sliRepGo'), msg=$('sliRepMsg'), out=$('sliRepOut');
-      const wx=$('sliRepX').checked, wp=$('sliRepP').checked;
-      if(!wx&&!wp){ msg.textContent='Pick Excel and/or PDF.'; return; }
+      const wx=$('sliRepX').checked, wp=$('sliRepP').checked, ws=$('sliRepS').checked;
+      if(!wx&&!wp&&!ws){ msg.textContent='Pick at least one report.'; return; }
       btn.disabled=true; out.innerHTML='';
       try{
-        const r=await generate(ctx,$('sliRepFrom').value||'2026-07',$('sliRepTo').value||mNow,wx,wp,t=>{ msg.textContent=t; });
+        const r=await generate(ctx,$('sliRepFrom').value||'2026-07',$('sliRepTo').value||mNow,wx,wp,t=>{ msg.textContent=t; },ws);
         out.innerHTML=r.summary.map(s=>`<li>${s.replace(/</g,'&lt;')}</li>`).join('');
         const a=document.createElement('a'); a.href=URL.createObjectURL(r.blob); a.download=r.name; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=>URL.revokeObjectURL(a.href),20000);
