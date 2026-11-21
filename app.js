@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.10';
+const APP_VERSION='2026-11-21.11';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4512,7 +4512,7 @@ async function renderSlrTickets(force){
   const cnt={open:0,completed:0,cancelled:0}; uni.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
   let list=uni;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
-  if(slrSfD) list=list.filter(u=>slrSfDay(u.received)===slrSfD);
+  if(slrSfD) list=list.filter(u=>slrSfDayMatch(u.received,slrSfD));
   if(slrUniWho) list=list.filter(u=>u.tech===slrUniWho||u.fo.some(t=>t.team===slrUniWho));
   if(slrSfQ){ const q=slrSfQ.toUpperCase(); list=list.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(t=>(t.ticket_no||'')+' '+t.id).join(' ')].join(' ').toUpperCase().includes(q)); }
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
@@ -4530,7 +4530,8 @@ async function renderSlrTickets(force){
     </div>
     <div class="filter-row" style="align-items:center">
       <select id="slrUniWho" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff;max-width:230px"><option value="">All teams / technicians</option>${who.map(n=>`<option ${slrUniWho===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
-      <input type="date" id="slrSfDate" title="Filter by received date" value="${esc(slrSfD)}" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff">
+      <select id="slrSfDMode" title="Filter by one day or a whole month" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 8px;font-size:12px;color:#52635f;background:#fff"><option value="date" ${slrSfDMode==='date'?'selected':''}>Day</option><option value="month" ${slrSfDMode==='month'?'selected':''}>Month</option></select>
+      <input type="${slrSfDMode}" id="slrSfDate" title="Filter by received ${slrSfDMode==='month'?'month':'date'}" value="${esc(slrSfD)}" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff">
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
     </div>
@@ -4554,6 +4555,7 @@ async function renderSlrTickets(force){
   $$('#slrUniStChips [data-unist]').forEach(b=>b.onclick=()=>{ slrSfSt=b.dataset.unist; renderSlrTickets(); });
   const ws=$('#slrUniWho'); if(ws) ws.onchange=()=>{ slrUniWho=ws.value; renderSlrTickets(); };
   const di=$('#slrSfDate'); if(di) di.onchange=()=>{ slrSfD=di.value; renderSlrTickets(); };
+  const dm=$('#slrSfDMode'); if(dm) dm.onchange=()=>{ slrSfDMode=dm.value; slrSfD=''; renderSlrTickets(); };
   const sy=$('#slrSfSync'); if(sy) sy.onclick=()=>renderSlrTickets(true);
   w.querySelectorAll('[data-uniview]').forEach(b=>b.onclick=()=>{ const u=renderSlrTickets._list[+b.dataset.uniview]; if(!u) return; if(u.fo.length) openSlrDetail(u.fo[0].id); else slrSfCaseDetail(u.sf); });
   slrBadgePaint();
@@ -4578,7 +4580,7 @@ async function exportSlrTickets(){
 }
 // ═════════ SLR · SalesForce unified monitoring (owner-approved design 2026-11-21) ═════════
 // docs/superpowers/specs/2026-11-21-slr-unified-monitoring-design.md
-let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfD='', slrUniWho='';
+let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfD='', slrSfDMode='date', slrUniWho='';
 // '10/1/2026, 12:07 AM' → ISO pinned sa Manila (+08:00). Tumatanggap din ng Excel date serial.
 function slrSfDateIso(v){
   if(v==null||v==='') return null;
@@ -4590,6 +4592,8 @@ function slrSfDateIso(v){
   return `${m[3]}-${p(m[1])}-${p(m[2])}T${p(h)}:${m[5]}:${m[6]||'00'}+08:00`;
 }
 const slrSfDay=iso=>iso?new Date(iso).toLocaleDateString('en-CA',{timeZone:TZ}):'';
+// Tumatanggap ng ARAW (YYYY-MM-DD) o BUONG BUWAN (YYYY-MM) ang received-date filter.
+const slrSfDayMatch=(iso,sel)=>{ if(!sel) return true; const d=slrSfDay(iso); return sel.length===7 ? d.slice(0,7)===sel : d===sel; };
 // I-parse ang aging export (array-of-arrays): hanapin ang header row by COLUMN NAMES
 // (hindi position — lumilipat ang layout ng SalesForce reports), laktawan ang Total row.
 function slrSfParse(aoa){
