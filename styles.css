@@ -299,3 +299,9 @@ html,body{overflow-x:hidden;max-width:100%}
 .sat-pills .pill s{text-decoration:none;opacity:.7;font-weight:400;margin-left:2px}
 .sat-tbl tfoot td{border-top:1.5px solid #e3e8e2;padding:6px 7px;font-variant-numeric:tabular-nums}
 .sat-tbl tfoot td.num{text-align:right}
+
+.sat-ctl input[type=date]{font:inherit;font-size:12px;padding:5px 8px;border:1px solid #e3e8e2;border-radius:8px;background:#fff;color:#102925}
+.sat-quick{background:#f5f8f5;border:1px solid #e3e8e2;border-radius:99px;font:inherit;font-size:10.5px;font-weight:700;
+  color:#6d7d78;padding:3px 9px;cursor:pointer;margin-left:4px}
+.sat-quick:hover{border-color:#0e4f45;color:#102925}
+.sat-btn[disabled]{background:#9aa8a3;cursor:progress}
