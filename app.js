@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.4';
+const APP_VERSION='2026-11-21.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3939,6 +3939,7 @@ function initNavGroups(){
 // Isang server-side RPC (team_month_performance) ang nagbubuod per team para sa
 // piniling buwan — installs, dispatched, attendance hours, efficiency, areas.
 let taRows=[], taFrom='', taTo='';   // flat rows: {month, group, ...metrics}
+let taKind='sli';   // 'sli' (New Install) | 'slr' (Repair tickets) — picker sa Analyze overlay
 let taCache={};   // month 'YYYY-MM' -> raw RPC rows (iwas ulit-ulit na fetch; ang export ay YTD)
 async function taFetchMonth(m){
   if(taCache[m]) return taCache[m];
@@ -4036,6 +4037,7 @@ function teamAnalyzeOpen(){
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <label style="font-size:10px;color:#8a9894">From <input type="month" id="taFrom" value="${mFrom}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
         <label style="font-size:10px;color:#8a9894">To <input type="month" id="taTo" value="${mNow}" max="${mNow}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
+        <label style="font-size:10px;color:#8a9894">Report <select id="taKind" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px;font-weight:700"><option value="sli" ${taKind==='sli'?'selected':''}>SLI (New Install)</option><option value="slr" ${taKind==='slr'?'selected':''}>SLR (Repair tickets)</option></select></label>
         <button class="primary-btn" id="taRun" style="height:36px">Analyze</button>
         <button class="secondary-btn" id="taExport" style="height:36px">Export Excel</button>
         <button class="secondary-btn" id="taClose" style="height:36px">✕ Close</button>
@@ -4047,7 +4049,8 @@ function teamAnalyzeOpen(){
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   document.getElementById('taClose').onclick=()=>ov.remove();
   document.getElementById('taRun').onclick=teamAnalyzeRun;
-  document.getElementById('taExport').onclick=teamAnalyzeExport;
+  document.getElementById('taExport').onclick=()=>taKind==='slr'?teamAnalyzeExportSlr():teamAnalyzeExport();
+  document.getElementById('taKind').onchange=e=>{ taKind=e.target.value; taSortKey=taKind==='slr'?'tickets':'installs'; taSortDir=-1; taQuery=''; teamAnalyzeRun(); };
   teamAnalyzeRun();
 }
 async function teamAnalyzeRun(){
@@ -4058,6 +4061,17 @@ async function teamAnalyzeRun(){
   if(taFrom>taTo){ const t=taFrom; taFrom=taTo; taTo=t; }
   const months=taMonthList(taFrom,taTo);
   taRows=[];
+  if(taKind==='slr'){
+    try{
+      await ensureFreshTok();
+      for(let i=0;i<months.length;i++){
+        body.innerHTML=`Crunching SLR tickets — ${taMonthLabel(months[i])}… (${i+1}/${months.length})`;
+        taSlrAgg(months[i],await taSlrFetchMonth(months[i])).forEach(t=>taRows.push(t));
+      }
+    }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+    if(!taRows.length){ body.innerHTML='No SLR tickets found for '+taFrom+' → '+taTo+'.'; return; }
+    taPaintSlr(); return;
+  }
   try{
     await ensureFreshTok();
     for(let i=0;i<months.length;i++){
@@ -4101,6 +4115,7 @@ function taAgg(rows){
   };
 }
 function taPaint(){
+  if(taKind==='slr') return taPaintSlr();
   const body=document.getElementById('taBody'); if(!body||!taRows.length) return;
   const esc=v=>String(v==null?'':v).replace(/</g,'&lt;');
   const num=v=>(v==null?'—':v);
@@ -4272,6 +4287,131 @@ async function teamAnalyzeExport(){
     months.forEach(m=>{ XLSX.utils.book_append_sheet(wb,styleTA(taCols(XLSX.utils.json_to_sheet(per[m].map(t=>mkRow(t,crew[m]))),10,15),8),taMonthLabel(m)); });
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
     showToast(`YTD ${year} exported — AHBA teams only · ${months.length} month sheets + TOTAL`);
+  }catch(e){ showToast('Export failed: '+(e.message||e)); }
+  if(btn) btn.textContent='Export Excel';
+}
+
+// ---------- 🛠 SLR analysis (Analyze → Report = SLR) ----------
+// Per team per buwan, base sa SLR tickets (jobs, load_type=SLR-TICKET) ayon sa petsa ng pagkakagawa (Manila).
+let taSlrCache={};
+async function taSlrFetchMonth(m){
+  if(taSlrCache[m]) return taSlrCache[m];
+  const nd=new Date(m+'-15T00:00:00'); nd.setMonth(nd.getMonth()+1);
+  const next=nd.toISOString().slice(0,7)+'-01';
+  const gte=(m+'-01T00:00:00+08:00').replace('+','%2B'), lt=(next+'T00:00:00+08:00').replace('+','%2B');
+  const rows=[];
+  for(let off=0;off<30000;off+=1000){
+    const r=await fetch(`${SUPA_URL}/rest/v1/jobs?select=id,team,status,created_at,completed_at&load_type=eq.SLR-TICKET&deleted_at=is.null&created_at=gte.${gte}&created_at=lt.${lt}&order=id.asc&limit=1000&offset=${off}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) throw new Error('HTTP '+r.status+' — '+(await r.text()).slice(0,160));
+    const page=await r.json(); rows.push(...page);
+    if(page.length<1000) break;
+  }
+  taSlrCache[m]=rows; return rows;
+}
+function taSlrAgg(m,tickets){
+  const by={};
+  tickets.forEach(t=>{
+    if(!t.team) return;
+    const o=by[t.team]||(by[t.team]={team:t.team,month:m,group:taIsAhba(t.team)?'AHBA':'SUBCON',tickets:0,completed:0,open:0,closed:0,resSum:0,resN:0,days:new Set()});
+    o.tickets++;
+    if(t.status==='completed') o.completed++; else if(SLR_OPEN.includes(t.status)) o.open++; else o.closed++;
+    if(t.created_at) o.days.add(new Date(t.created_at).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'}));
+    if(t.status==='completed'&&t.created_at&&t.completed_at){ const h=(new Date(t.completed_at)-new Date(t.created_at))/3.6e6; if(h>=0){ o.resSum+=h; o.resN++; } }
+  });
+  return Object.values(by).map(o=>({team:o.team,month:o.month,group:o.group,tickets:o.tickets,completed:o.completed,open:o.open,closed:o.closed,
+    days:o.days.size,res_hours:o.resN?o.resSum/o.resN:null,res_sum:o.resSum,res_n:o.resN}));
+}
+const TA_SORTS_SLR={
+  tickets:{label:'Tickets',dir:-1}, completed:{label:'Completed',dir:-1}, rate:{label:'Completion rate',dir:-1},
+  perday:{label:'Tickets per active day',dir:-1}, res:{label:'Avg resolution time',dir:1}, name:{label:'Team name',dir:1},
+};
+function taAggSlr(rows){
+  const s=f=>rows.reduce((a,r)=>a+(+r[f]||0),0);
+  const tk=s('tickets'), cp=s('completed'), days=s('days'), rn=s('res_n'), rs=s('res_sum');
+  return {tickets:tk,completed:cp,rate:tk>0?cp/tk:-1,perday:days>0?tk/days:-1,res:rn>0?rs/rn:Infinity};
+}
+function taPaintSlr(){
+  const body=document.getElementById('taBody'); if(!body||!taRows.length) return;
+  const esc=v=>String(v==null?'':v).replace(/</g,'&lt;');
+  const q=taQuery.trim().toUpperCase();
+  if(!TA_SORTS_SLR[taSortKey]){ taSortKey='tickets'; taSortDir=-1; }
+  const pct=(c,t)=>t>0?(Math.round(c/t*1000)/10)+'%':'—';
+  const hrs=v=>v==null?'—':(Math.round(v*10)/10)+' h';
+  const section=(label,icon,rows)=>{
+    const allTeams=[...new Set(rows.map(r=>r.team))];
+    const teams=allTeams.filter(t=>!q||String(t).toUpperCase().includes(q)).sort((a,b)=>{
+      if(taSortKey==='name') return taSortDir*a.localeCompare(b);
+      const va=taAggSlr(rows.filter(r=>r.team===a))[taSortKey], vb=taAggSlr(rows.filter(r=>r.team===b))[taSortKey];
+      const cmp=va<vb?-1:(va>vb?1:0); return (cmp*taSortDir)||a.localeCompare(b);
+    });
+    if(!allTeams.length) return '';
+    return `<tr><td colspan="9" style="background:#092c29;color:#c9f36a;font-weight:800;font-size:11px;letter-spacing:.08em">${icon} ${label} · ${teams.length}${q?' / '+allTeams.length:''} team${teams.length===1?'':'s'}</td></tr>`
+      + (teams.length?'':`<tr><td colspan="9" class="empty-cell">No team matches the filter.</td></tr>`)
+      + teams.map(tm=>{
+          const mr=rows.filter(r=>r.team===tm).sort((a,b)=>b.month.localeCompare(a.month));
+          return `<tr><td colspan="9" style="background:#f4f8f5;font-weight:800">${esc(tm)}</td></tr>`
+            + mr.map(t=>`<tr><td style="padding-left:26px;color:#52635f">${taMonthLabel(t.month)}</td>
+              <td><b>${t.tickets}</b></td><td><b>${t.completed}</b></td><td><b>${pct(t.completed,t.tickets)}</b></td>
+              <td>${t.open}</td><td>${t.closed}</td><td>${t.days}</td><td>${t.days>0?Math.round(t.tickets/t.days*10)/10:'—'}</td><td>${hrs(t.res_hours)}</td></tr>`).join('');
+        }).join('');
+  };
+  const sortOpts=Object.keys(TA_SORTS_SLR).map(k=>`<option value="${k}" ${k===taSortKey?'selected':''}>${TA_SORTS_SLR[k].label}</option>`).join('');
+  body.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <span style="font:800 9px 'DM Sans',sans-serif;letter-spacing:.08em;color:#8a9894">SORT TEAMS BY</span>
+      <select id="taSortSel" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 8px;font-size:11px;background:#fff">${sortOpts}</select>
+      <button type="button" id="taSortDirBtn" class="secondary-btn" style="height:32px;padding:0 10px;font-size:11px">${taSortDir===-1?'↓ Highest first':'↑ Lowest first'}</button>
+      <input id="taTeamQ" placeholder="Filter team name…" value="${esc(taQuery)}" style="height:32px;border:1px solid var(--line);border-radius:8px;padding:0 10px;font-size:11px;min-width:170px">
+    </div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Team · Month</th><th>Tickets<br>(created)</th><th>Completed</th><th>Completion<br>rate</th><th>Still<br>open</th><th>Cancelled /<br>Incomplete</th><th>Active<br>days</th><th>Tickets per<br>active day</th><th>Avg resolution<br>time</th>
+    </tr></thead><tbody>
+      ${section('AHBA SLR TEAMS','🛠',taRows.filter(r=>r.group==='AHBA'))}
+      ${section('SUBCONTRACTORS','🤝',taRows.filter(r=>r.group==='SUBCON'))}
+    </tbody></table></div>
+    <div style="font-size:10px;color:#8a9894;margin-top:8px">SLR repair tickets (not New Install) · counted by the day the ticket was created (Philippine time) · Avg resolution = created → completed, completed tickets only · Active days = days the team created at least one ticket.</div>`;
+  const ss=document.getElementById('taSortSel'); if(ss) ss.onchange=()=>{ taSortKey=ss.value; taSortDir=TA_SORTS_SLR[taSortKey].dir; taPaintSlr(); };
+  const db=document.getElementById('taSortDirBtn'); if(db) db.onclick=()=>{ taSortDir=-taSortDir; taPaintSlr(); };
+  const tq=document.getElementById('taTeamQ');
+  if(tq){ tq.oninput=()=>{ taQuery=tq.value; const v=tq.value; taPaintSlr(); const t2=document.getElementById('taTeamQ'); if(t2){ t2.focus(); t2.value=v; try{ t2.setSelectionRange(v.length,v.length); }catch(_e){} } }; }
+}
+// EXPORT (SLR) — YTD gaya ng SLI: TOTAL sheet + isang sheet bawat buwan na may tickets. AHBA teams lang.
+async function teamAnalyzeExportSlr(){
+  try{ await ensureXLSXStyle(); }catch(_){ showToast('Excel library failed to load'); return; }
+  const btn=document.getElementById('taExport');
+  const mNow=manilaToday().slice(0,7), year=mNow.slice(0,4);
+  const months=taMonthList(year+'-01', mNow);
+  const r1=v=>v==null?null:Math.round(v*10)/10;
+  try{
+    await ensureFreshTok();
+    const per={};
+    for(let i=0;i<months.length;i++){
+      if(btn) btn.textContent=`Fetching ${i+1}/${months.length}…`;
+      per[months[i]]=taSlrAgg(months[i],await taSlrFetchMonth(months[i])).filter(t=>taIsAhba(t.team)&&t.team!=='AHBA_TEST')
+        .sort((a,b)=>(b.tickets-a.tickets)||a.team.localeCompare(b.team));
+    }
+    const HDR=['GROUP','TEAM','TICKETS (CREATED)','COMPLETED','COMPLETION RATE (%)','STILL OPEN','CANCELLED / INCOMPLETE','ACTIVE DAYS','TICKETS PER ACTIVE DAY','AVG RESOLUTION (HRS)'];
+    const line=t=>['AHBA',t.team,t.tickets,t.completed,t.tickets>0?r1(t.completed/t.tickets*100):null,t.open,t.closed,t.days,t.days>0?r1(t.tickets/t.days):null,r1(t.res_hours!=null?t.res_hours:(t.res_n>0?t.res_sum/t.res_n:null))];
+    const aggMonths=mos=>{
+      const tot={};
+      mos.forEach(m=>per[m].forEach(t=>{ const o=tot[t.team]||(tot[t.team]={team:t.team,tickets:0,completed:0,open:0,closed:0,days:0,res_sum:0,res_n:0});
+        o.tickets+=t.tickets; o.completed+=t.completed; o.open+=t.open; o.closed+=t.closed; o.days+=t.days; o.res_sum+=t.res_sum; o.res_n+=t.res_n; }));
+      return Object.values(tot).map(o=>({...o,res_hours:o.res_n>0?o.res_sum/o.res_n:null})).sort((a,b)=>(b.tickets-a.tickets)||a.team.localeCompare(b.team));
+    };
+    const B={top:{style:'thin'},bottom:{style:'thin'},left:{style:'thin'},right:{style:'thin'}};
+    const style=(ws,lblRows)=>{ const rg=XLSX.utils.decode_range(ws['!ref']||'A1');
+      for(let R=rg.s.r;R<=rg.e.r;R++)for(let C=rg.s.c;C<=rg.e.c;C++){ const c=ws[XLSX.utils.encode_cell({r:R,c:C})]; if(!c) continue;
+        c.s=(lblRows&&lblRows.has(R))?{font:{bold:true,sz:12},fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}},border:B,alignment:{horizontal:'left',vertical:'center'}}
+          :(R===(lblRows?1:0))?{font:{bold:true},fill:{patternType:'solid',fgColor:{rgb:'FFFF00'}},border:B,alignment:{horizontal:'left',vertical:'center'}}
+          :{border:B,alignment:{horizontal:'center',vertical:'center'}}; }
+      ws['!cols']=HDR.map((h,i)=>({wch:i===1?16:(i===0?9:16)})); return ws; };
+    const wb=XLSX.utils.book_new();
+    const withData=months.filter(m=>per[m].length);
+    if(!withData.length){ showToast('No SLR tickets for '+year); if(btn) btn.textContent='Export Excel'; return; }
+    const totAoa=[[`TOTAL YTD ${year} — SLR`],HDR,...aggMonths(withData).map(line)];
+    XLSX.utils.book_append_sheet(wb,style(XLSX.utils.aoa_to_sheet(totAoa),new Set([0])),`TOTAL YTD ${year}`);
+    withData.forEach(m=>{ XLSX.utils.book_append_sheet(wb,style(XLSX.utils.aoa_to_sheet([HDR,...per[m].map(line)])),taMonthLabel(m)); });
+    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_SLR_team_performance_YTD_${year}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+    showToast(`SLR YTD ${year} exported — AHBA teams only · ${withData.length} month sheet${withData.length===1?'':'s'} + TOTAL`);
   }catch(e){ showToast('Export failed: '+(e.message||e)); }
   if(btn) btn.textContent='Export Excel';
 }
