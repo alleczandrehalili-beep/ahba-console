@@ -496,20 +496,26 @@
      projection, paginated, fetched only when the tab is opened, because 98.5%
      of this project's Supabase egress is already PostgREST.
      ====================================================================== */
-  let AG=null, agDays=90, agBusy=false, agErr='', agSort='jos', agView='day', agAgent='';
+  const isoDay = d => new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+  let AG=null, agBusy=false, agErr='', agSort='jos', agView='day', agAgent='';
+  let agTo = isoDay(new Date());
+  let agFrom = isoDay(new Date(Date.now()-29*864e5));
+  const agRangeLabel = () => `${agFrom} to ${agTo}`;
+  const agSpanDays = () => Math.max(1, Math.round((Date.parse(agTo+'T23:59:59')-Date.parse(agFrom+'T00:00:00'))/864e5));
   const AG_DONE=new Set(['completed']);
   const AG_DEAD=new Set(['cancelled','negative','rejected']);
 
   async function fetchAgents(){
     agBusy=true; agErr=''; paint();
     try{
-      const from=new Date(Date.now()-agDays*864e5).toISOString();
+      const from=agFrom+'T00:00:00', to=agTo+'T23:59:59';
       const sel='created_by,encoded_by,brgy,district,status,load_type,created_at,source_of_sales,referral_name';
       const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
       const rows=[];
       for(let off=0; off<40000; off+=1000){
         const url=`${SUPA_URL}/rest/v1/jobs?select=${sel}&deleted_at=is.null`
-                + `&created_at=gte.${encodeURIComponent(from)}&order=created_at.desc&limit=1000&offset=${off}`;
+                + `&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}`
+                + `&order=created_at.desc&limit=1000&offset=${off}`;
         const r=await fetch(url,{headers:H});
         if(!r.ok) throw new Error('HTTP '+r.status);
         const page=await r.json();
@@ -590,29 +596,34 @@
     return {agents, byB, days, statuses, sources, referrers};
   }
 
+  const agPicker = (btn) => `<div class="sat-ctl">
+      <span class="lbl">From</span><input type="date" id="agFrom" value="${agFrom}" max="${agTo}">
+      <span class="lbl">To</span><input type="date" id="agTo" value="${agTo}" min="${agFrom}">
+      <button class="sat-btn" id="agGo">${btn}</button>
+      <span class="sat-faint sat-xs">${[[7,'7d'],[30,'30d'],[90,'90d'],[365,'1y']].map(([d,l])=>
+        `<button class="sat-quick" data-qd="${d}">${l}</button>`).join('')}</span>
+    </div>`;
+
   function viewAG(){
     if(agBusy) return `<div class="sat-card"><h3>Sales personnel</h3><p class="sat-cap">Reading job orders…</p></div>`;
     if(agErr) return `<div class="sat-card"><h3>Sales personnel</h3>
       <div class="sat-box warn"><b>Could not read job orders.</b> ${esc(agErr)}</div>
-      <button class="sat-btn" id="agGo">Try again</button></div>`;
+      ${agPicker('Try again')}</div>`;
     if(!AG) return `<div class="sat-card"><h3>Sales personnel</h3>
       <p class="sat-cap">Who encoded which job order, and where. This reads <span class="mono">public.jobs</span> live,
-        so it is fetched on request rather than on page load — a slim projection over the window you choose.</p>
-      <div class="sat-ctl"><span class="lbl">Window</span>
-        <select id="agDays">${[30,90,180,365].map(d=>`<option value="${d}" ${agDays===d?'selected':''}>Last ${d} days</option>`).join('')}</select>
-        <button class="sat-btn" id="agGo">Load sales record</button></div></div>`;
+        so it is fetched on request rather than on page load — a slim projection over the dates you pick. The export
+        then pulls the full job-order detail for the same dates, in a second request, so the page itself stays cheap.</p>
+      ${agPicker('Load sales record')}</div>`;
 
     /* Zero rows is not the same as zero activity. RLS returns an empty array to a
        caller it will not answer — an expired session reads exactly like a month
        with no sales, and the blind-spot table would then accuse every barangay
        in Quezon City of being unworked. Say what actually happened instead. */
-    if(!AG.length) return `<div class="sat-card"><h3>Sales personnel — last ${agDays} days</h3>
-      <div class="sat-box warn"><b>No job orders came back.</b> That is either a genuinely empty window or a session
+    if(!AG.length) return `<div class="sat-card"><h3>Sales personnel — ${agRangeLabel()}</h3>
+      <div class="sat-box warn"><b>No job orders came back.</b> That is either a genuinely empty range or a session
       that is no longer authorised — the two look identical from here, so nothing is inferred from it.
-      Try a longer window, or sign in again if this is unexpected.</div>
-      <div class="sat-ctl"><span class="lbl">Window</span>
-        <select id="agDays">${[30,90,180,365].map(d=>`<option value="${d}" ${agDays===d?'selected':''}>Last ${d} days</option>`).join('')}</select>
-        <button class="sat-btn" id="agGo">Reload</button></div></div>`;
+      Widen the dates, or sign in again if this is unexpected.</div>
+      ${agPicker('Reload')}</div>`;
 
     const RL=agRoll();
     const {agents, byB, days, statuses, sources, referrers}=RL;
@@ -632,13 +643,12 @@
 
     const head = `
     <div class="sat-card">
-      <h3>Sales personnel — last ${agDays} days</h3>
-      <p class="sat-cap">Every job order in the window, grouped by who encoded it. Console and import rows are kept
-        separate from field agents rather than folded in, because they are not the same kind of record.</p>
-      <div class="sat-ctl"><span class="lbl">Window</span>
-        <select id="agDays">${[30,90,180,365].map(d=>`<option value="${d}" ${agDays===d?'selected':''}>Last ${d} days</option>`).join('')}</select>
-        <button class="sat-btn" id="agGo">Reload</button>
-        <button class="sat-btn" id="agXl">⤓ Export Excel</button></div>
+      <h3>Sales personnel — ${agRangeLabel()}</h3>
+      <p class="sat-cap">Every job order encoded between those dates, grouped by who encoded it. Console and import
+        rows are kept separate from field agents rather than folded in, because they are not the same kind of record.</p>
+      ${agPicker('Reload')}
+      <div class="sat-ctl"><button class="sat-btn" id="agXl">⤓ Export Excel — full JO detail</button>
+        <span class="sat-faint sat-xs">${agSpanDays()} days · fetches the complete job-order record for these dates</span></div>
       <div class="sat-kpis">
         <div class="sat-kpi"><span class="k">Job orders</span><span class="v">${n0(tot.jos)}</span>
           <span class="n">${n0(AG.length)} rows read</span></div>
@@ -736,7 +746,7 @@
     const vAgent = () => `
     ${blind.length?`<div class="sat-card">
       <h3>Barangays with opportunity and no sales activity — ${blind.length}</h3>
-      <p class="sat-cap">These have a real gap to 10% and <b>not one job order</b> from anybody in the last ${agDays} days.
+      <p class="sat-cap">These have a real gap to 10% and <b>not one job order</b> from anybody between ${agRangeLabel()}.
         This is the join between the two halves of this page: capacity nobody is working.</p>
       <div class="sat-box warn"><b>${n0(blindGap)} subscribers of headroom — ${n0(blindGap/ranked().reduce((s,r)=>s+r.gap,0)*100)}% of the
         ranked gap — sits in barangays with zero sales activity in this window.</b></div>
@@ -808,12 +818,75 @@
 
   }
 
+  /* The views run on a slim projection. The export is where the full record is
+     wanted, so the detail is pulled in its own request over the same dates —
+     the same columns the Work Orders export uses, plus the dates asked for. */
+  const DETAIL_COLS = ['id','created_at','updated_at','status','load_type','service_type','dispatch_status',
+    'dispatch_count','team','driver','tech1','crew_driver','crew_tech1','crew_tech2',
+    'ibass_acct_no','job_order_no','vas_no','ref_no','new_ref','play_type','addon_count',
+    'subscriber','first_name','middle_name','last_name','primary_no','other_contact_no','email',
+    'house_no','street_name','village','brgy','district','city','address',
+    'created_by','encoded_by','in_charge','source_of_sales','referral_name',
+    'plan','current_plan','priority','work_account','payment_mode','payment_amount','ar_no',
+    'validated','validated_at','load_date','scheduled_at','completed_at','negative_at','negative_remark',
+    'special_note'].join(',');
+
+  async function fetchDetail(){
+    const from=agFrom+'T00:00:00', to=agTo+'T23:59:59';
+    const H={apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()};
+    const rows=[];
+    for(let off=0; off<60000; off+=1000){
+      const url=`${SUPA_URL}/rest/v1/jobs?select=${DETAIL_COLS}&deleted_at=is.null`
+              + `&created_at=gte.${encodeURIComponent(from)}&created_at=lte.${encodeURIComponent(to)}`
+              + `&order=created_at.desc&limit=1000&offset=${off}`;
+      const r=await fetch(url,{headers:H});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const page=await r.json();
+      if(!page.length) break;
+      rows.push.apply(rows,page);
+      if(page.length<1000) break;
+    }
+    return rows;
+  }
+  const dOnly = v => v? String(v).slice(0,10) : '';
+  const dTime = v => v? String(v).replace('T',' ').slice(0,16) : '';
+
   async function exportAG(){
     if(!AG) return;
     try{ await ensureXLSX(); }catch(_){ (window.showToast||alert)('Excel library failed to load'); return; }
+    const btn=$('#agXl'); const lbl=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='Pulling full detail…';}
+    let DET=[];
+    try{ DET=await fetchDetail(); }
+    catch(e){ if(btn){btn.disabled=false;btn.textContent=lbl;}
+      (window.showToast||alert)('Could not pull the job-order detail: '+(e.message||e)); return; }
+    if(btn){btn.disabled=false;btn.textContent=lbl;}
     const {agents, byB}=agRoll();
     const touched=new Set(Object.keys(byB));
     const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DET.map(j=>({
+      'WO ID':j.id||'', 'JOB ORDER NO.':j.job_order_no||'', 'REF NO.':j.ref_no||'', 'NEW REF #':j.new_ref||'',
+      'IBASS ACCT NO.':j.ibass_acct_no||'',
+      'DATE ENCODED':dTime(j.created_at), 'DATE VALIDATED':dTime(j.validated_at),
+      'DATE DISPATCHED':dOnly(j.load_date)||dTime(j.scheduled_at),
+      'DATE COMPLETED':dTime(j.completed_at), 'DATE INCOMPLETE':dTime(j.negative_at),
+      'LAST UPDATED':dTime(j.updated_at),
+      'STATUS':j.status||'', 'DISPATCH STATUS':j.dispatch_status||'', 'DISPATCH COUNT':j.dispatch_count||0,
+      'LOAD TYPE':j.load_type||'SLI', 'SERVICE TYPE':j.service_type||'',
+      'SUBSCRIBER':j.subscriber||'', 'FIRST NAME':j.first_name||'', 'MIDDLE NAME':j.middle_name||'',
+      'LAST NAME':j.last_name||'',
+      'PRIMARY NO.':j.primary_no||'', 'OTHER CONTACT NO.':j.other_contact_no||'', 'EMAIL':j.email||'',
+      'HOUSE NO.':j.house_no||'', 'STREET NAME':j.street_name||'', 'VILLAGE / SUBDIVISION':j.village||'',
+      'BRGY':j.brgy||'', 'DISTRICT':j.district||'', 'CITY':j.city||'', 'FULL ADDRESS':j.address||'',
+      'SALES AGENT':j.created_by||'', 'ENCODED BY':j.encoded_by||'', 'IN-CHARGE':j.in_charge||'',
+      'SOURCE OF SALES':j.source_of_sales||'', 'REFERRAL NAME':j.referral_name||'',
+      'PLAN':j.plan||'', 'CURRENT PLAN':j.current_plan||'', '1P OR 2P':j.play_type||'',
+      'ADD-ONS / CPE':j.addon_count==null?'':j.addon_count, 'VAS NO':j.vas_no||'',
+      'TEAM ASSIGNED':j.team||'', 'DRIVER':j.driver||'', 'TECH 1':j.tech1||'',
+      'DRIVER (CREW)':j.crew_driver||'', 'TECH 1 (CREW)':j.crew_tech1||'', 'TECH 2 (CREW)':j.crew_tech2||'',
+      'PRIORITY':j.priority||'', 'ACCOUNT':j.work_account||'',
+      'MODE OF PAYMENT':j.payment_mode||'', 'AMOUNT':j.payment_amount==null?'':j.payment_amount, 'AR NO.':j.ar_no||'',
+      'VALIDATED':j.validated?'YES':'', 'INCOMPLETE REMARK':j.negative_remark||'', 'SPECIAL NOTE':j.special_note||''
+    }))), 'Job orders');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agents.slice().sort((a,b)=>b.jos-a.jos).map(a=>({
       'AGENT':a.u,'SOURCE':a.console?'console / import':'field agent','JOB ORDERS':a.jos,'COMPLETED':a.done,
       'COMPLETION %':+a.rate.toFixed(2),'IN FLIGHT':a.open,'CANCELLED / REJECTED':a.dead,
@@ -851,7 +924,7 @@
           'BARANGAY':r?r.n:b,'DISTRICT':r?r.d:'','JOB ORDERS':c,
           'BARANGAY SATURATION %':r?+r.sat.toFixed(2):'','BARANGAY GAP':r?Math.round(r.gap):''});}));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cov), 'Areas covered');
-    XLSX.writeFile(wb, `AHBA_sales_record_${agDays}d_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `AHBA_sales_record_${agFrom}_to_${agTo}.xlsx`);
   }
 
   /* ---------- render + wiring ---------- */
@@ -876,7 +949,10 @@
     }
     if(tab==='an'){ $$('#satAnTbl th').forEach(th=>th.onclick=()=>{anSort=th.dataset.ak;paint();}); }
     if(tab==='ag'){
-      const d=$('#agDays'); if(d) d.onchange=e=>{agDays=+e.target.value;};
+      const f=$('#agFrom'); if(f) f.onchange=e=>{agFrom=e.target.value; if(agFrom>agTo) agTo=agFrom; paint();};
+      const t2=$('#agTo');  if(t2) t2.onchange=e=>{agTo=e.target.value; if(agTo<agFrom) agFrom=agTo; paint();};
+      $$('#satBody .sat-quick').forEach(b=>b.onclick=()=>{
+        agTo=isoDay(new Date()); agFrom=isoDay(new Date(Date.now()-(+b.dataset.qd-1)*864e5)); fetchAgents();});
       const g=$('#agGo'); if(g) g.onclick=fetchAgents;
       const x=$('#agXl'); if(x) x.onclick=exportAG;
       $$('#satRoot .sat-tab[data-agv]').forEach(b=>b.onclick=()=>{agView=b.dataset.agv;paint();});
