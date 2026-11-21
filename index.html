@@ -167,6 +167,7 @@
         <a class="nav-item" id="napViewNav" target="_blank" rel="noopener noreferrer" style="display:none;text-decoration:none"><i data-icon="pin"></i><span>NAP VIEW</span></a>
         <button class="nav-item" data-page="wims"><i data-icon="truck"></i><span>WIMS</span></button>
         <button class="nav-item" data-page="fms"><i data-icon="truck"></i><span>Fleet</span><b id="fmsBadge" style="display:none">0</b></button>
+        <button class="nav-item" data-page="fieldsales"><i data-icon="chart"></i><span>FieldSales Ops</span></button>
         <button class="nav-item" data-page="expenses"><i data-icon="wallet"></i><span>Expenses</span></button>
         <!-- HR (owner 2026-10-14): pinagsama ang Payroll + Attendance sa iisang tab;
              per-page pa rin ang access grants (attendance/payroll sa Access Control) -->
@@ -628,6 +629,11 @@
         <div id="qaRoot"></div>
       </section>
       <section id="qafindingsPage" class="page"><div class="page-toolbar"><div><h2>QA Findings · Rectifications</h2><p>QA inspection findings on your installs, deadlines and re-inspection results.</p></div></div><div id="qaFindRoot"></div></section>
+      <section id="fieldsalesPage" class="page">
+        <div class="page-toolbar"><div><h2>FieldSales Ops · QC port saturation</h2><p>Where the remaining Converge capacity is, how the subscriber base is moving, and which barangays carry the win-back, reactivation and migration pools. Measured from the operator subscriber listing — view only.</p></div></div>
+        <div id="satRoot"></div>
+      </section>
+
       <section id="fmsPage" class="page">
         <div class="page-toolbar"><div><h2>Fleet · Vehicle 201 files</h2><p>Registration, insurance, repairs / PMS, incidents, requests, equipment, documents and spend per vehicle. Approvals need two signatures; reminders at 60 / 30 / 7 / 0 days and 1,000 / 0 km.</p></div></div>
         <div id="fmsRoot"></div>
@@ -874,11 +880,13 @@
   <script src="hr-sheets.js?v=2026-11-20.3"></script>
   <script src="console-hr.js?v=2026-11-20.3"></script>
   <script src="hr-entry.js?v=2026-11-20.3"></script>
-  <script src="app.js?v=2026-11-20.6"></script>
+  <script src="app.js?v=2026-11-21.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="ahba-cloud.js?v=2026-11-20.3"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
   <script src="qa-core.js?v=2026-11-20.3"></script><script src="qa-subscriber-info.js?v=2026-11-20.3"></script><script src="qa-api.js?v=2026-11-20.3"></script><script src="console-qa.js?v=2026-11-20.3"></script><script src="console-qa-findings.js?v=2026-11-20.3"></script>
-  <script src="fms-core.js?v=2026-11-20.3"></script><script src="fms-api.js?v=2026-11-20.3"></script><script src="console-fms.js?v=2026-11-20.3"></script>
+  <script src="fms-core.js?v=2026-11-20.3"></script><script src="fms-api.js?v=2026-11-20.3"></script><script src="sat-data.js?v=2026-11-21.1"></script>
+  <script src="console-sat.js?v=2026-11-21.1"></script>
+  <script src="console-fms.js?v=2026-11-20.3"></script>
 </body>
 </html>
