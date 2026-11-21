@@ -126,6 +126,40 @@
     return (rows && rows[0] && rows[0].history) || '';
   }
 
+  // RAW extract ng isang buong araw (Manila): lahat ng column + history.
+  // Kasama ang JO kapag load_date = araw na iyon O na-encode sa araw na iyon,
+  // kaya kahit petsa na lampas na sa live window ay makukuha pa rin. Walang
+  // bagong pinto ito — RLS pa rin ang pumipigil sa hindi dapat makakita.
+  async function getJobsRawByDate(d) {
+    const startMs = new Date(d + 'T00:00:00+08:00').getTime();
+    const start = new Date(startMs).toISOString(), end = new Date(startMs + 86400000).toISOString();
+    const orExpr = 'or=(load_date.eq.' + d + ',and(created_at.gte.' + start + ',created_at.lt.' + end + '))';
+    const rows = [];
+    for (let off = 0; off < 10000; off += 1000) {
+      const page = await request('jobs?select=*&deleted_at=is.null&' + orExpr + '&order=created_at.asc&limit=1000&offset=' + off);
+      if (!page || !page.length) break;
+      rows.push.apply(rows, page);
+      if (page.length < 1000) break;
+    }
+    return rows.filter(function (j) { return !/^SLRT-/.test(String(j.id || '')); });
+  }
+
+  // Batch history para sa extract: ids → {id: history text}. 150 id bawat request
+  // para hindi humaba nang sobra ang URL; ang pumalyang chunk ay nilalaktawan lang
+  // (kulang na history ay hindi dapat magpabagsak ng buong extract).
+  async function getHistories(ids) {
+    const out = {};
+    ids = (ids || []).filter(Boolean);
+    for (let i = 0; i < ids.length; i += 150) {
+      const chunk = ids.slice(i, i + 150).map(encodeURIComponent).join(',');
+      try {
+        const rows = await request('jobs?select=id,history&id=in.(' + chunk + ')');
+        (rows || []).forEach(function (r) { out[r.id] = r.history || ''; });
+      } catch (e) {}
+    }
+    return out;
+  }
+
   // Append one line to a job's history WITHOUT ever sending the accumulated text.
   // The database does the concatenation atomically (append_job_history), and a
   // BEFORE UPDATE trigger refuses any write that would shorten history, so a stale
@@ -286,7 +320,7 @@
   }
 
   window.AHBACloud = {configured, getJobs, upsertJobs, startDashboard, setStatus,
-    getJobHistory, appendJobHistory, realtime: null};
+    getJobHistory, appendJobHistory, getJobsRawByDate, getHistories, realtime: null};
 
   document.addEventListener('DOMContentLoaded', () => {
     if (!configured || typeof jobs === 'undefined') {

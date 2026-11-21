@@ -500,7 +500,7 @@ function renderJobs(){
     if(_ac){ const _n=jobs.filter(x=>x.team&&x.status==='assigned'&&x.load_date&&String(x.load_date).slice(0,10)>_td).length;
       _ac.style.display=_n?'':'none'; _ac.textContent='📅 Advance-scheduled: '+_n+(_n===1?' load':' loads')+' → see Timeline'; }
     if($('#queueBody')) $('#queueBody').innerHTML=pending.slice(0,4).map(j=>`<tr><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong></td><td>${j.type}</td><td>${esc(j.area)}</td><td><span class="status pending">${j.wait}</span></td><td><button class="assign-btn" data-assign="${j.id}">Assign</button></td></tr>`).join('')||'<tr><td colspan="6" class="empty-cell">No jobs waiting for dispatch.</td></tr>';
-    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
+    if($('#workOrderBody')) $('#workOrderBody').innerHTML=jobs.map(j=>`<tr data-jobid="${j.id}" data-date="${woRowDate(j)}" data-type="${(j.type||'').toLowerCase()}" data-status="${j.status}" data-text="${(j.id+' '+j.subscriber+' '+j.area).toLowerCase().replace(/"/g,'')}"><td><strong>${j.id}</strong><span>${j.priority}</span></td><td><strong>${esc(j.subscriber)}</strong><span>${esc(j.plan)}</span></td><td>${j.type}</td><td>${esc(j.area)}</td><td>${j.team||'—'}</td><td><span class="status ${j.status}">${statusLabel(j.status)}</span></td><td>${j.schedule}</td></tr>`).join('');
   }
   const stages=[['pending','For Dispatch'],['assigned','Acknowledged'],['en-route','Travel'],['on-site,in-progress','On Site'],['negative','Incomplete'],['completed','Completed'],['cancelled','Cancelled']];
   $('#dispatchBoard').innerHTML=stages.map(([keys,label])=>{
@@ -1274,18 +1274,68 @@ async function renderExpenses(){
 function bindAssignButtons(){$$('[data-assign]').forEach(b=>b.onclick=()=>openAssign(b.dataset.assign))}
 
 // Work-order table filtering (search text + active chip combined)
+// Petsa ng isang work-order row para sa date filter: ang load_date nito, o kung
+// wala pa (hindi pa nalo-load), ang araw (Manila) na na-encode ito.
+const woRowDate=j=> j.load_date ? String(j.load_date).slice(0,10)
+  : (j.created_at ? new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}) : '');
 function applyJobTableFilter(){
   const chip=$('#jobFilters .active'), f=chip?chip.dataset.filter:'all';
   const q=($('#jobSearch')?.value||'').toLowerCase().trim();
+  const d=$('#woDate')?.value||'';
   let shown=0;
   $$('#workOrderBody tr').forEach(r=>{
     const matchesChip = f==='all' || (f==='pending'?r.dataset.status==='pending':r.dataset.type===f);
     const matchesText = !q || r.dataset.text.includes(q);
-    const show=matchesChip&&matchesText;
+    const matchesDate = !d || r.dataset.date===d;
+    const show=matchesChip&&matchesText&&matchesDate;
     r.style.display=show?'':'none';
     if(show) shown++;
   });
   const empty=$('#workOrderEmpty'); if(empty) empty.hidden=shown!==0;
+}
+// ───────────────── Work Orders · Extract (raw data + buong JO history) ─────────────────
+// Walang petsa: ang kasalukuyang nakikita sa table (chips + search ang sinusunod),
+// history ay kinukuha nang batch. May petsa: server fetch ng BUONG araw na iyon
+// (select=* + history) — gumagana kahit lumang petsa na wala na sa live window.
+const WO_EXTRACT_LEAD=['id','status','priority','load_type','load_date','schedule','scheduled_at','team','created_by','work_account','crew_driver','crew_tech1','crew_tech2','subscriber','plan','type','area','address','district','city','brgy','village','street_name','house_no','ibass_acct_no','job_order_no','vas_no','ref_no','new_ref','primary_no','other_contact_no','email','created_at','validated','validated_at','validated_by','dispatch_status','dispatch_count','completed_at','negative_at','negative_remark','cancel_remark','qa_status','qa_assessment','qa_inspected_at','payment_mode','payment_amount','ar_no','amount_to_collect','remittance_received','remittance_received_by','remittance_received_at','updated_at'];
+async function extractWorkOrders(){
+  const btn=$('#woExtract'); if(btn&&btn.disabled) return;
+  const d=$('#woDate')?.value||'';
+  const prev=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent='Extracting…'; }
+  try{
+    try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+    let list;
+    if(d){
+      list=await AHBACloud.getJobsRawByDate(d);
+    }else{
+      const vis=new Set($$('#workOrderBody tr').filter(r=>r.style.display!=='none').map(r=>r.dataset.jobid));
+      list=jobs.filter(j=>vis.has(j.id));
+      const hist=await AHBACloud.getHistories(list.map(j=>j.id));
+      list=list.map(j=>Object.assign({},j,{history:hist[j.id]||j.history||''}));
+    }
+    if(!list.length){ showToast('Nothing to extract — adjust the date or filters'); return; }
+    // Sheet 1 — isang row bawat JO, LAHAT ng column (lead order muna, tapos ang natitira), history sa dulo.
+    const extra=[...new Set(list.flatMap(j=>Object.keys(j)))].filter(k=>!WO_EXTRACT_LEAD.includes(k)&&k!=='history').sort();
+    const cols=[...WO_EXTRACT_LEAD.filter(k=>list.some(j=>j[k]!=null&&j[k]!=='')),...extra,'history'];
+    const aoa=[cols.map(c=>c.toUpperCase())].concat(list.map(j=>cols.map(c=>{const v=j[c];return v==null?'':(typeof v==='object'?JSON.stringify(v):v);})));
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=cols.map(c=>({wch:c==='history'?80:(c==='address'||c==='subscriber'?30:14)}));
+    // Sheet 2 — isang row bawat GALAW: hinati ang history text sa bawat linya.
+    const haoa=[['WORK ORDER','SUBSCRIBER','TEAM','CURRENT STATUS','#','HISTORY ENTRY']];
+    list.forEach(j=>String(j.history||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
+      .forEach((line,i)=>haoa.push([j.id,j.subscriber||'',j.team||'',j.status||'',i+1,line])));
+    const ws2=XLSX.utils.aoa_to_sheet(haoa);
+    ws2['!cols']=[{wch:18},{wch:28},{wch:14},{wch:14},{wch:4},{wch:95}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Work Orders (raw)');
+    XLSX.utils.book_append_sheet(wb,ws2,'JO History (per move)');
+    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'}));
+    a.download=`AHBA_WorkOrders_RAW_${d||manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+    showToast(`${list.length} work order${list.length===1?'':'s'} extracted (with full history)`);
+  }catch(e){ showToast('Extract failed: '+(e&&e.message||e)); }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML=prev; } }
 }
 
 // ---------- Dispatch Timeline (Gantt: teams × hours, drag-to-schedule, live status) ----------
@@ -4495,6 +4545,314 @@ async function exportSlrTickets(){
   const out=XLSX.write(wb,{type:'array',bookType:'xlsx'}); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'})); a.download=`AHBA_SLR_tickets_${manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),9000);
   showToast(`${list.length} ticket${list.length===1?'':'s'} exported`);
 }
+// ═════════ SLR · SalesForce unified monitoring (owner-approved design 2026-11-21) ═════════
+// docs/superpowers/specs/2026-11-21-slr-unified-monitoring-design.md
+let slrSrc='fieldops', slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfD='';
+// '10/1/2026, 12:07 AM' → ISO pinned sa Manila (+08:00). Tumatanggap din ng Excel date serial.
+function slrSfDateIso(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number'&&isFinite(v)) return new Date(Math.round((v-25569)*86400000)-8*3600000).toISOString();
+  const m=String(v).match(/(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if(!m) return null;
+  let h=(+m[4])%12; if(/pm/i.test(m[7])) h+=12;
+  const p=n=>String(n).padStart(2,'0');
+  return `${m[3]}-${p(m[1])}-${p(m[2])}T${p(h)}:${m[5]}:${m[6]||'00'}+08:00`;
+}
+const slrSfDay=iso=>iso?new Date(iso).toLocaleDateString('en-CA',{timeZone:TZ}):'';
+// I-parse ang aging export (array-of-arrays): hanapin ang header row by COLUMN NAMES
+// (hindi position — lumilipat ang layout ng SalesForce reports), laktawan ang Total row.
+function slrSfParse(aoa){
+  let hi=-1;
+  for(let i=0;i<Math.min(aoa.length,40);i++){ const r=aoa[i]||[]; if(r.includes('Case Number')&&r.includes('Appointment Number')){hi=i;break;} }
+  if(hi<0) throw new Error('Header row not found — is this the SalesForce aging-tickets export?');
+  const hdr=aoa[hi], col={};
+  hdr.forEach((h,i)=>{ if(h!=null&&col[h]===undefined) col[h]=i; });
+  const statusIdx=hdr.map((h,i)=>h==='Status'?i:-1).filter(i=>i>=0);   // [case, appointment]
+  const asOfLine=aoa.slice(0,hi).flat().filter(Boolean).map(String).find(s=>/As of\s/i.test(s))||'';
+  const asOfM=asOfLine.match(/As of\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/i);
+  const g=(r,n)=>{const i=col[n];if(i==null)return null;const v=r[i];return v==null?null:(String(v).trim()||null);};
+  const rows=[];
+  for(const r of aoa.slice(hi+1)){
+    const ca=g(r,'Case Number'), ap=g(r,'Appointment Number');
+    if(!ca||!ap) continue;                                    // Total row, blanks, atbp.
+    const terr=g(r,'Service Territory: Name')||'', cm=terr.match(/Cluster\s*(\d+)/i);
+    rows.push({
+      appointment_no:ap, case_no:ca, wo_no:g(r,'Work Order Number'),
+      account_no:g(r,'Service Account Number'), account_name:g(r,'Account Name: Account Name'),
+      territory:terr||null, cluster:cm?('Cluster '+cm[1]):null,
+      barangay:g(r,'Barangay'), nap_code:g(r,'NAP_Code'),
+      opened_at:slrSfDateIso(g(r,'Date/Time Opened')),
+      earliest_start_at:slrSfDateIso(g(r,'Earliest Start Permitted')),
+      dispatched_at:slrSfDateIso(g(r,'Dispatched DateTime')),
+      completed_at:slrSfDateIso(g(r,'Completed DateTime')),
+      incomplete_at:slrSfDateIso(g(r,'Incomplete DateTime')),
+      case_status:statusIdx.length?(r[statusIdx[0]]==null?null:String(r[statusIdx[0]]).trim()||null):null,
+      sfs_field_status:g(r,'SFS Field Status'), field_status:g(r,'Field Status'),
+      appt_status:statusIdx.length>1?(r[statusIdx[1]]==null?null:String(r[statusIdx[1]]).trim()||null):null,
+      technician:g(r,'Assigned Technician: Name'), remarks:g(r,'Technician Remarks'),
+      aging_minutes:(v=>v!=null&&isFinite(+v)?+v:null)(g(r,'Duration Since Creation'))
+    });
+  }
+  return { asOf: asOfM ? (asOfM[1]+'T'+asOfM[2]+'+08:00') : null, rows };
+}
+async function slrSfUpload(file){
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  let parsed;
+  try{
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+    const aoa=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
+    parsed=slrSfParse(aoa);
+  }catch(e){ showToast('Could not read the file: '+(e.message||e)); return; }
+  if(!parsed.rows.length){ showToast('No appointment rows found in the file'); return; }
+  const map=new Map(); parsed.rows.forEach(r=>map.set(r.appointment_no,r));      // in-file dedup, keep last
+  const rows=[...map.values()];
+  if(!confirm(`Upload ${rows.length} SalesForce appointment rows`+(parsed.asOf?` (as of ${parsed.asOf.slice(0,16).replace('T',' ')})`:'')+`?\n\nExisting appointments are UPDATED, new ones are added. Safe to re-upload.`)) return;
+  const meta={as_of:parsed.asOf, source_file:file.name, uploaded_by:(window.dashUser&&dashUser.username)||null};
+  try{
+    await ensureFreshTok();
+    for(let i=0;i<rows.length;i+=500){
+      const res=await fetch(`${SUPA_URL}/rest/v1/slr_sf_appointments?on_conflict=appointment_no`,{
+        method:'POST',
+        headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok(),'Content-Type':'application/json',Prefer:'resolution=merge-duplicates'},
+        body:JSON.stringify(rows.slice(i,i+500).map(r=>({...r,...meta})))});
+      if(!res.ok) throw new Error('HTTP '+res.status+' — '+(await res.text()).slice(0,200));
+    }
+    showToast(`✅ ${rows.length} SalesForce rows uploaded — syncing view…`);
+    slrSfLoaded=false; slrLoaded=false;
+    if(slrSrc==='salesforce') slrSfRender(); else slrSrcSwitch('salesforce');
+  }catch(e){ showToast('Upload failed: '+(e.message||e)); }
+}
+async function slrSfFetch(){
+  const rows=[];
+  for(let off=0; off<50000; off+=1000){
+    const r=await fetch(`${SUPA_URL}/rest/v1/slr_sf_appointments?select=*&order=opened_at.desc&limit=1000&offset=${off}`,{headers:{apikey:SUPA_KEY,Authorization:'Bearer '+dashTok()}});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const page=await r.json(); rows.push(...page);
+    if(page.length<1000) break;
+  }
+  slrSfRows=rows; slrSfLoaded=true;
+}
+// Appointments → per-CASE view. Open = walang Completed/Cancelled na appointment pa.
+function slrSfCases(rows,nowMs){
+  nowMs=nowMs||Date.now();
+  const by={}; rows.forEach(r=>(by[r.case_no]=by[r.case_no]||[]).push(r));
+  return Object.values(by).map(list=>{
+    list.sort((a,b)=>String(a.dispatched_at||a.opened_at||'').localeCompare(String(b.dispatched_at||b.opened_at||'')));
+    const last=list[list.length-1];
+    const done=list.find(r=>r.appt_status==='Completed');
+    const state=done?'completed':(list.some(r=>r.appt_status==='Cancelled')?'cancelled':'open');
+    const opened=list.map(r=>r.opened_at).filter(Boolean).sort()[0]||null;
+    const endMs=done&&done.completed_at?new Date(done.completed_at).getTime():nowMs;
+    const aging=opened?Math.max(0,(endMs-new Date(opened).getTime())/86400000):null;
+    return {case_no:last.case_no, account_no:last.account_no, account_name:last.account_name,
+      cluster:last.cluster, barangay:last.barangay, nap_code:last.nap_code,
+      visits:list.length, last, state, opened, aging, done:done||null};
+  });
+}
+async function slrSfRender(){
+  const w=$('#slrSfWrap'); if(!w) return;
+  if(!slrSfLoaded||!slrLoaded){
+    w.innerHTML='<div style="padding:16px;color:#8a9894;font-size:12px">Loading SalesForce data…</div>';
+    try{ await ensureFreshTok(); if(!slrSfLoaded) await slrSfFetch(); if(!slrLoaded) await slrFetch(); }
+    catch(e){ w.innerHTML='<div style="padding:16px;color:#c2503a;font-size:12px">Could not load: '+String(e.message||e).replace(/</g,'&lt;')+'. Na-run na ba ang supabase-slr-salesforce.sql?</div>'; return; }
+  }
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  // FieldOps auto-link: account no. ↔ ibass_acct_no (dual-dispatch na may materials declaration)
+  const fo={}; slrRows.forEach(t=>{ const k=String(t.ibass_acct_no||'').trim(); if(k)(fo[k]=fo[k]||[]).push(t.ticket_no||t.id); });
+  let cases=slrSfCases(slrSfRows);
+  const cnt={open:0,completed:0,cancelled:0}; cases.forEach(c=>cnt[c.state]++);
+  if(slrSfSt!=='all') cases=cases.filter(c=>c.state===slrSfSt);
+  if(slrSfD) cases=cases.filter(c=>slrSfDay(c.opened)===slrSfD);
+  if(slrSfQ){ const q=slrSfQ.toUpperCase(); cases=cases.filter(c=>[c.case_no,c.account_no,c.account_name,c.barangay,c.last.technician,c.last.wo_no].join(' ').toUpperCase().includes(q)); }
+  cases.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||(b.aging||0)-(a.aging||0));
+  const asOf=slrSfRows.map(r=>r.as_of).filter(Boolean).sort().pop();
+  const stLbl={open:'Open / aging',completed:'Completed',cancelled:'Cancelled',all:'All'};
+  const stCls={open:'pending',completed:'completed',cancelled:'cancelled'};
+  w.innerHTML=`
+    <div class="filter-row">
+      <div class="search-box"><i data-icon="search"></i><input id="slrSfSearch" placeholder="Search case, account, subscriber, barangay, technician" value="${esc(slrSfQ)}"></div>
+      <div class="filter-chips" id="slrSfStChips">${['open','completed','cancelled','all'].map(k=>`<button class="${slrSfSt===k?'active':''}" data-sfst="${k}">${stLbl[k]} (${k==='all'?cnt.open+cnt.completed+cnt.cancelled:cnt[k]})</button>`).join('')}</div>
+      <input type="date" id="slrSfDate" title="Filter by received date" value="${esc(slrSfD)}" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff">
+      <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
+      <span style="align-self:center;font-size:10px;color:#8a9894">${asOf?'File as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}</span>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Case</th><th>Subscriber</th><th>Area</th><th>Received</th><th>Visits</th><th>Latest field status</th><th>Technician</th><th>Aging</th></tr></thead><tbody>
+    ${cases.map(c=>`<tr>
+      <td><strong>${esc(c.case_no)}</strong><span>${esc(c.last.wo_no||'')}</span></td>
+      <td><strong>${esc(c.account_name||'—')}</strong><span>${esc(c.account_no||'')}${fo[String(c.account_no||'').trim()]?` · <b style="color:#11825f">📦 FieldOps ${esc(fo[String(c.account_no||'').trim()].join(', '))}</b>`:''}</span></td>
+      <td>${esc(c.barangay||'—')}<span style="display:block;font-size:10px;color:#8a9894">${esc(c.cluster||'')}</span></td>
+      <td>${slrFmt(c.opened)}</td>
+      <td style="text-align:center">${c.visits}${c.visits>1?' ⚠':''}</td>
+      <td>${esc(c.last.field_status||c.last.sfs_field_status||'—')}</td>
+      <td>${esc(c.last.technician||'—')}</td>
+      <td><span class="status ${stCls[c.state]||''}">${c.aging!=null?c.aging.toFixed(1)+'d':'—'}</span></td></tr>`).join('')
+      ||'<tr><td colspan="8" style="padding:14px;color:#8a9894">No SalesForce cases match — upload today\'s extract or adjust the filters.</td></tr>'}
+    </tbody></table></div>`;
+  const si=$('#slrSfSearch'); if(si) si.oninput=()=>{ slrSfQ=si.value.trim(); clearTimeout(slrSfRender._t); slrSfRender._t=setTimeout(slrSfRender,250); };
+  $$('#slrSfStChips [data-sfst]').forEach(b=>b.onclick=()=>{ slrSfSt=b.dataset.sfst; slrSfRender(); });
+  const di=$('#slrSfDate'); if(di) di.onchange=()=>{ slrSfD=di.value; slrSfRender(); };
+  const sy=$('#slrSfSync'); if(sy) sy.onclick=()=>{ slrSfLoaded=false; slrLoaded=false; slrSfRender(); };
+}
+function slrSrcSwitch(v){
+  slrSrc=v;
+  $$('#slrSrcChips button').forEach(b=>b.classList.toggle('active',b.dataset.slrsrc===v));
+  const f=$('#slrFoWrap'), s=$('#slrSfWrap');
+  if(f) f.style.display=v==='fieldops'?'':'none';
+  if(s) s.style.display=v==='salesforce'?'':'none';
+  if(v==='salesforce') slrSfRender();
+}
+// ---------- Analyze: aging + dispatch lag · per-technician · repeat/chronic (PURE core) ----------
+function slrAnMedian(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function slrAnCompute(sfRows, from, to, nowMs){
+  nowMs=nowMs||Date.now();
+  const rows=sfRows.filter(r=>{ const d=slrSfDay(r.opened_at); return d&&d>=from&&d<=to; });
+  const cases=slrSfCases(rows,nowMs);
+  const lagH=rows.filter(r=>r.earliest_start_at&&r.dispatched_at)
+    .map(r=>Math.max(0,(new Date(r.dispatched_at)-new Date(r.earliest_start_at))/3600000));
+  const repD=cases.filter(c=>c.done&&c.done.completed_at&&c.opened)
+    .map(c=>Math.max(0,(new Date(c.done.completed_at)-new Date(c.opened))/86400000));
+  const open=cases.filter(c=>c.state==='open');
+  const buckets=[['0–2 days',0,3],['3–7 days',3,8],['8–15 days',8,16],['15+ days',16,1e9]]
+    .map(([label,lo,hi])=>({label,n:open.filter(c=>c.aging>=lo&&c.aging<hi).length}));
+  const tech={};
+  rows.forEach(r=>{
+    const k=(r.technician||'(unassigned)').trim()||'(unassigned)';
+    const t=tech[k]=tech[k]||{tech:k,appts:0,completed:0,incomplete:0,cancelled:0,fixed:0,ntf:0,resched:0,napfix:0};
+    t.appts++;
+    if(r.appt_status==='Completed')t.completed++;
+    else if(r.appt_status==='Incomplete')t.incomplete++;
+    else if(r.appt_status==='Cancelled')t.cancelled++;
+    const f=r.field_status||'';
+    if(/^Repair Fixed/.test(f))t.fixed++;
+    if(/No Trouble/i.test(f))t.ntf++;
+    if(f==='Requires Reschedule')t.resched++;
+    if(f==='NAP Fix Required')t.napfix++;
+  });
+  const techRows=Object.values(tech).map(t=>({...t,rate:t.appts?t.completed/t.appts:0}))
+    .sort((a,b)=>b.completed-a.completed||b.appts-a.appts);
+  const acct={};
+  cases.forEach(c=>{ const k=String(c.account_no||'').trim(); if(!k) return;
+    const a=acct[k]=acct[k]||{account_no:k,name:c.account_name,barangay:c.barangay,cases:0,open:0,lastStatus:''};
+    a.cases++; if(c.state==='open')a.open++; a.lastStatus=c.last.field_status||a.lastStatus; a.name=a.name||c.account_name; });
+  const repeats=Object.values(acct).filter(a=>a.cases>=2).sort((a,b)=>b.cases-a.cases);
+  const brgy={};
+  cases.forEach(c=>{ const k=c.barangay||'(no barangay)'; const b=brgy[k]=brgy[k]||{barangay:k,cases:0,open:0}; b.cases++; if(c.state==='open')b.open++; });
+  const brgyRows=Object.values(brgy).sort((a,b)=>b.cases-a.cases);
+  const nap={};
+  rows.forEach(r=>{ if(r.field_status==='NAP Fix Required'&&r.nap_code&&r.nap_code!=='no_nap_code'){ nap[r.nap_code]=(nap[r.nap_code]||0)+1; } });
+  const napRows=Object.entries(nap).map(([nap_code,n])=>({nap_code,n})).sort((a,b)=>b.n-a.n);
+  return {
+    rows, cases, techRows, repeats, brgyRows, napRows, buckets,
+    summary:{
+      cases:cases.length, appts:rows.length,
+      completed:cases.filter(c=>c.state==='completed').length,
+      open:open.length, cancelled:cases.filter(c=>c.state==='cancelled').length,
+      rate:cases.length?cases.filter(c=>c.state==='completed').length/cases.length:0,
+      avgVisits:cases.length?rows.length/cases.length:0,
+      medLagH:slrAnMedian(lagH), avgLagH:lagH.length?lagH.reduce((a,b)=>a+b,0)/lagH.length:null,
+      medRepD:slrAnMedian(repD), avgRepD:repD.length?repD.reduce((a,b)=>a+b,0)/repD.length:null,
+      repeatAccts:repeats.length
+    }
+  };
+}
+let slrAnLast=null, slrAnFrom='', slrAnTo='';
+function slrAnalyzeOpen(){
+  let ov=document.getElementById('slrAnOv'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='slrAnOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(8,30,26,.55);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const today=manilaToday(); const d=new Date(today+'T00:00:00+08:00'); d.setDate(d.getDate()-29);
+  const from=d.toISOString().slice(0,10);
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1120px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h3 style="margin:0;font-size:16px">📊 SLR Analysis — SalesForce official</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Aging + dispatch lag · per-technician · repeat/chronic — range is by RECEIVED date</p></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:10px;color:#8a9894">From <input type="date" id="slrAnFrom" value="${from}" max="${today}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
+        <label style="font-size:10px;color:#8a9894">To <input type="date" id="slrAnTo" value="${today}" max="${today}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
+        <button class="primary-btn" id="slrAnRun" style="height:36px">Analyze</button>
+        <button class="secondary-btn" id="slrAnExport" style="height:36px">Export Excel</button>
+        <button class="secondary-btn" id="slrAnClose" style="height:36px">✕ Close</button>
+      </div>
+    </div>
+    <div id="slrAnBody" style="margin-top:14px;font-size:12px;color:#5a6a66">Pick the date range, then press Analyze.</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.getElementById('slrAnClose').onclick=()=>ov.remove();
+  document.getElementById('slrAnRun').onclick=slrAnalyzeRun;
+  document.getElementById('slrAnExport').onclick=slrAnalyzeExport;
+  slrAnalyzeRun();
+}
+async function slrAnalyzeRun(){
+  const body=document.getElementById('slrAnBody'); if(!body) return;
+  slrAnFrom=(document.getElementById('slrAnFrom')||{}).value||manilaToday();
+  slrAnTo=(document.getElementById('slrAnTo')||{}).value||manilaToday();
+  if(slrAnFrom>slrAnTo){ const t=slrAnFrom; slrAnFrom=slrAnTo; slrAnTo=t; }
+  body.innerHTML='Crunching…';
+  try{ await ensureFreshTok(); if(!slrSfLoaded) await slrSfFetch(); }
+  catch(e){ body.innerHTML='<span style="color:#c2503a">Could not load SalesForce data: '+String(e.message||e).replace(/</g,'&lt;')+'. Na-run na ba ang supabase-slr-salesforce.sql?</span>'; return; }
+  const an=slrAnLast=slrAnCompute(slrSfRows,slrAnFrom,slrAnTo);
+  if(!an.rows.length){ body.innerHTML='No SalesForce tickets received between '+slrAnFrom+' and '+slrAnTo+'. Upload the latest extract first.'; return; }
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const s=an.summary, pc=v=>(v*100).toFixed(1)+'%', f1=v=>v==null?'—':(+v).toFixed(1);
+  const kpi=(l,v,c)=>`<div class="small-stat" style="border-left:4px solid ${c||'#4285f4'}"><span>${l}</span><strong style="color:${c||'#1b2b27'}">${v}</strong></div>`;
+  const th='padding:7px 9px;text-align:left;font-size:10px;color:#8a9894;border-bottom:1px solid #e7ece8;white-space:nowrap';
+  const td='padding:7px 9px;border-bottom:1px solid #f0f3f0;font-size:12px';
+  body.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+      ${kpi('Cases received',s.cases)}${kpi('Appointments',s.appts)}${kpi('Completed',s.completed,'#11825f')}
+      ${kpi('Open / aging',s.open,'#b7791f')}${kpi('Completion rate',pc(s.rate),s.rate>=.8?'#11825f':'#c2503a')}
+      ${kpi('Avg visits/case',f1(s.avgVisits))}${kpi('Dispatch lag (med)',f1(s.medLagH)+' h','#4285f4')}
+      ${kpi('Repair time (med)',f1(s.medRepD)+' d','#4285f4')}${kpi('Repeat accounts',s.repeatAccts,'#c2503a')}
+    </div>
+    <h4 style="margin:16px 0 6px;font-size:13px">⏱ Aging ng open cases <span style="font-weight:400;color:#8a9894">(mula received date hanggang ngayon)</span></h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
+      ${an.buckets.map((b,i)=>kpi(b.label,b.n,['#11825f','#b7791f','#d97706','#c2503a'][i])).join('')}
+    </div>
+    <h4 style="margin:16px 0 6px;font-size:13px">👷 Per technician <span style="font-weight:400;color:#8a9894">(appointments sa range · dispatch lag I→J ay sa summary sa taas)</span></h4>
+    <div class="table-wrap"><table style="width:100%;border-collapse:collapse"><thead><tr>
+      <th style="${th}">Technician</th><th style="${th}">Appts</th><th style="${th}">Completed</th><th style="${th}">Repair Fixed</th><th style="${th}">NTF</th><th style="${th}">Resched</th><th style="${th}">Cancelled</th><th style="${th}">Completion</th></tr></thead><tbody>
+      ${an.techRows.map(t=>`<tr><td style="${td}"><strong>${esc(t.tech)}</strong></td><td style="${td}"><b>${t.appts}</b></td><td style="${td};color:#11825f"><b>${t.completed}</b></td><td style="${td}">${t.fixed}</td><td style="${td}">${t.ntf}</td><td style="${td};color:#b7791f">${t.resched}</td><td style="${td}">${t.cancelled}</td><td style="${td}"><b>${pc(t.rate)}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    <h4 style="margin:16px 0 6px;font-size:13px">🔁 Repeat / chronic accounts <span style="font-weight:400;color:#8a9894">(≥2 cases sa range — ${an.repeats.length} accounts)</span></h4>
+    ${an.repeats.length?`<details ${an.repeats.length<=10?'open':''}><summary style="cursor:pointer;font-size:11px;color:#4285f4">View list (${an.repeats.length})</summary>
+    <div class="table-wrap"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="${th}">Account</th><th style="${th}">Subscriber</th><th style="${th}">Barangay</th><th style="${th}">Cases</th><th style="${th}">Open now</th><th style="${th}">Last field status</th></tr></thead><tbody>
+      ${an.repeats.slice(0,100).map(a=>`<tr><td style="${td}">${esc(a.account_no)}</td><td style="${td}"><strong>${esc(a.name||'—')}</strong></td><td style="${td}">${esc(a.barangay||'—')}</td><td style="${td}"><b style="color:#c2503a">${a.cases}</b></td><td style="${td}">${a.open||''}</td><td style="${td}">${esc(a.lastStatus||'—')}</td></tr>`).join('')}
+    </tbody></table></div></details>`:'<p style="font-size:11px;color:#8a9894">Walang repeat account sa range.</p>'}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+      <div><h4 style="margin:0 0 6px;font-size:13px">📍 Barangay hotspots</h4>
+        ${an.brgyRows.slice(0,10).map(b=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f0f3f0"><span>${esc(b.barangay)}</span><span><b>${b.cases}</b> cases${b.open?` · <span style="color:#b7791f">${b.open} open</span>`:''}</span></div>`).join('')||'<span style="font-size:11px;color:#8a9894">—</span>'}</div>
+      <div><h4 style="margin:0 0 6px;font-size:13px">🔧 NAP Fix Required per NAP</h4>
+        ${an.napRows.slice(0,10).map(n=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f0f3f0"><span>${esc(n.nap_code)}</span><b>${n.n}</b></div>`).join('')||'<span style="font-size:11px;color:#8a9894">Walang NAP Fix Required sa range.</span>'}</div>
+    </div>`;
+}
+async function slrAnalyzeExport(){
+  if(!slrAnLast||!slrAnLast.rows.length){ showToast('Run Analyze first'); return; }
+  try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+  const an=slrAnLast, s=an.summary, f1=v=>v==null?'':+(+v).toFixed(2);
+  const wb=XLSX.utils.book_new(), sh=(n,aoa)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),n);
+  sh('Summary',[['SLR ANALYSIS — SALESFORCE OFFICIAL'],['Range (received)',slrAnFrom+' → '+slrAnTo],[],
+    ['Cases received',s.cases],['Appointments',s.appts],['Completed cases',s.completed],['Open / aging',s.open],['Cancelled',s.cancelled],
+    ['Completion rate',(s.rate*100).toFixed(1)+'%'],['Avg visits per case',f1(s.avgVisits)],
+    ['Dispatch lag I→J median (hours)',f1(s.medLagH)],['Dispatch lag I→J average (hours)',f1(s.avgLagH)],
+    ['Repair time E→completed median (days)',f1(s.medRepD)],['Repair time average (days)',f1(s.avgRepD)],
+    ['Repeat accounts (≥2 cases)',s.repeatAccts],[],['AGING OF OPEN CASES'],...an.buckets.map(b=>[b.label,b.n])]);
+  sh('Per Technician',[['TECHNICIAN','APPOINTMENTS','COMPLETED','REPAIR FIXED','NTF','REQUIRES RESCHEDULE','NAP FIX REQ','CANCELLED','COMPLETION RATE'],
+    ...an.techRows.map(t=>[t.tech,t.appts,t.completed,t.fixed,t.ntf,t.resched,t.napfix,t.cancelled,(t.rate*100).toFixed(1)+'%'])]);
+  sh('Aging (open cases)',[['CASE','ACCOUNT','SUBSCRIBER','BARANGAY','RECEIVED','VISITS','LAST FIELD STATUS','TECHNICIAN','AGING (DAYS)'],
+    ...an.cases.filter(c=>c.state==='open').sort((a,b)=>(b.aging||0)-(a.aging||0))
+      .map(c=>[c.case_no,c.account_no||'',c.account_name||'',c.barangay||'',slrSfDay(c.opened),c.visits,c.last.field_status||'',c.last.technician||'',f1(c.aging)])]);
+  sh('Repeat Accounts',[['ACCOUNT','SUBSCRIBER','BARANGAY','CASES','OPEN NOW','LAST FIELD STATUS'],
+    ...an.repeats.map(a=>[a.account_no,a.name||'',a.barangay||'',a.cases,a.open,a.lastStatus||''])]);
+  sh('Barangay + NAP',[['BARANGAY','CASES','OPEN'],...an.brgyRows.map(b=>[b.barangay,b.cases,b.open]),[],
+    ['NAP CODE','NAP FIX REQUIRED COUNT'],...an.napRows.map(n=>[n.nap_code,n.n])]);
+  sh('Raw appointments',[['APPOINTMENT','CASE','WO','ACCOUNT','SUBSCRIBER','TERRITORY','BARANGAY','NAP','RECEIVED','EARLIEST START','DISPATCHED','COMPLETED','INCOMPLETE','CASE STATUS','SFS FIELD STATUS','FIELD STATUS','APPT STATUS','TECHNICIAN','REMARKS'],
+    ...an.rows.map(r=>[r.appointment_no,r.case_no,r.wo_no||'',r.account_no||'',r.account_name||'',r.territory||'',r.barangay||'',r.nap_code||'',r.opened_at||'',r.earliest_start_at||'',r.dispatched_at||'',r.completed_at||'',r.incomplete_at||'',r.case_status||'',r.sfs_field_status||'',r.field_status||'',r.appt_status||'',r.technician||'',r.remarks||''])]);
+  const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'}));
+  a.download=`AHBA_SLR_Analysis_${slrAnFrom}_to_${slrAnTo}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),9000);
+  showToast('SLR analysis exported');
+}
 function slrBadgePaint(){
   const b=$('#slrBadge'); if(!b) return;
   const n=slrRows.filter(t=>SLR_OPEN.includes(t.status)).length;
@@ -4708,6 +5066,8 @@ function applyAccess(u){
   navGrpBadges();
   $$('[data-action="new-order"]').forEach(b=>b.style.display=(u.is_super||allowed.includes('workorders'))?'':'none');
   const _tanb=$('#teamAnalyzeBtn'); if(_tanb) _tanb.style.display=u.is_super?'':'none';   // 📊 superadmin only
+  const _sfub=$('#slrSfUploadBtn'); if(_sfub) _sfub.style.display=(u.is_super||dashCanEdit('slrtickets'))?'':'none';   // ⬆ super + SLR editors
+  const _sanb=$('#slrAnalyzeBtn'); if(_sanb) _sanb.style.display=u.is_super?'':'none';   // 📊 superadmin only
   const _trb=$('#teamReportsBtn'); if(_trb) _trb.style.display=u.is_super?'':'none';   // 📑 GC SLI reports — superadmin only (Load History has subscriber details)
   // Hide the Overview expenses widgets from users without Expenses access (e.g. subcontractor console).
   const canExp=(u.is_super||allowed.includes('expenses'));
@@ -5753,6 +6113,10 @@ function init(){
   $$('#slrStatusChips button').forEach(b=>b.onclick=()=>{ slrSt=b.dataset.slrst; renderSlrTickets(); });
   const _sr=$('#slrRefresh'); if(_sr) _sr.onclick=()=>renderSlrTickets(true);
   const _se=$('#slrExport'); if(_se) _se.onclick=exportSlrTickets;
+  const _sfu=$('#slrSfUploadBtn'); if(_sfu) _sfu.onclick=()=>{ const f=$('#slrSfFile'); if(f) f.click(); };
+  const _sff=$('#slrSfFile'); if(_sff) _sff.onchange=e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) slrSfUpload(f); };
+  const _sab=$('#slrAnalyzeBtn'); if(_sab) _sab.onclick=slrAnalyzeOpen;
+  $$('#slrSrcChips [data-slrsrc]').forEach(b=>b.onclick=()=>slrSrcSwitch(b.dataset.slrsrc));
   const _tan=$('#teamAnalyzeBtn'); if(_tan) _tan.onclick=teamAnalyzeOpen;
   const _trp=$('#teamReportsBtn'); if(_trp) _trp.onclick=()=>{ if(!window.SliReports){ showToast('Reports module failed to load — refresh the page'); return; } SliReports.open({url:SUPA_URL,key:SUPA_KEY,token:dashTok,manilaToday,ensureJSZip,loadAgentNames,upperRows,jobToRow,showToast,statusLabel,slrFmt}); };
   $$('#orderModal [data-doc]').forEach(inp=>inp.onchange=()=>{ const cat=inp.dataset.doc; ordDocs[cat]=[...(ordDocs[cat]||[]), ...inp.files]; inp.value=''; ordRenderDocs(); });
@@ -5773,6 +6137,8 @@ function init(){
   { const _te=$('#teamsDate'); if(_te){ _te.value=manilaToday(); _te.max=manilaToday(); _te.onchange=e=>teamsSetDate(e.target.value); } }
   $('#jobSearch').oninput=applyJobTableFilter;
   $$('#jobFilters button').forEach(b=>b.onclick=()=>{$$('#jobFilters button').forEach(x=>x.classList.remove('active'));b.classList.add('active');applyJobTableFilter()});
+  const _wd=$('#woDate'); if(_wd) _wd.onchange=applyJobTableFilter;
+  const _wx=$('#woExtract'); if(_wx) _wx.onclick=extractWorkOrders;
 
   $('#autoAssignBtn').onclick=()=>{const pending=jobs.find(j=>j.status==='pending');pending?openAssign(pending.id):showToast('No unassigned jobs in the queue')};
   $('#announceBtn')?.addEventListener('click',openAnnounce);
