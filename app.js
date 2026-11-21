@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-21.5';
+const APP_VERSION='2026-11-21.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3939,6 +3939,7 @@ function initNavGroups(){
 // Isang server-side RPC (team_month_performance) ang nagbubuod per team para sa
 // piniling buwan — installs, dispatched, attendance hours, efficiency, areas.
 let taRows=[], taFrom='', taTo='';   // flat rows: {month, group, ...metrics}
+let taRunId=0;   // guard: huling Analyze/picker run lang ang pwedeng mag-paint (iwas halo ng SLI at SLR rows)
 let taKind='sli';   // 'sli' (New Install) | 'slr' (Repair tickets) — picker sa Analyze overlay
 let taCache={};   // month 'YYYY-MM' -> raw RPC rows (iwas ulit-ulit na fetch; ang export ay YTD)
 async function taFetchMonth(m){
@@ -4060,15 +4061,16 @@ async function teamAnalyzeRun(){
   taTo=((document.getElementById('taTo')||{}).value)||mNow;
   if(taFrom>taTo){ const t=taFrom; taFrom=taTo; taTo=t; }
   const months=taMonthList(taFrom,taTo);
-  taRows=[];
+  const my=++taRunId, acc=[];
   if(taKind==='slr'){
     try{
       await ensureFreshTok();
       for(let i=0;i<months.length;i++){
         body.innerHTML=`Crunching SLR tickets — ${taMonthLabel(months[i])}… (${i+1}/${months.length})`;
-        taSlrAgg(months[i],await taSlrFetchMonth(months[i])).forEach(t=>taRows.push(t));
+        const part=taSlrAgg(months[i],await taSlrFetchMonth(months[i])); if(my!==taRunId) return; part.forEach(t=>acc.push(t));
       }
-    }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+    }catch(e){ if(my!==taRunId) return; body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+    if(my!==taRunId) return; taRows=acc;
     if(!taRows.length){ body.innerHTML='No SLR tickets found for '+taFrom+' → '+taTo+'.'; return; }
     taPaintSlr(); return;
   }
@@ -4080,9 +4082,11 @@ async function teamAnalyzeRun(){
       // mula sa Start-shift declarations (attendance) — kapareho ng Excel export.
       const _cw=await taFetchCrew(months[i]).catch(()=>[]);
       const _ros=await taFetchRoster();
-      (await taFetchMonth(months[i])).forEach(t=>taRows.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON', crewHtml:taCrewLine(_cw,t.team,_ros)}));
+      const _fm=await taFetchMonth(months[i]); if(my!==taRunId) return;
+      _fm.forEach(t=>acc.push({...t, month:months[i], group:taIsAhba(t.team)?'AHBA':'SUBCON', crewHtml:taCrewLine(_cw,t.team,_ros)}));
     }
-  }catch(e){ body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+  }catch(e){ if(my!==taRunId) return; body.innerHTML='<span style="color:#c2503a">Could not analyze: '+String(e.message||e).replace(/</g,'&lt;')+'</span>'; return; }
+  if(my!==taRunId) return; taRows=acc;
   if(!taRows.length){ body.innerHTML='No team activity found for '+taFrom+' → '+taTo+'.'; return; }
   taPaint();
 }
