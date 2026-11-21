@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-11-21.8" />
+  <link rel="stylesheet" href="styles.css?v=2026-11-21.9" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -336,16 +336,7 @@
       <section id="slrticketsPage" class="page">
         <div class="page-toolbar"><div><h2>SLR Tickets</h2><p>Repair tickets — SalesForce (official Converge dispatch) and FieldOps (direct CSR + materials declaration) in one monitoring.</p></div><div class="toolbar-actions"><button class="secondary-btn" id="slrSfUploadBtn" style="display:none" title="Upload the daily SalesForce aging-tickets .xlsx extract — same appointments are updated, new ones are added"><i data-icon="clipboard"></i>Upload SalesForce</button><input type="file" id="slrSfFile" accept=".xlsx,.xls" hidden><button class="primary-btn" id="slrAnalyzeBtn" style="display:none" title="Aging + dispatch lag · per-technician performance · repeat/chronic analysis"><i data-icon="spark"></i>Analyze</button><button class="secondary-btn" id="slrExport"><i data-icon="arrow"></i>Export Excel</button><button class="secondary-btn" id="slrRefresh">↻ Refresh</button></div></div>
         <article class="panel full-table">
-          <div class="filter-row"><div class="filter-chips" id="slrSrcChips"><button class="active" data-slrsrc="fieldops">FieldOps tickets</button><button data-slrsrc="salesforce">SalesForce (official)</button></div></div>
-          <div id="slrFoWrap">
-          <div class="filter-row">
-            <div class="search-box"><i data-icon="search"></i><input id="slrSearch" placeholder="Search ticket no., subscriber, IBAS, team, or address"></div>
-            <div class="filter-chips" id="slrStatusChips"><button class="active" data-slrst="open">Open</button><button data-slrst="completed">Completed</button><button data-slrst="closed">Cancelled / Negative</button><button data-slrst="all">All</button></div>
-          </div>
-          <div class="filter-row"><div class="filter-chips" id="slrTeamChips"></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Ticket</th><th>Subscriber</th><th>IBAS</th><th>Contact</th><th>Address</th><th>Team</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="slrBody"></tbody></table><div class="empty-row" id="slrEmpty" hidden>No SLR tickets match your filters.</div></div>
-          </div>
-          <div id="slrSfWrap" style="display:none"></div>
+          <div id="slrUniWrap"></div>
         </article>
       </section>
 
@@ -876,21 +867,21 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-11-21.8"></script>
-  <script src="qa-photo-corrections.js?v=2026-11-21.8"></script>
-  <script src="hr-core.js?v=2026-11-21.8"></script>
-  <script src="hr-api.js?v=2026-11-21.8"></script>
-  <script src="hr-attendance-import.js?v=2026-11-21.8"></script>
-  <script src="hr-sheets.js?v=2026-11-21.8"></script>
-  <script src="console-hr.js?v=2026-11-21.8"></script>
-  <script src="hr-entry.js?v=2026-11-21.8"></script>
-  <script src="console-sli-reports.js?v=2026-11-21.8"></script>
-  <script src="app.js?v=2026-11-21.8"></script>
+  <script src="qa-wims-export.js?v=2026-11-21.9"></script>
+  <script src="qa-photo-corrections.js?v=2026-11-21.9"></script>
+  <script src="hr-core.js?v=2026-11-21.9"></script>
+  <script src="hr-api.js?v=2026-11-21.9"></script>
+  <script src="hr-attendance-import.js?v=2026-11-21.9"></script>
+  <script src="hr-sheets.js?v=2026-11-21.9"></script>
+  <script src="console-hr.js?v=2026-11-21.9"></script>
+  <script src="hr-entry.js?v=2026-11-21.9"></script>
+  <script src="console-sli-reports.js?v=2026-11-21.9"></script>
+  <script src="app.js?v=2026-11-21.9"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-11-21.8"></script>
+  <script src="ahba-cloud.js?v=2026-11-21.9"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-11-21.8"></script><script src="qa-subscriber-info.js?v=2026-11-21.8"></script><script src="qa-api.js?v=2026-11-21.8"></script><script src="console-qa.js?v=2026-11-21.8"></script><script src="console-qa-findings.js?v=2026-11-21.8"></script>
-  <script src="fms-core.js?v=2026-11-21.8"></script><script src="fms-api.js?v=2026-11-21.8"></script><script src="console-fms.js?v=2026-11-21.8"></script>
-  <script src="sat-data.js?v=2026-11-21.8"></script><script src="console-sat.js?v=2026-11-21.8"></script>
+  <script src="qa-core.js?v=2026-11-21.9"></script><script src="qa-subscriber-info.js?v=2026-11-21.9"></script><script src="qa-api.js?v=2026-11-21.9"></script><script src="console-qa.js?v=2026-11-21.9"></script><script src="console-qa-findings.js?v=2026-11-21.9"></script>
+  <script src="fms-core.js?v=2026-11-21.9"></script><script src="fms-api.js?v=2026-11-21.9"></script><script src="console-fms.js?v=2026-11-21.9"></script>
+  <script src="sat-data.js?v=2026-11-21.9"></script><script src="console-sat.js?v=2026-11-21.9"></script>
 </body>
 </html>
