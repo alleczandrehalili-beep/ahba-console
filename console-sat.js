@@ -863,6 +863,63 @@
     const {agents, byB}=agRoll();
     const touched=new Set(Object.keys(byB));
     const wb=XLSX.utils.book_new();
+    /* ---- Pivot ----
+       Date x sales agent x referral agent, with loads encoded and completed.
+       Written as static values with subtotals rather than a live Excel
+       PivotTable: the console's existing pivot writer is hard-wired to one
+       measure (DATE rows x STATUS columns, count of JO), and two measures do
+       not fit it. Bending someone else's live module for this would be a
+       bigger change than the report is worth. `Pivot data` beside it is the
+       same aggregation flat, ready to drop into Excel's own PivotTable if a
+       different cut is wanted. */
+    const PV={};
+    DET.forEach(j=>{
+      const d=dOnly(j.created_at); if(!d) return;
+      const u=(j.created_by||'').trim()||'(none)';
+      const rf=(j.referral_name||'').trim()||'(no referral)';
+      const k=d+'\u0000'+u+'\u0000'+rf;
+      const e=PV[k]||(PV[k]={d,u,rf,enc:0,done:0});
+      e.enc++; if(AG_DONE.has((j.status||'').toLowerCase())) e.done++;
+    });
+    const flat=Object.values(PV).sort((a,b)=>
+      b.d.localeCompare(a.d) || a.u.localeCompare(b.u) || a.rf.localeCompare(b.rf));
+
+    const pct=(n,d)=>d? +(n/d*100).toFixed(1) : 0;
+    const PH=['DATE','SALES AGENT','REFERRAL AGENT','LOADS ENCODED','LOADS COMPLETED','COMPLETION %'];
+    const rows=[PH];
+    let gE=0,gC=0, dI=0;
+    while(dI<flat.length){
+      const day=flat[dI].d;
+      const dayRows=flat.filter(r=>r.d===day);
+      let dE=0,dC=0, first=true;
+      let aI=0;
+      const agents=[...new Set(dayRows.map(r=>r.u))];
+      agents.forEach(u=>{
+        const ar=dayRows.filter(r=>r.u===u);
+        let aE=0,aC=0;
+        ar.forEach(r=>{
+          rows.push([first?day:'', ar.indexOf(r)===0?u:'', r.rf, r.enc, r.done, pct(r.done,r.enc)]);
+          first=false; aE+=r.enc; aC+=r.done;
+        });
+        if(ar.length>1) rows.push(['', u+' — total', '', aE, aC, pct(aC,aE)]);
+        dE+=aE; dC+=aC; aI++;
+      });
+      rows.push([day+' — TOTAL','','',dE,dC,pct(dC,dE)]);
+      rows.push([]);
+      gE+=dE; gC+=dC;
+      dI+=dayRows.length;
+    }
+    rows.push(['GRAND TOTAL','','',gE,gC,pct(gC,gE)]);
+    const pvSheet=XLSX.utils.aoa_to_sheet(rows);
+    pvSheet['!cols']=[{wch:16},{wch:26},{wch:28},{wch:15},{wch:16},{wch:14}];
+    pvSheet['!freeze']={xSplit:0,ySplit:1};
+    XLSX.utils.book_append_sheet(wb, pvSheet, 'Pivot');
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(flat.map(r=>({
+      'DATE':r.d,'SALES AGENT':r.u,'REFERRAL AGENT':r.rf,
+      'LOADS ENCODED':r.enc,'LOADS COMPLETED':r.done,'COMPLETION %':pct(r.done,r.enc)
+    }))), 'Pivot data');
+
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DET.map(j=>({
       'WO ID':j.id||'', 'JOB ORDER NO.':j.job_order_no||'', 'REF NO.':j.ref_no||'', 'NEW REF #':j.new_ref||'',
       'IBASS ACCT NO.':j.ibass_acct_no||'',
