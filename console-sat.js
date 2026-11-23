@@ -864,8 +864,12 @@
        source: {name, headers, rows},          // the detail sheet = pivot cache
        sheets: [ {name, headers, rows, cols?, freeze?, filter?} ],   // plain sheets
        calc:   [ {name, formula} ],            // Excel calculated fields
-       pivots: [ {name, rowFields:[], colField?, subtotal?:[levels],
-                  data:[{field, name, numFmt?}]} ]
+       pivots: [ {name, rowFields:[], colField?, subtotal?:[levels], grandTotal?,
+                  data:[{field, name, numFmt?, agg?}]} ]
+     A measure's `agg` is the Excel subtotal function ('max', 'average', …);
+     omitted means sum. `grandTotal:false` drops the grand-total row, which a
+     sheet wants when some of its measures are per-group constants (ports,
+     saturation) whose max across every group would read as a real figure.
      }
      Every pivot shares one cache built from `source`, so double-clicking any
      value on any pivot sheet makes Excel write the job orders behind it to a
@@ -1005,7 +1009,8 @@
           else { walk(kid,q); if(SUB.has(q.length-1)) push(q,'default'); }
         });
       })(tree,[]);
-      ri.push('<i t="grand"><x/></i>');
+      const grand=p.grandTotal!==false;
+      if(grand) ri.push('<i t="grand"><x/></i>');
 
       const pf=[];
       for(let i=0;i<NF+CALC.length;i++){
@@ -1026,11 +1031,11 @@
 
       let colPart, nDataCols;
       if(cfI>=0){
-        nDataCols=SH[cfI].list.length+1;
+        nDataCols=SH[cfI].list.length+(grand?1:0);
         colPart='<colFields count="1"><field x="'+cfI+'"/></colFields>'
           +'<colItems count="'+nDataCols+'">'
           +SH[cfI].list.map((_v,j)=>'<i>'+(j?'<x v="'+j+'"/>':'<x/>')+'</i>').join('')
-          +'<i t="grand"><x/></i></colItems>';
+          +(grand?'<i t="grand"><x/></i>':'')+'</colItems>';
       } else {
         nDataCols=p.data.length;
         colPart='<colFields count="1"><field x="-2"/></colFields>'
@@ -1045,7 +1050,8 @@
         +' cacheId="1" dataOnRows="0" applyNumberFormats="0" applyBorderFormats="0" applyFontFormats="0"'
         +' applyPatternFormats="0" applyAlignmentFormats="0" applyWidthHeightFormats="1" dataCaption="Values"'
         +' updatedVersion="8" minRefreshableVersion="3" useAutoFormatting="1" itemPrintTitles="1"'
-        +' createdVersion="8" indent="0" compact="0" compactData="0" outline="0" outlineData="0" multipleFieldFilters="0">'
+        +' createdVersion="8" indent="0" compact="0" compactData="0" outline="0" outlineData="0" multipleFieldFilters="0"'
+        +(grand?'':' rowGrandTotals="0" colGrandTotals="0"')+'>'
         +'<location ref="A1:'+colName(Math.max(nCols-1,0))+(1+ri.length)+'" firstHeaderRow="1" firstDataRow="1" firstDataCol="'+rfI.length+'"/>'
         +'<pivotFields count="'+(NF+CALC.length)+'">'+pf.join('')+'</pivotFields>'
         +'<rowFields count="'+rfI.length+'">'+rfI.map(i=>'<field x="'+i+'"/>').join('')+'</rowFields>'
@@ -1053,6 +1059,7 @@
         +colPart
         +'<dataFields count="'+p.data.length+'">'
         +p.data.map((d,j)=>'<dataField name="'+esc(d.name)+'" fld="'+dfI[j]+'"'
+            +(d.agg&&d.agg!=='sum'?' subtotal="'+d.agg+'"':'')
             +(d.numFmt?' numFmtId="'+d.numFmt+'"':'')+' baseField="0" baseItem="0"/>').join('')
         +'</dataFields>'
         +'<pivotTableStyleInfo name="PivotStyleMedium9" showRowHeaders="1" showColHeaders="1" showRowStripes="0"'
@@ -1124,6 +1131,7 @@
       return Object.assign({name,headers:H,rows:objs.map(o=>H.map(k=>o[k]===undefined?'':o[k]))},opts||{});
     };
     const or_=(v,alt)=>{ const t=(v==null?'':String(v)).trim(); return t||alt; };
+    const RANK=ranked(), BX={}; RANK.forEach(r=>{ BX[r.c]=r; });
 
     /* ---- the detail sheet, which is also the pivot cache ----
        Three derived columns feed the pivots: the day stamp, and the two 1/0
@@ -1151,8 +1159,9 @@
       'LAST NAME':j.last_name||'',
       'PRIMARY NO.':j.primary_no||'', 'OTHER CONTACT NO.':j.other_contact_no||'', 'EMAIL':j.email||'',
       'HOUSE NO.':j.house_no||'', 'STREET NAME':j.street_name||'', 'VILLAGE / SUBDIVISION':j.village||'',
-      'BRGY':or_((R.find(r=>r.c===j.brgy)||{}).n||j.brgy,'(no barangay)'),
-      'DISTRICT':or_(j.district,'(no district)'), 'CITY':j.city||'', 'FULL ADDRESS':j.address||'',
+      'BRGY':or_((BX[j.brgy]||{}).n||j.brgy,'(no barangay)'),
+      'DISTRICT':or_((BX[j.brgy]||{}).d||j.district,'(no district)'),
+      'CITY':j.city||'', 'FULL ADDRESS':j.address||'',
       'SALES AGENT':or_(j.created_by,'(no agent)'), 'ENCODED BY':j.encoded_by||'', 'IN-CHARGE':j.in_charge||'',
       'SOURCE OF SALES':or_(j.source_of_sales,'(not set)'),
       'REFERRAL AGENT':or_(j.referral_name,'(no referral)'),
@@ -1162,21 +1171,25 @@
       'DRIVER (CREW)':j.crew_driver||'', 'TECH 1 (CREW)':j.crew_tech1||'', 'TECH 2 (CREW)':j.crew_tech2||'',
       'PRIORITY':j.priority||'', 'ACCOUNT':j.work_account||'',
       'MODE OF PAYMENT':j.payment_mode||'', 'AMOUNT':j.payment_amount==null?'':j.payment_amount, 'AR NO.':j.ar_no||'',
-      'VALIDATED':j.validated?'YES':'', 'INCOMPLETE REMARK':j.negative_remark||'', 'SPECIAL NOTE':j.special_note||''
+      'VALIDATED':j.validated?'YES':'', 'INCOMPLETE REMARK':j.negative_remark||'', 'SPECIAL NOTE':j.special_note||'',
+      /* the barangay's own figures ride along on every job order so the
+         Barangay coverage pivot can show them beside the counts. They are
+         constant per barangay, so the pivot takes them with max, not sum. */
+      'BARANGAY PORTS':(BX[j.brgy]||{}).p||0,
+      'BARANGAY SATURATION %':+(((BX[j.brgy]||{}).sat)||0).toFixed(2),
+      'BARANGAY GAP TO 10%':Math.round(((BX[j.brgy]||{}).gap)||0)
     };}));
 
-    /* Barangay coverage stays a plain sheet on purpose: it is the port
-       inventory, and its most useful rows are the barangays with a real gap
-       and NO job orders at all — rows a pivot over job orders can never
-       show, because there is no job order to pivot. */
-    const SHEETS=[tbl('Barangay coverage', ranked().map(r=>{
-      const e=byB[r.c];
-      return {'BARANGAY':r.n,'DISTRICT':r.d,'PORTS':r.p,'ACTIVE':r.a,'SATURATION %':+r.sat.toFixed(2),
-        'GAP TO 10%':Math.round(r.gap),'JOB ORDERS':e?e.jos:0,'COMPLETED':e?e.done:0,
-        'AGENTS WORKING IT':e?Object.keys(e.agents).length:0,
-        'JO PER 100 GAP':r.gap>0?+((e?e.jos:0)/r.gap*100).toFixed(1):'',
-        'NO ACTIVITY':e?'':'YES','WIN-BACK':r.w,'REACTIVATE':r.x,'MIGRATE':r.mig};
-    }))];
+    /* Barangay coverage is a pivot now, so it drills through like the rest.
+       A pivot over job orders can only show barangays that HAVE job orders,
+       and the barangays with none are the point of the whole module — so
+       they get their own sheet, which is the one thing a pivot cannot say. */
+    const SHEETS=[tbl('Untouched barangays', RANK
+      .filter(r=>r.gap>0 && !(byB[r.c] && byB[r.c].jos))
+      .map(r=>({'BARANGAY':r.n,'DISTRICT':r.d,'PORTS':r.p,'ACTIVE':r.a,
+        'SATURATION %':+r.sat.toFixed(2),'GAP TO 10%':Math.round(r.gap),
+        'WIN-BACK':r.w,'REACTIVATE':r.x,'MIGRATE':r.mig})),
+      {cols:[26,12,10,10,14,13,11,13,11]})];
 
     /* Loads encoded counts rows; Loads completed sums the 1/0 off STATUS;
        Completion % is a real Excel calculated field, so it stays correct on
@@ -1195,7 +1208,10 @@
           {name:'Pivot', rowFields:['DATE ENCODED (DAY)','SALES AGENT','REFERRAL AGENT'], subtotal:[0], data:VALS},
           {name:'Day by day', rowFields:['DATE ENCODED (DAY)'], colField:'STATUS',
            data:[{field:'LOAD COUNT',name:'Job orders'}]},
-          {name:'Per barangay', rowFields:['BRGY','SALES AGENT'], subtotal:[0], data:VALS},
+          {name:'Barangay coverage', rowFields:['BRGY','SALES AGENT'], subtotal:[0], grandTotal:false,
+           data:VALS.concat([{field:'BARANGAY PORTS',name:'Ports',agg:'max'},
+                             {field:'BARANGAY SATURATION %',name:'Saturation %',agg:'max',numFmt:2},
+                             {field:'BARANGAY GAP TO 10%',name:'Gap to 10%',agg:'max'}])},
           {name:'Source of sales', rowFields:['SOURCE OF SALES','REFERRAL AGENT'], subtotal:[0], data:VALS},
           {name:'Referrers', rowFields:['REFERRAL AGENT','SALES AGENT'], subtotal:[0], data:VALS},
           {name:'Areas covered', rowFields:['SALES AGENT','BRGY'], subtotal:[0], data:VALS}
