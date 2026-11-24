@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-24.2';
+const APP_VERSION='2026-11-24.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4495,11 +4495,33 @@ async function slrFetch(){
 // at mula DOON kukunin ang Open/Completed/Cancelled/All na bilang ng chips — kaya kapag
 // nilipat ang petsa, nag-a-update ang mga numero. Ang status chip ay hindi kasama sa
 // pagbilang ng kapwa chips (standard faceting).
-function slrUniFacet(uni,q,who,f,t){
+// Per-column filters (owner 2026-11-24). PURE predicate — kasama sa faceting para
+// ang chip counts ay sumusunod din sa mga column filter (tuloy ang tally sa Analyze,
+// na walang column filter na ipinapasa).
+function slrColPass(u,cf){
+  if(!cf) return true;
+  const has=(v,q)=>String(v==null?'':v).toUpperCase().includes(String(q).toUpperCase());
+  if(cf.id && !(has(u.id,cf.id)||u.fo.some(x=>has((x.ticket_no||'')+' '+x.id,cf.id)))) return false;
+  if(cf.sub && !(has(u.sub,cf.sub)||has(u.acct,cf.sub))) return false;
+  if(cf.area && !has(u.area,cf.area)) return false;
+  if(cf.status && u.status!==cf.status) return false;
+  if(cf.tech && !(has(u.tech,cf.tech)||u.fo.some(x=>has(x.team,cf.tech)))) return false;
+  if(cf.visits==='1' && u.visits!==1) return false;
+  if(cf.visits==='2' && u.visits<2) return false;
+  if(cf.src && u.source!==cf.src) return false;
+  if(cf.aging){ const a=u.aging==null?-1:u.aging;
+    if(cf.aging==='lt1' && !(a>=0&&a<1)) return false;
+    if(cf.aging==='1to3' && !(a>=1&&a<3)) return false;
+    if(cf.aging==='3to7' && !(a>=3&&a<7)) return false;
+    if(cf.aging==='7up' && a<7) return false; }
+  return true;
+}
+function slrUniFacet(uni,q,who,f,t,cf){
   let base=uni;
   if(f||t) base=base.filter(u=>slrDaysInRange(u.days,f,t));
   if(who) base=base.filter(u=>u.tech===who||u.fo.some(x=>x.team===who));
   if(q){ const Q=q.toUpperCase(); base=base.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(x=>(x.ticket_no||'')+' '+x.id).join(' ')].join(' ').toUpperCase().includes(Q)); }
+  if(cf) base=base.filter(u=>slrColPass(u,cf));
   const cnt={open:0,completed:0,cancelled:0}; base.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
   return {base,cnt};
 }
@@ -4521,13 +4543,16 @@ async function renderSlrTickets(force){
   }
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const uni=slrUniBuild(slrSfRows,slrRows);
-  const {base,cnt}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo);
+  const {base,cnt}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo,slrColF);
   let list=base;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
   const asOf=slrSfRows.map(r=>r.as_of).filter(Boolean).sort().pop();
   const lastAct=slrSfRows.reduce((m,r)=>{ const d=slrSfDay(r.dispatched_at)||slrSfDay(r.opened_at); return d>m?d:m; },'');
   const who=[...new Set([].concat(slrRows.map(t=>t.team),uni.map(u=>u.sf&&u.sf.last.technician)).filter(Boolean))].sort();
+  const stOpts=[...new Set(slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo).base.map(u=>u.status).filter(Boolean))].sort();
+  const cfIn='style="width:100%;box-sizing:border-box;border:1px solid #e3e9e4;border-radius:7px;padding:4px 6px;font-size:10.5px;color:#3a4a46;background:#fbfdfb"';
+  const cfAny=Object.values(slrColF).some(Boolean);
   const stLbl={open:'Open',completed:'Completed',cancelled:'Cancelled / Negative',all:'All'};
   const stCls={open:'pending',completed:'completed',cancelled:'cancelled'};
   const srcTag={sf:'<span style="font-size:10px;font-weight:700;color:#1a56ab;background:#e8f0fe;border-radius:8px;padding:2px 7px">SalesForce</span>',
@@ -4545,7 +4570,18 @@ async function renderSlrTickets(force){
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px">#</th><th>Case / Ticket</th><th>Subscriber</th><th>Area</th><th>Received</th><th>Visits</th><th>Latest status</th><th>Team / Technician</th><th>Aging</th><th>Source</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px">#</th><th>Case / Ticket</th><th>Subscriber</th><th>Area</th><th>Received</th><th>Visits</th><th>Latest status</th><th>Team / Technician</th><th>Aging</th><th>Source</th><th></th></tr>
+    <tr id="slrColFRow"><td></td>
+      <td><input data-cf="id" placeholder="Filter…" value="${esc(slrColF.id)}" ${cfIn}></td>
+      <td><input data-cf="sub" placeholder="Filter…" value="${esc(slrColF.sub)}" ${cfIn}></td>
+      <td><input data-cf="area" placeholder="Filter…" value="${esc(slrColF.area)}" ${cfIn}></td>
+      <td></td>
+      <td><select data-cf="visits" ${cfIn}><option value="">All</option><option value="1" ${slrColF.visits==='1'?'selected':''}>1</option><option value="2" ${slrColF.visits==='2'?'selected':''}>2+</option></select></td>
+      <td><select data-cf="status" ${cfIn}><option value="">All</option>${stOpts.map(o=>`<option ${slrColF.status===o?'selected':''}>${esc(o)}</option>`).join('')}</select></td>
+      <td><input data-cf="tech" placeholder="Filter…" value="${esc(slrColF.tech)}" ${cfIn}></td>
+      <td><select data-cf="aging" ${cfIn}><option value="">All</option><option value="lt1" ${slrColF.aging==='lt1'?'selected':''}>&lt;1d</option><option value="1to3" ${slrColF.aging==='1to3'?'selected':''}>1–3d</option><option value="3to7" ${slrColF.aging==='3to7'?'selected':''}>3–7d</option><option value="7up" ${slrColF.aging==='7up'?'selected':''}>7d+</option></select></td>
+      <td><select data-cf="src" ${cfIn}><option value="">All</option><option value="sf" ${slrColF.src==='sf'?'selected':''}>SalesForce</option><option value="fieldops" ${slrColF.src==='fieldops'?'selected':''}>FieldOps</option><option value="both" ${slrColF.src==='both'?'selected':''}>📦 Both</option></select></td>
+      <td>${cfAny?'<button id="slrColFClear" class="assign-btn" title="Clear column filters" style="padding:3px 8px">✕</button>':''}</td></tr></thead><tbody>
     ${list.map((u,i)=>`<tr>
       <td style="color:#8a9894;font-weight:700">${i+1}</td>
       <td><strong>${esc(u.id)}</strong>${u.fo.length&&u.sf?`<span>${esc(u.fo.map(t=>t.ticket_no||t.id).join(', '))}</span>`:''}</td>
@@ -4568,6 +4604,13 @@ async function renderSlrTickets(force){
   const df=$('#slrSfFrom'); if(df) df.onchange=()=>{ slrSfFrom=df.value; renderSlrTickets(); };
   const dt=$('#slrSfTo'); if(dt) dt.onchange=()=>{ slrSfTo=dt.value; renderSlrTickets(); };
   const sy=$('#slrSfSync'); if(sy) sy.onclick=()=>renderSlrTickets(true);
+  w.querySelectorAll('#slrColFRow input[data-cf]').forEach(inp=>{
+    inp.oninput=()=>{ slrColF[inp.dataset.cf]=inp.value.trim(); slrColF._focus=inp.dataset.cf;
+      clearTimeout(renderSlrTickets._cf);
+      renderSlrTickets._cf=setTimeout(()=>{ renderSlrTickets().then(()=>{ const n=w.querySelector('#slrColFRow input[data-cf="'+slrColF._focus+'"]'); if(n){ n.focus(); try{ n.setSelectionRange(n.value.length,n.value.length); }catch(e){} } }); },300); };
+  });
+  w.querySelectorAll('#slrColFRow select[data-cf]').forEach(sel=>{ sel.onchange=()=>{ slrColF[sel.dataset.cf]=sel.value; renderSlrTickets(); }; });
+  const cfc=$('#slrColFClear'); if(cfc) cfc.onclick=()=>{ slrColF={id:'',sub:'',area:'',visits:'',status:'',tech:'',aging:'',src:''}; renderSlrTickets(); };
   w.querySelectorAll('[data-uniview]').forEach(b=>b.onclick=()=>{ const u=renderSlrTickets._list[+b.dataset.uniview]; if(!u) return; if(u.fo.length) openSlrDetail(u.fo[0].id); else slrSfCaseDetail(u.sf); });
   slrBadgePaint();
 }
@@ -4592,6 +4635,7 @@ async function exportSlrTickets(){
 // ═════════ SLR · SalesForce unified monitoring (owner-approved design 2026-11-21) ═════════
 // docs/superpowers/specs/2026-11-21-slr-unified-monitoring-design.md
 let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfFrom='', slrSfTo='', slrUniWho='';
+let slrColF={id:'',sub:'',area:'',visits:'',status:'',tech:'',aging:'',src:''};
 // '10/1/2026, 12:07 AM' → ISO pinned sa Manila (+08:00). Tumatanggap din ng Excel date serial.
 function slrSfDateIso(v){
   if(v==null||v==='') return null;
