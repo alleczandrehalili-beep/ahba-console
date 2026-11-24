@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-24.4';
+const APP_VERSION='2026-11-24.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4495,6 +4495,28 @@ async function slrFetch(){
 // at mula DOON kukunin ang Open/Completed/Cancelled/All na bilang ng chips — kaya kapag
 // nilipat ang petsa, nag-a-update ang mga numero. Ang status chip ay hindi kasama sa
 // pagbilang ng kapwa chips (standard faceting).
+// Excel-style AutoFilter (owner 2026-11-24). PURE helpers:
+// slrXVal = ang "cell value" ng row para sa column (day para sa Received, bucket para
+// sa Aging, label para sa Source, '—' para sa blangko). slrXPass = pumapasa ba ang row
+// sa LAHAT ng aktibong column filter (maliban sa skip — ginagamit sa CASCADING options:
+// ang choices ng isang column ay galing sa data na na-filter na ng IBANG columns).
+function slrXVal(u,key){
+  switch(key){
+    case 'received': return slrSfDay(u.received)||'—';
+    case 'aging': { const a=u.aging; return a==null?'—':(a<1?'<1d':(a<3?'1–3d':(a<7?'3–7d':'7d+'))); }
+    case 'source': return u.source==='sf'?'SalesForce':(u.source==='both'?'📦 Both':'FieldOps');
+    case 'visits': return String(u.visits);
+    default: { const v=u[key]; return v==null||v===''?'—':String(v); }
+  }
+}
+function slrXPass(u,xf,skip){
+  for(const k in (xf||{})){
+    if(k===skip) continue;
+    const sel=xf[k];
+    if(sel&&sel.length&&!sel.includes(slrXVal(u,k))) return false;
+  }
+  return true;
+}
 // Header-click sorting (owner 2026-11-24): bawat column ay naso-sort pataas/pababa.
 // PURE: numeric ang visits/aging, string (case-insensitive) ang iba; blangko/null sa dulo.
 function slrUniSort(list,key,dir){
@@ -4509,11 +4531,12 @@ function slrUniSort(list,key,dir){
     return (r*dir) || String(a.id).localeCompare(String(b.id));
   });
 }
-function slrUniFacet(uni,q,who,f,t){
+function slrUniFacet(uni,q,who,f,t,xf){
   let base=uni;
   if(f||t) base=base.filter(u=>slrDaysInRange(u.days,f,t));
   if(who) base=base.filter(u=>u.tech===who||u.fo.some(x=>x.team===who));
   if(q){ const Q=q.toUpperCase(); base=base.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(x=>(x.ticket_no||'')+' '+x.id).join(' ')].join(' ').toUpperCase().includes(Q)); }
+  if(xf) base=base.filter(u=>slrXPass(u,xf));
   const cnt={open:0,completed:0,cancelled:0}; base.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
   return {base,cnt};
 }
@@ -4535,7 +4558,7 @@ async function renderSlrTickets(force){
   }
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const uni=slrUniBuild(slrSfRows,slrRows);
-  const {base,cnt}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo);
+  const {base,cnt}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo,slrXF);
   let list=base;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
   if(slrSort.key) list=slrUniSort(list,slrSort.key,slrSort.dir);
@@ -4558,9 +4581,10 @@ async function renderSlrTickets(force){
       <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap" title="Shows cases RECEIVED or DISPATCHED within the range — set From only, To only, or both">From <input type="date" id="slrSfFrom" value="${esc(slrSfFrom)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
       <label style="display:inline-flex;align-items:center;gap:7px;height:38px;border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff;font-size:12px;color:#8a9894;white-space:nowrap">To <input type="date" id="slrSfTo" value="${esc(slrSfTo)}" style="border:none;outline:none;font-size:12.5px;color:#1b2b27;background:transparent;font-family:inherit"></label>
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
+      ${Object.keys(slrXF).some(k=>slrXF[k]&&slrXF[k].length)?`<button id="slrXFClearAll" class="assign-btn" title="Clear all column filters" style="background:#fff2d9;border-color:#eedca8;color:#7a4b00">⏷ Filters on — clear</button>`:''}
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px">#</th>${[['id','Case / Ticket'],['sub','Subscriber'],['area','Area'],['received','Received'],['visits','Visits'],['status','Latest status'],['tech','Team / Technician'],['aging','Aging'],['source','Source']].map(([k,l])=>`<th data-usort="${k}" style="cursor:pointer;user-select:none" title="Click to sort">${l}${slrSort.key===k?(slrSort.dir===1?' ▲':' ▼'):''}</th>`).join('')}<th></th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px">#</th>${[['id','Case / Ticket'],['sub','Subscriber'],['area','Area'],['received','Received'],['visits','Visits'],['status','Latest status'],['tech','Team / Technician'],['aging','Aging'],['source','Source']].map(([k,l])=>`<th data-usort="${k}" style="cursor:pointer;user-select:none;white-space:nowrap" title="Click to sort">${l}${slrSort.key===k?(slrSort.dir===1?' ▲':' ▼'):''} <span data-xfbtn="${k}" title="Filter (like Excel)" style="cursor:pointer;padding:1px 4px;border-radius:5px;${(slrXF[k]&&slrXF[k].length)?'background:#0d3b34;color:#fff':'color:#9db3ab'}">⏷</span></th>`).join('')}<th></th></tr></thead><tbody>
     ${list.map((u,i)=>`<tr>
       <td style="color:#8a9894;font-weight:700">${i+1}</td>
       <td><strong>${esc(u.id)}</strong>${u.fo.length&&u.sf?`<span>${esc(u.fo.map(t=>t.ticket_no||t.id).join(', '))}</span>`:''}</td>
@@ -4586,6 +4610,9 @@ async function renderSlrTickets(force){
   w.querySelectorAll('th[data-usort]').forEach(h=>{ h.onclick=()=>{ const k=h.dataset.usort;
     if(slrSort.key===k) slrSort.dir=-slrSort.dir; else slrSort={key:k,dir:1};
     renderSlrTickets(); }; });
+  w.querySelectorAll('[data-xfbtn]').forEach(b=>{ b.onclick=e=>{ e.stopPropagation(); slrXFOpen(b.dataset.xfbtn,b); }; });
+  const xfc=$('#slrXFClearAll'); if(xfc) xfc.onclick=()=>{ slrXF={}; renderSlrTickets(); };
+  renderSlrTickets._uni=uni;
   w.querySelectorAll('[data-uniview]').forEach(b=>b.onclick=()=>{ const u=renderSlrTickets._list[+b.dataset.uniview]; if(!u) return; if(u.fo.length) openSlrDetail(u.fo[0].id); else slrSfCaseDetail(u.sf); });
   slrBadgePaint();
 }
@@ -4611,6 +4638,7 @@ async function exportSlrTickets(){
 // docs/superpowers/specs/2026-11-21-slr-unified-monitoring-design.md
 let slrSfRows=[], slrSfLoaded=false, slrSfSt='open', slrSfQ='', slrSfFrom='', slrSfTo='', slrUniWho='';
 let slrSort={key:'',dir:1};   // header-click sorting (owner 2026-11-24); blangko = default order
+let slrXF={};   // Excel-style column filters (owner 2026-11-24): key → array ng pinapayagang values; wala = lahat
 // '10/1/2026, 12:07 AM' → ISO pinned sa Manila (+08:00). Tumatanggap din ng Excel date serial.
 function slrSfDateIso(v){
   if(v==null||v==='') return null;
@@ -4756,6 +4784,44 @@ function slrUniBuild(sfRows, foRows, nowMs){
       visits:c?c.visits:1,
       status:c?(c.last.field_status||c.last.sfs_field_status||'—'):(typeof statusLabel==='function'?statusLabel(t.status):String(t.status||'')) };
   });
+}
+// Excel-like filter panel ng isang column. CASCADING: ang listahan ng values ay mula sa
+// data na dumaan na sa date range/search/team at sa IBANG column filters (hindi sa sarili).
+function slrXFOpen(key,btn){
+  const old=document.getElementById('slrXFPanel'); if(old) old.remove();
+  const uni=renderSlrTickets._uni||[];
+  const {base}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo);   // walang xf
+  let pool=base.filter(u=>slrXPass(u,slrXF,key));                      // cascade: ibang columns lang
+  if(slrSfSt!=='all') pool=pool.filter(u=>u.state===slrSfSt);
+  const counts={}; pool.forEach(u=>{ const v=slrXVal(u,key); counts[v]=(counts[v]||0)+1; });
+  const vals=Object.keys(counts).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  const sel=new Set((slrXF[key]&&slrXF[key].length)?slrXF[key]:vals);
+  const esc=v=>String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const p=document.createElement('div'); p.id='slrXFPanel';
+  const r=btn.getBoundingClientRect();
+  p.style.cssText=`position:fixed;top:${Math.min(r.bottom+6,window.innerHeight-380)}px;left:${Math.min(r.left-120,window.innerWidth-290)}px;z-index:999;background:#fff;border:1px solid #dfe5df;border-radius:12px;box-shadow:0 14px 40px rgba(8,30,26,.22);width:270px;padding:10px;font:500 12px system-ui;color:#2a3a36`;
+  p.innerHTML=`
+    <input id="xfSearch" placeholder="Search values…" style="width:100%;box-sizing:border-box;border:1px solid #e3e9e4;border-radius:8px;padding:6px 8px;font-size:11.5px;margin-bottom:7px">
+    <label style="display:flex;gap:7px;align-items:center;padding:3px 2px;border-bottom:1px solid #eef1ed;margin-bottom:4px"><input type="checkbox" id="xfAll" ${sel.size===vals.length?'checked':''}><b>(Select all)</b><span style="margin-left:auto;color:#8a9894">${vals.length}</span></label>
+    <div id="xfList" style="max-height:230px;overflow:auto">
+      ${vals.slice(0,500).map(v=>`<label data-xfrow style="display:flex;gap:7px;align-items:center;padding:3px 2px"><input type="checkbox" data-xfval="${esc(v)}" ${sel.has(v)?'checked':''}><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(v)}</span><span style="margin-left:auto;color:#8a9894;font-size:10px">${counts[v]}</span></label>`).join('')}
+      ${vals.length>500?`<div style="padding:4px;color:#8a9894;font-size:10px">… ${vals.length-500} pang values — gamitin ang search</div>`:''}
+    </div>
+    <div style="display:flex;gap:7px;margin-top:8px">
+      <button id="xfOk" class="primary-btn" style="flex:1;height:32px;font-size:12px">OK</button>
+      <button id="xfClear" class="secondary-btn" style="height:32px;font-size:12px">Clear</button>
+    </div>`;
+  document.body.appendChild(p);
+  const boxes=()=>[...p.querySelectorAll('[data-xfval]')];
+  p.querySelector('#xfSearch').oninput=e=>{ const q=e.target.value.trim().toUpperCase();
+    p.querySelectorAll('[data-xfrow]').forEach(row=>{ row.style.display=!q||row.textContent.toUpperCase().includes(q)?'flex':'none'; }); };
+  p.querySelector('#xfAll').onchange=e=>{ boxes().forEach(c=>{ if(c.closest('[data-xfrow]').style.display!=='none') c.checked=e.target.checked; }); };
+  p.querySelector('#xfOk').onclick=()=>{ const on=boxes().filter(c=>c.checked).map(c=>c.dataset.xfval);
+    if(on.length===vals.length||!on.length) delete slrXF[key]; else slrXF[key]=on;
+    p.remove(); renderSlrTickets(); };
+  p.querySelector('#xfClear').onclick=()=>{ delete slrXF[key]; p.remove(); renderSlrTickets(); };
+  setTimeout(()=>{ const close=e=>{ if(!p.contains(e.target)){ p.remove(); document.removeEventListener('mousedown',close); } };
+    document.addEventListener('mousedown',close); },0);
 }
 // Detail overlay para sa SalesForce-only case: bawat visit/appointment ng case.
 function slrSfCaseDetail(c){
