@@ -61,3 +61,19 @@ test('QA Validation modal: the photo grid comes BEFORE the collapsible subscribe
   assert.ok(grid > 0 && info > grid && details > grid && details < info, 'photos first, then the details block');
   assert.ok(/#photoModal\{max-height:92vh;overflow:auto\}/.test(html), 'the modal itself scrolls');
 });
+
+
+test('QA Validation search: every typed word must match somewhere in the row (subscriber, WO/JO/ticket no., account, team, area, contact)', () => {
+  const c = ctx(); vm.runInContext(slice('function completedMatches(', '\n}\n') + '\n}', c);
+  const j = { id: 'WO-2026-ZZ1', subscriber: 'ZZ TEST, MARIA CLARA', first_name: 'Maria Clara', last_name: 'ZZ Test', job_order_no: 'R0000123', ticket_no: null, ibass_acct_no: '1878000000001', team: 'AHBA_SLI009', area: 'QUEZON CITY', primary_no: '09000000000' };
+  for (const q of ['', '   ', 'maria', 'MARIA', 'clara zz', 'zz1', 'r0000123', '1878000000001', 'sli009', 'quezon', 'maria sli009', '  maria   clara ', '0900']) assert.equal(c.completedMatches(j, q), true, 'should match: "' + q + '"');
+  for (const q of ['pedro', 'maria pedro', 'slr002', 'r9999999']) assert.equal(c.completedMatches(j, q), false, 'should not match: "' + q + '"');
+  assert.equal(c.completedMatches({ id: 'X', subscriber: null }, 'x'), true);
+  assert.equal(c.completedMatches({}, 'anything'), false);
+});
+
+test('QA Validation page has the search box in the Daily completed log header', () => {
+  const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+  assert.ok(/id="compSearch"[^>]*type="search"|type="search"[^>]*id="compSearch"/.test(html));
+  assert.ok(html.indexOf('id="compSearch"') > html.indexOf('Daily completed log') && html.indexOf('id="compSearch"') < html.indexOf('id="completedBody"'));
+});

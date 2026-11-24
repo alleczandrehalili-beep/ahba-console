@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-24.1';
+const APP_VERSION='2026-11-24.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3097,6 +3097,7 @@ function completedValidationCell(j,canEdit){
 }
 async function renderCompleted(){
   const dEl=$('#compDate'); if(dEl&&!dEl.value){dEl.value=manilaToday();dEl.onchange=renderCompleted;}
+  const sEl=$('#compSearch'); if(sEl&&!sEl._wired){sEl._wired=true;sEl.oninput=paintCompleted;}   // search filters the loaded day as you type
   const _cb=$('#clearBtn'); if(_cb) _cb.style.display=dashCanEdit('completed')?'':'none';   // Clear photos = GC-only
   const date=dEl?dEl.value:manilaToday();
   const body=$('#completedBody'); if(!body)return;
@@ -3112,8 +3113,25 @@ async function renderCompleted(){
   $('#compPending').textContent=compJobs.length-val-ret;
   const _cr=$('#compReturned'); if(_cr) _cr.textContent=ret;
   $('#compPhotos').textContent=totalPhotos;
+  paintCompleted();
+}
+// QA Validation search (owner 2026-11-24): every word typed must appear somewhere in the row's searchable text — subscriber (and its
+// name parts), work order id, JO no., ticket no., IBASS account, team, area, contact no. Case-insensitive; extra spaces ignored.
+function completedMatches(j,q){
+  const words=String(q||'').toLowerCase().split(/\s+/).filter(Boolean);
+  if(!words.length) return true;
+  const hay=[j.id,j.subscriber,j.first_name,j.middle_name,j.last_name,j.job_order_no,j.ticket_no,j.ibass_acct_no,j.team,j.area,j.primary_no,j.other_contact_no].filter(v=>v!=null&&v!=='').join(' ').toLowerCase();
+  return words.every(w=>hay.includes(w));
+}
+// Paints the Daily completed log from compJobs (already loaded for the day), narrowed by the search box. No refetch: typing only filters.
+function paintCompleted(){
+  const body=$('#completedBody'); if(!body) return;
+  const sEl=$('#compSearch'), q=(sEl&&sEl.value)||'';
+  const rows=compJobs.filter(j=>completedMatches(j,q));
+  const cnt=$('#compSearchCount'); if(cnt) cnt.textContent=q.trim()?`${rows.length} of ${compJobs.length}`:'';
   if(!compJobs.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No completed jobs for this day.</td></tr>`;return}
-  body.innerHTML=compJobs.map(j=>{
+  if(!rows.length){body.innerHTML=`<tr><td colspan="7" class="empty-cell">No match for “${esc(q.trim())}” on this day.</td></tr>`;return}
+  body.innerHTML=rows.map(j=>{
     const n=(compPhotos[j.id]||[]).length;
     return `<tr><td><strong>${j.id}</strong></td><td>${j.team||'—'}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.area||'—')}</td><td>${fmtWhen(j.updated_at)}</td><td><button class="assign-btn" data-gallery="${j.id}">${n} photo${n===1?'':'s'} · View</button></td><td>${completedValidationCell(j,dashCanEdit('completed'))}</td></tr>`;
   }).join('');
