@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-24.1';
+const APP_VERSION='2026-11-24.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4759,15 +4759,28 @@ function slrSfCaseDetail(c){
 }
 // ---------- Analyze: aging + dispatch lag · per-technician · repeat/chronic (PURE core) ----------
 function slrAnMedian(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
-function slrAnCompute(sfRows, from, to, nowMs){
+// TALLY RULE (owner 2026-11-24): ang Analyze ay gumagamit ng PAREHONG engine ng listahan —
+// parehong population (SalesForce cases + FieldOps tickets) at parehong ACTIVITY range
+// (received O dispatched sa saklaw) — kaya ang headline totals ay eksaktong tumutugma sa
+// Open/Completed/Cancelled/All chips. Ang SalesForce detail sections ay binibilang din
+// sa saklaw: appointments na NA-DISPATCH sa range, cases na NA-COMPLETE sa range.
+function slrAnCompute(sfRows, foRows, from, to, nowMs){
   nowMs=nowMs||Date.now();
-  const rows=sfRows.filter(r=>{ const d=slrSfDay(r.opened_at); return d&&d>=from&&d<=to; });
-  const cases=slrSfCases(rows,nowMs);
+  const inR=d=>!!d&&(!from||d>=from)&&(!to||d<=to);
+  const uni=slrUniBuild(sfRows||[], foRows||[], nowMs);
+  const base=slrUniFacet(uni,'','',from,to).base;                    // = ang listahan mismo
+  const totals={all:base.length,open:0,completed:0,cancelled:0};
+  base.forEach(u=>totals[u.state]=(totals[u.state]||0)+1);
+  const sfPop=base.filter(u=>u.sf).map(u=>u.sf);                     // SF cases sa population
+  const foOnly=base.filter(u=>!u.sf).length;
+  const rows=(sfRows||[]).filter(r=>inR(slrSfDay(r.dispatched_at))); // trabahong NA-DISPATCH sa range
   const lagH=rows.filter(r=>r.earliest_start_at&&r.dispatched_at)
     .map(r=>Math.max(0,(new Date(r.dispatched_at)-new Date(r.earliest_start_at))/3600000));
-  const repD=cases.filter(c=>c.done&&c.done.completed_at&&c.opened)
+  const doneInR=sfPop.filter(c=>c.done&&c.done.completed_at&&inR(slrSfDay(c.done.completed_at)));
+  const repD=doneInR.filter(c=>c.opened)
     .map(c=>Math.max(0,(new Date(c.done.completed_at)-new Date(c.opened))/86400000));
-  const open=cases.filter(c=>c.state==='open');
+  const open=sfPop.filter(c=>c.state==='open');
+  const notDisp=open.filter(c=>!(c.appts||[]).some(a=>inR(slrSfDay(a.dispatched_at)))).length;
   const buckets=[['0–2 days',0,3],['3–7 days',3,8],['8–15 days',8,16],['15+ days',16,1e9]]
     .map(([label,lo,hi])=>({label,n:open.filter(c=>c.aging>=lo&&c.aging<hi).length}));
   const tech={};
@@ -4787,24 +4800,23 @@ function slrAnCompute(sfRows, from, to, nowMs){
   const techRows=Object.values(tech).map(t=>({...t,rate:t.appts?t.completed/t.appts:0}))
     .sort((a,b)=>b.completed-a.completed||b.appts-a.appts);
   const acct={};
-  cases.forEach(c=>{ const k=String(c.account_no||'').trim(); if(!k) return;
+  sfPop.forEach(c=>{ const k=String(c.account_no||'').trim(); if(!k) return;
     const a=acct[k]=acct[k]||{account_no:k,name:c.account_name,barangay:c.barangay,cases:0,open:0,lastStatus:''};
     a.cases++; if(c.state==='open')a.open++; a.lastStatus=c.last.field_status||a.lastStatus; a.name=a.name||c.account_name; });
   const repeats=Object.values(acct).filter(a=>a.cases>=2).sort((a,b)=>b.cases-a.cases);
   const brgy={};
-  cases.forEach(c=>{ const k=c.barangay||'(no barangay)'; const b=brgy[k]=brgy[k]||{barangay:k,cases:0,open:0}; b.cases++; if(c.state==='open')b.open++; });
+  sfPop.forEach(c=>{ const k=c.barangay||'(no barangay)'; const b=brgy[k]=brgy[k]||{barangay:k,cases:0,open:0}; b.cases++; if(c.state==='open')b.open++; });
   const brgyRows=Object.values(brgy).sort((a,b)=>b.cases-a.cases);
   const nap={};
   rows.forEach(r=>{ if(r.field_status==='NAP Fix Required'&&r.nap_code&&r.nap_code!=='no_nap_code'){ nap[r.nap_code]=(nap[r.nap_code]||0)+1; } });
   const napRows=Object.entries(nap).map(([nap_code,n])=>({nap_code,n})).sort((a,b)=>b.n-a.n);
   return {
-    rows, cases, techRows, repeats, brgyRows, napRows, buckets,
+    rows, cases:sfPop, techRows, repeats, brgyRows, napRows, buckets, totals,
     summary:{
-      cases:cases.length, appts:rows.length,
-      completed:cases.filter(c=>c.state==='completed').length,
-      open:open.length, cancelled:cases.filter(c=>c.state==='cancelled').length,
-      rate:cases.length?cases.filter(c=>c.state==='completed').length/cases.length:0,
-      avgVisits:cases.length?rows.length/cases.length:0,
+      all:totals.all, open:totals.open, completedU:totals.completed, cancelledU:totals.cancelled,
+      rate:totals.all?totals.completed/totals.all:0,
+      sfCases:sfPop.length, foOnly,
+      appts:rows.length, completed:doneInR.length, sfOpen:open.length, notDisp,
       medLagH:slrAnMedian(lagH), avgLagH:lagH.length?lagH.reduce((a,b)=>a+b,0)/lagH.length:null,
       medRepD:slrAnMedian(repD), avgRepD:repD.length?repD.reduce((a,b)=>a+b,0)/repD.length:null,
       repeatAccts:repeats.length
@@ -4820,7 +4832,7 @@ function slrAnalyzeOpen(){
   const from=d.toISOString().slice(0,10);
   ov.innerHTML=`<div style="background:#fff;border-radius:16px;max-width:1120px;width:100%;max-height:90vh;overflow:auto;padding:20px 22px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <div><h3 style="margin:0;font-size:16px">📊 SLR Analysis — SalesForce official</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Aging + dispatch lag · per-technician · repeat/chronic — range is by RECEIVED date</p></div>
+      <div><h3 style="margin:0;font-size:16px">📊 SLR Analysis — SalesForce official</h3><p style="margin:3px 0 0;font-size:10px;color:#8a9894">Aging + dispatch lag · per-technician · repeat/chronic — parehong range at bilang ng SLR list (received O dispatched sa saklaw)</p></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <label style="font-size:10px;color:#8a9894">From <input type="date" id="slrAnFrom" value="${from}" max="${today}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
         <label style="font-size:10px;color:#8a9894">To <input type="date" id="slrAnTo" value="${today}" max="${today}" style="border:1px solid #dfe5df;border-radius:9px;padding:8px 10px;font-size:12px"></label>
@@ -4844,21 +4856,27 @@ async function slrAnalyzeRun(){
   slrAnTo=(document.getElementById('slrAnTo')||{}).value||manilaToday();
   if(slrAnFrom>slrAnTo){ const t=slrAnFrom; slrAnFrom=slrAnTo; slrAnTo=t; }
   body.innerHTML='Crunching…';
-  try{ await ensureFreshTok(); if(!slrSfLoaded) await slrSfFetch(); }
+  try{ await ensureFreshTok(); if(!slrSfLoaded) await slrSfFetch(); if(!slrLoaded) await slrFetch(); }
   catch(e){ body.innerHTML='<span style="color:#c2503a">Could not load SalesForce data: '+String(e.message||e).replace(/</g,'&lt;')+'. Na-run na ba ang supabase-slr-salesforce.sql?</span>'; return; }
-  const an=slrAnLast=slrAnCompute(slrSfRows,slrAnFrom,slrAnTo);
-  if(!an.rows.length){ body.innerHTML='No SalesForce tickets received between '+slrAnFrom+' and '+slrAnTo+'. Upload the latest extract first.'; return; }
+  const an=slrAnLast=slrAnCompute(slrSfRows,slrRows,slrAnFrom,slrAnTo);
+  if(!an.totals.all){ body.innerHTML='No tickets (SalesForce or FieldOps) with activity between '+slrAnFrom+' and '+slrAnTo+'. Upload the latest extract or widen the range.'; return; }
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const s=an.summary, pc=v=>(v*100).toFixed(1)+'%', f1=v=>v==null?'—':(+v).toFixed(1);
   const kpi=(l,v,c)=>`<div class="small-stat" style="border-left:4px solid ${c||'#4285f4'}"><span>${l}</span><strong style="color:${c||'#1b2b27'}">${v}</strong></div>`;
   const th='padding:7px 9px;text-align:left;font-size:10px;color:#8a9894;border-bottom:1px solid #e7ece8;white-space:nowrap';
   const td='padding:7px 9px;border-bottom:1px solid #f0f3f0;font-size:12px';
   body.innerHTML=`
+    <p style="margin:0 0 6px;font-size:10px;color:#8a9894">Unang hilera = eksaktong tugma sa list chips (SalesForce + FieldOps, parehong range)</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
-      ${kpi('Cases received',s.cases)}${kpi('Appointments',s.appts)}${kpi('Completed',s.completed,'#11825f')}
-      ${kpi('Open / aging',s.open,'#b7791f')}${kpi('Completion rate',pc(s.rate),s.rate>=.8?'#11825f':'#c2503a')}
-      ${kpi('Avg visits/case',f1(s.avgVisits))}${kpi('Dispatch lag (med)',f1(s.medLagH)+' h','#4285f4')}
-      ${kpi('Repair time (med)',f1(s.medRepD)+' d','#4285f4')}${kpi('Repeat accounts',s.repeatAccts,'#c2503a')}
+      ${kpi('All tickets',s.all)}${kpi('Open',s.open,'#b7791f')}${kpi('Completed',s.completedU,'#11825f')}
+      ${kpi('Cancelled / Negative',s.cancelledU,'#7a8088')}${kpi('Completion rate',pc(s.rate),s.rate>=.8?'#11825f':'#c2503a')}
+      ${kpi('Repeat accounts',s.repeatAccts,'#c2503a')}
+    </div>
+    <p style="margin:10px 0 6px;font-size:10px;color:#8a9894">SalesForce official sa loob ng range — ${s.sfCases} case${s.sfCases===1?'':'s'} (FieldOps-only: ${s.foOnly})</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">
+      ${kpi('Appointments dispatched',s.appts,'#4285f4')}${kpi('Completed in range',s.completed,'#11825f')}
+      ${kpi('Open SF cases',s.sfOpen,'#b7791f')}${kpi('Not yet dispatched',s.notDisp,'#c2503a')}
+      ${kpi('Dispatch lag (med)',f1(s.medLagH)+' h','#4285f4')}${kpi('Repair time (med)',f1(s.medRepD)+' d','#4285f4')}
     </div>
     <h4 style="margin:16px 0 6px;font-size:13px">⏱ Aging ng open cases <span style="font-weight:400;color:#8a9894">(mula received date hanggang ngayon)</span></h4>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
@@ -4882,16 +4900,21 @@ async function slrAnalyzeRun(){
     </div>`;
 }
 async function slrAnalyzeExport(){
-  if(!slrAnLast||!slrAnLast.rows.length){ showToast('Run Analyze first'); return; }
+  if(!slrAnLast||!slrAnLast.totals.all){ showToast('Run Analyze first'); return; }
   try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
   const an=slrAnLast, s=an.summary, f1=v=>v==null?'':+(+v).toFixed(2);
   const wb=XLSX.utils.book_new(), sh=(n,aoa)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),n);
-  sh('Summary',[['SLR ANALYSIS — SALESFORCE OFFICIAL'],['Range (received)',slrAnFrom+' → '+slrAnTo],[],
-    ['Cases received',s.cases],['Appointments',s.appts],['Completed cases',s.completed],['Open / aging',s.open],['Cancelled',s.cancelled],
-    ['Completion rate',(s.rate*100).toFixed(1)+'%'],['Avg visits per case',f1(s.avgVisits)],
+  sh('Summary',[['SLR ANALYSIS — UNIFIED (tugma sa SLR list)'],['Range (activity: received o dispatched)',slrAnFrom+' → '+slrAnTo],[],
+    ['UNIFIED TOTALS (SalesForce + FieldOps — pareho ng list chips)'],
+    ['All tickets',s.all],['Open',s.open],['Completed',s.completedU],['Cancelled / Negative',s.cancelledU],
+    ['Completion rate',(s.rate*100).toFixed(1)+'%'],['Repeat accounts (≥2 cases)',s.repeatAccts],[],
+    ['SALESFORCE OFFICIAL SA RANGE'],
+    ['SalesForce cases',s.sfCases],['FieldOps-only tickets',s.foOnly],
+    ['Appointments dispatched in range',s.appts],['Cases completed in range',s.completed],
+    ['Open SF cases',s.sfOpen],['Open na HINDI pa na-dispatch sa range',s.notDisp],
     ['Dispatch lag I→J median (hours)',f1(s.medLagH)],['Dispatch lag I→J average (hours)',f1(s.avgLagH)],
-    ['Repair time E→completed median (days)',f1(s.medRepD)],['Repair time average (days)',f1(s.avgRepD)],
-    ['Repeat accounts (≥2 cases)',s.repeatAccts],[],['AGING OF OPEN CASES'],...an.buckets.map(b=>[b.label,b.n])]);
+    ['Repair time E→completed median (days)',f1(s.medRepD)],['Repair time average (days)',f1(s.avgRepD)],[],
+    ['AGING OF OPEN SF CASES'],...an.buckets.map(b=>[b.label,b.n])]);
   sh('Per Technician',[['TECHNICIAN','APPOINTMENTS','COMPLETED','REPAIR FIXED','NTF','REQUIRES RESCHEDULE','NAP FIX REQ','CANCELLED','COMPLETION RATE'],
     ...an.techRows.map(t=>[t.tech,t.appts,t.completed,t.fixed,t.ntf,t.resched,t.napfix,t.cancelled,(t.rate*100).toFixed(1)+'%'])]);
   sh('Aging (open cases)',[['CASE','ACCOUNT','SUBSCRIBER','BARANGAY','RECEIVED','VISITS','LAST FIELD STATUS','TECHNICIAN','AGING (DAYS)'],
