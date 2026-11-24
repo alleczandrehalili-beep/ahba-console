@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-23.1';
+const APP_VERSION='2026-11-24.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4491,6 +4491,18 @@ async function slrFetch(){
   }
   slrRows=rows; slrLoaded=true;
 }
+// Faceted counting (owner 2026-11-24): i-apply ang date range + team/tech + search,
+// at mula DOON kukunin ang Open/Completed/Cancelled/All na bilang ng chips — kaya kapag
+// nilipat ang petsa, nag-a-update ang mga numero. Ang status chip ay hindi kasama sa
+// pagbilang ng kapwa chips (standard faceting).
+function slrUniFacet(uni,q,who,f,t){
+  let base=uni;
+  if(f||t) base=base.filter(u=>slrDaysInRange(u.days,f,t));
+  if(who) base=base.filter(u=>u.tech===who||u.fo.some(x=>x.team===who));
+  if(q){ const Q=q.toUpperCase(); base=base.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(x=>(x.ticket_no||'')+' '+x.id).join(' ')].join(' ').toUpperCase().includes(Q)); }
+  const cnt={open:0,completed:0,cancelled:0}; base.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
+  return {base,cnt};
+}
 // UNIFIED list (owner 2026-11-21): SalesForce official + FieldOps tickets sa IISANG table.
 // Links: SA-no. digits sa FieldOps ticket_no ↔ SF appointment_no; fallback account_no ↔ IBAS.
 async function renderSlrTickets(force){
@@ -4509,12 +4521,9 @@ async function renderSlrTickets(force){
   }
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const uni=slrUniBuild(slrSfRows,slrRows);
-  const cnt={open:0,completed:0,cancelled:0}; uni.forEach(u=>cnt[u.state]=(cnt[u.state]||0)+1);
-  let list=uni;
+  const {base,cnt}=slrUniFacet(uni,slrSfQ,slrUniWho,slrSfFrom,slrSfTo);
+  let list=base;
   if(slrSfSt!=='all') list=list.filter(u=>u.state===slrSfSt);
-  if(slrSfFrom||slrSfTo) list=list.filter(u=>slrDaysInRange(u.days,slrSfFrom,slrSfTo));
-  if(slrUniWho) list=list.filter(u=>u.tech===slrUniWho||u.fo.some(t=>t.team===slrUniWho));
-  if(slrSfQ){ const q=slrSfQ.toUpperCase(); list=list.filter(u=>[u.id,u.sub,u.acct,u.area,u.tech,u.status,u.fo.map(t=>(t.ticket_no||'')+' '+t.id).join(' ')].join(' ').toUpperCase().includes(q)); }
   list.sort((a,b)=>(a.state==='open'?0:1)-(b.state==='open'?0:1)||String(b.received||'').localeCompare(String(a.received||'')));
   const asOf=slrSfRows.map(r=>r.as_of).filter(Boolean).sort().pop();
   const lastAct=slrSfRows.reduce((m,r)=>{ const d=slrSfDay(r.dispatched_at)||slrSfDay(r.opened_at); return d>m?d:m; },'');
@@ -4527,7 +4536,7 @@ async function renderSlrTickets(force){
   w.innerHTML=`
     <div class="filter-row">
       <div class="search-box"><i data-icon="search"></i><input id="slrUniSearch" placeholder="Search case/ticket no., subscriber, account, area, team, technician" value="${esc(slrSfQ)}"></div>
-      <div class="filter-chips" id="slrUniStChips">${['open','completed','cancelled','all'].map(k=>`<button class="${slrSfSt===k?'active':''}" data-unist="${k}">${stLbl[k]} (${k==='all'?uni.length:(cnt[k]||0)})</button>`).join('')}</div>
+      <div class="filter-chips" id="slrUniStChips">${['open','completed','cancelled','all'].map(k=>`<button class="${slrSfSt===k?'active':''}" data-unist="${k}">${stLbl[k]} (${k==='all'?base.length:(cnt[k]||0)})</button>`).join('')}</div>
     </div>
     <div class="filter-row" style="align-items:center">
       <select id="slrUniWho" style="height:38px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:12px;color:#52635f;background:#fff;max-width:230px"><option value="">All teams / technicians</option>${who.map(n=>`<option ${slrUniWho===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
@@ -4536,8 +4545,9 @@ async function renderSlrTickets(force){
       <button class="secondary-btn" id="slrSfSync" title="Re-fetch the latest SalesForce + FieldOps data" style="height:38px">⟳ Sync</button>
       <span style="font-size:10px;color:#8a9894">${asOf?'SalesForce file as of '+new Date(asOf).toLocaleString('en-PH',{timeZone:TZ,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'No SalesForce upload yet'}${sfErr?' · <b style="color:#c2503a">SalesForce load failed — FieldOps tickets lang ang ipinapakita</b>':''}</span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Case / Ticket</th><th>Subscriber</th><th>Area</th><th>Received</th><th>Visits</th><th>Latest status</th><th>Team / Technician</th><th>Aging</th><th>Source</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px">#</th><th>Case / Ticket</th><th>Subscriber</th><th>Area</th><th>Received</th><th>Visits</th><th>Latest status</th><th>Team / Technician</th><th>Aging</th><th>Source</th><th></th></tr></thead><tbody>
     ${list.map((u,i)=>`<tr>
+      <td style="color:#8a9894;font-weight:700">${i+1}</td>
       <td><strong>${esc(u.id)}</strong>${u.fo.length&&u.sf?`<span>${esc(u.fo.map(t=>t.ticket_no||t.id).join(', '))}</span>`:''}</td>
       <td><strong>${esc(u.sub||'—')}</strong><span>${esc(u.acct||'')}</span></td>
       <td>${esc(u.area||'—')}</td>
@@ -4548,7 +4558,7 @@ async function renderSlrTickets(force){
       <td><span class="status ${stCls[u.state]||''}">${u.aging!=null?u.aging.toFixed(1)+'d':'—'}</span></td>
       <td>${srcTag[u.source]||''}</td>
       <td><button class="assign-btn" data-uniview="${i}">View</button></td></tr>`).join('')
-      ||`<tr><td colspan="10" style="padding:14px;color:#8a9894">No tickets match — status <b>${stLbl[slrSfSt]}</b>${(slrSfFrom||slrSfTo)?` · range <b>${slrSfFrom||'…'} → ${slrSfTo||'…'}</b>`:''}. ${lastAct?`Latest SalesForce activity on record: <b>${lastAct}</b> — the uploaded file has nothing after that date; upload a newer extract to see recent dispatches. `:''}Try the <b>All</b> chip or widen the range.</td></tr>`}
+      ||`<tr><td colspan="11" style="padding:14px;color:#8a9894">No tickets match — status <b>${stLbl[slrSfSt]}</b>${(slrSfFrom||slrSfTo)?` · range <b>${slrSfFrom||'…'} → ${slrSfTo||'…'}</b>`:''}. ${lastAct?`Latest SalesForce activity on record: <b>${lastAct}</b> — the uploaded file has nothing after that date; upload a newer extract to see recent dispatches. `:''}Try the <b>All</b> chip or widen the range.</td></tr>`}
     </tbody></table></div>`;
   renderSlrTickets._list=list;
   const si=$('#slrUniSearch'); if(si) si.oninput=()=>{ slrSfQ=si.value.trim(); clearTimeout(renderSlrTickets._t);
