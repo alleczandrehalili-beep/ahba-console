@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.3';
+const APP_VERSION='2026-11-25.4';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -2269,7 +2269,7 @@ async function renderValidation(){
   // LITE columns lang para sa listahan (dating select=* kasama history — mabigat).
   // Ang BUONG record ay kinukuha on-demand (fetchFullJob) pagbukas ng Review/Edit modal.
   const [valRes, , apN, rjN] = await Promise.all([
-    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&deleted_at=is.null&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),   // 4A: ang soft-deleted ay hindi na lalabas sa queue (dating kita — zombie approvals)
+    fetch(`${SUPA_URL}/rest/v1/jobs?status=eq.for_validation&deleted_at=is.null&select=id,ref_no,created_by,encoded_by,org_id,subscriber,primary_no,area,city,district,brgy,schedule,created_at,updated_at,status,validated_by&order=created_at.asc`,{headers:H}).then(r=>r.ok?r.json():[]).catch(()=>[]),   // 4A: ang soft-deleted ay hindi na lalabas sa queue (dating kita — zombie approvals)
     loadAgentNames(),
     cntHead(`select=id&status=eq.pending&validated_at=gte.${ds}&validated_at=lte.${de}&deleted_at=is.null`),
     cntHead(`select=id&status=eq.rejected&updated_at=gte.${ds}&updated_at=lte.${de}&deleted_at=is.null`)
@@ -2418,6 +2418,14 @@ function paintValGeoFilters(){
 }
 function paintValQueue(){
   const body=$('#validationBody'); if(!body) return;
+  // Preferred install (owner 2026-11-25): mula sa GC Sales short form (jobs.schedule, date lang).
+  // Bold-green kapag TODAY o lampas na — agad makikita ni validator ang nagmamadali.
+  const prefCell=j=>{
+    const d=String(j.schedule||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '—';
+    const lbl=new Date(d+'T00:00:00+08:00').toLocaleDateString('en-PH',{timeZone:TZ,month:'short',day:'numeric'});
+    return d<=manilaToday()?('<b style="color:#c2503a">'+lbl+'</b>'):('<b style="color:#11825f">'+lbl+'</b>');
+  };
   paintValGeoFilters();
   const list=(valQueueView==='fsoi'?valFsoiJ:valNewJ).filter(j=>
     (!valDist||String(j.district||'').trim()===valDist) &&
@@ -2428,8 +2436,8 @@ function paintValQueue(){
     : 'Unang beses pa lang na-submit — check the ID, Proof of Billing, and Premise photos before approving.';
   body.innerHTML=list.length?list.map(j=>{
     const docs=valDocs[j.id]||[];
-    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${j.district?('District '+esc(j.district)):'—'}</td><td>${esc(String(j.brgy||'—').toUpperCase())}</td><td>${fmtWhen(j.created_at||j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
-  }).join(''):`<tr><td colspan="8" class="empty-cell">${(valDist||valBrgy)?'No JOs match the district/barangay filter — clear it to see everything.':(valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.')}</td></tr>`;
+    return `<tr><td><strong>${j.id}</strong>${j.ref_no?`<span style="font-size:8px;color:#9aa6a2">Ref: ${esc(j.ref_no)}</span>`:''}</td><td>${esc(encoderLabel(j))}</td><td><strong>${esc(j.subscriber||'—')}</strong></td><td>${esc(j.primary_no||'—')}</td><td>${j.district?('District '+esc(j.district)):'—'}</td><td>${esc(String(j.brgy||'—').toUpperCase())}</td><td>${prefCell(j)}</td><td>${fmtWhen(j.created_at||j.updated_at)}</td><td><button class="assign-btn" data-review="${j.id}">Review (${docs.length} docs)</button></td></tr>`;
+  }).join(''):`<tr><td colspan="9" class="empty-cell">${(valDist||valBrgy)?'No JOs match the district/barangay filter — clear it to see everything.':(valQueueView==='fsoi'?'No edited/resubmitted (FSOI) orders right now.':'No NEW job orders awaiting validation.')}</td></tr>`;
   $$('#validationBody [data-review]').forEach(b=>b.onclick=()=>openValidate(b.dataset.review));
 }
 // Rejected orders the viewer can see (subcon = own via RLS, GC = all). Shows the rejection
@@ -2596,7 +2604,8 @@ async function openValidate(jobId){
   // Object.assign sa mismong valJobs item para gumana rin ang decideValidation pagkatapos.
   const _full=await fetchFullJob(jobId); if(_full) Object.assign(j,_full);
   $('#valTitle').textContent=`${jobId} · ${j.subscriber||''}`;
-  $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.created_at||j.updated_at)}`;
+  $('#valSub').textContent=`Submitted by ${encoderLabel(j)} · ${fmtWhen(j.created_at||j.updated_at)}`
+    +(/^\d{4}-\d{2}-\d{2}$/.test(String(j.schedule||''))?` · 📅 Preferred install: ${new Date(j.schedule+'T00:00:00+08:00').toLocaleDateString('en-PH',{timeZone:TZ,month:'short',day:'numeric'})}`:'');
   // Resubmitted order? Ipakita sa validator kung sino ang UNANG nag-check at ang remarks noon.
   const vpc=$('#valPrevCheck'); if(vpc) vpc.innerHTML=valCheckBanner(j,'Resubmitted order — previously checked');
   // Duplicate-subscriber check (same RPC + % scoring the sales app shows on encode) — the validator sees it too.
