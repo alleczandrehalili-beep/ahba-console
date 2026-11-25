@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.5';
+const APP_VERSION='2026-11-25.6';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -764,25 +764,72 @@ document.addEventListener('click',e=>{
   const hi=e.target.closest&&e.target.closest('[data-wimsdecl-history]');
   if(hi){wimsDeclHistory(hi.getAttribute('data-wimsdecl-history'));}
 });
+// I-save ang inline-edited na order info mula sa JO detail. Barangay ay dumadaan sa
+// parehong resolver ng encode (typo-autocorrect + auto district). Blangko = buburahin.
+async function jdInfoSave(jobId){
+  const btn=$('#jdInfoSave'), msg=$('#jdInfoMsg'); if(msg) msg.textContent='';
+  const err=m=>{ if(msg) msg.textContent=m; };
+  const get=c=>{ const el=document.querySelector('#jdInfo [data-jf="'+c+'"]'); return el?el.value:null; };
+  const patch={updated_at:new Date().toISOString()};
+  const cols=['dwelling_type','primary_no','other_contact_no','email','birth_date','plan','play_type','address','district','brgy','city','source_of_sales','referral_name','install_fee_type','amount_to_collect','schedule','special_note'];
+  for(const c of cols){ let v=get(c); if(v==null) continue;
+    v=String(v).trim();
+    if(c==='email') v=v.toLowerCase();
+    else if(!['birth_date','schedule','amount_to_collect','install_fee_type','source_of_sales','play_type','dwelling_type'].includes(c)) v=v.toUpperCase();
+    patch[c]=(v===''?null:v);
+  }
+  if(patch.primary_no&&!/^\d{11}$/.test(patch.primary_no)){ err('Primary no. must be exactly 11 digits.'); return; }
+  if(patch.other_contact_no&&!/^\d{11}$/.test(patch.other_contact_no)){ err('Other contact must be exactly 11 digits.'); return; }
+  if(patch.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)){ err('Enter a valid email address.'); return; }
+  if(patch.amount_to_collect!=null){ const n=Number(patch.amount_to_collect); if(!isFinite(n)){ err('Amount must be a number.'); return; } patch.amount_to_collect=n; }
+  if(patch.brgy){ const canon=ordBrgyResolve(patch.brgy); if(!canon){ err('Barangay not recognized — check the spelling.'); return; } patch.brgy=canon; patch.district=ORD_BRGY_DISTRICT[canon]||patch.district; }
+  const client=sbc(); if(!client){ err('Cloud client still loading — try again in a moment.'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  try{
+    const {error}=await client.from('jobs').update(patch).eq('id',jobId); if(error) throw error;
+    const u=window.dashUser||{}; histLog(jobId,'Order info edited by '+(u.display_name||u.username||'Console')+' (console)');
+    const jl=findJob(jobId); if(jl) Object.assign(jl,patch);
+    showToast('Order info saved');
+    if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); }catch(e){} }
+    if($('#dispatchBoard')) renderJobs(); if($('#timelinePage')&&$('#timelinePage').classList.contains('active')) renderTimeline();
+    openJobDetail(jobId);
+  }catch(e){ err('Save failed: '+(e.message||e)); }
+  finally{ const b2=$('#jdInfoSave'); if(b2){ b2.disabled=false; b2.textContent='\ud83d\udcbe Save order info'; } }
+}
 function openJobDetail(jobId){
   const j=findJob(jobId)||{};
   $('#jdTitle').textContent=`${j.id} · ${j.subscriber||''}`;
   $('#jdSub').textContent=`${statusLabel(j.status||'—')}${j.team?' · '+j.team:''}${j.dispatch_count?' · ⟳ ×'+j.dispatch_count:''}`;
   if(j.qa_status){ $('#jdSub').textContent+=' · QA: '+j.qa_status+(j.qa_assessment?' · '+j.qa_assessment:''); }   // mirror ng qa.audits (sync_job)
   const F=(l,v)=>`<div><b>${l}</b>${v||'—'}</div>`;
+  // INLINE INFO EDIT (owner 2026-11-25): dispatchers/validators/superadmin ay diretso nang
+  // nag-e-edit/nag-e-encode sa mismong detail view — walang hiwalay na form o button.
+  // Lifecycle fields (status/team/load/JO/IBAS/payment/crew) ay nananatiling read-only.
+  const canEditInfo=!!(window.dashUser&&(dashUser.is_super||dashCanEdit('dispatch')||dashCanEdit('validation'))&&j.status!=='rejected');
+  const escA=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const EIN='style="width:100%;box-sizing:border-box;border:1px solid #dfe5df;border-radius:8px;padding:6px 8px;font:600 12px system-ui;color:#1b2b27;background:#fbfdfb;margin-top:2px"';
+  const E=(l,col,val,kind,opts)=>{
+    if(!canEditInfo) return F(l,val);
+    if(kind==='select') return `<div><b>${l}</b><select data-jf="${col}" ${EIN}>${(opts||[]).map(o=>`<option value="${escA(o)}" ${String(val==null?'':val)===o?'selected':''}>${o||'—'}</option>`).join('')}</select></div>`;
+    return `<div><b>${l}</b><input data-jf="${col}" type="${kind||'text'}" value="${escA(val)}" ${EIN}></div>`;
+  };
   $('#jdInfo').innerHTML=[
     F('Load type',j.load_type||'SLI'),F('Sales Agent',j.created_by?(/^(CONSOLE|IMPORT)$/i.test(j.created_by)&&j.encoded_by?(j.created_by.toUpperCase()+' · '+j.encoded_by):agentLabel(j.created_by)):'—'),
-    F('Subscriber',j.subscriber),F('Primary no.',j.primary_no),F('Other contact',j.other_contact_no),F('Email',j.email),
-    F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),F('Plan / 1P-2P',[j.plan,j.play_type].filter(Boolean).join(' · ')),
+    E('Connection type','dwelling_type',j.dwelling_type||'','select',['','SDU','MDU','MDU DOCSIS']),
+    F('Subscriber',j.subscriber),E('Primary no.','primary_no',j.primary_no),E('Other contact','other_contact_no',j.other_contact_no),E('Email','email',j.email),
+    E('Birth date','birth_date',j.birth_date,'date'),
+    F('J.O. Number',j.job_order_no),F('IBASS acct',j.ibass_acct_no),E('Plan','plan',j.plan),E('1P / 2P','play_type',j.play_type||'','select',['','1-PLAY','2-PLAY']),
     F('Current plan',j.current_plan),F('Ticket No.',j.ticket_no),
-    F('Address',j.address),F('District',j.district?('District '+j.district):''),F('Barangay',j.brgy),F('City',j.city||j.area),
+    E('Address','address',j.address),E('District','district',String(j.district||''),'select',['','1','2','3','4','5','6']),E('Barangay','brgy',j.brgy),E('City','city',j.city||j.area),
     F('New address (transfer)',j.new_address),F('CPE (transfer)',j.cpe_option),
     F('Team',j.team),F('Status',statusLabel(j.status||'')),F('Priority',j.priority),
-    F('Source / Referral',[j.source_of_sales,j.referral_name].filter(Boolean).join(' · ')),
+    E('Source of sales','source_of_sales',j.source_of_sales||'','select',['','Referral','Organic','Technician']),E('Referral agent','referral_name',j.referral_name),
+    E('Installation fee','install_fee_type',j.install_fee_type||'','select',['','One Time Payment','Installment']),E('Amount to collect','amount_to_collect',j.amount_to_collect,'number'),
     F('Account',j.work_account||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].account:'')),
     F('Crew (Driver / T1 / T2)',[j.crew_driver||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].driver:''),j.crew_tech1||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].tech1:''),j.crew_tech2||(j.team&&shiftByTeam[j.team]?shiftByTeam[j.team].tech2:'')].filter(Boolean).join(' · ')),
     F('Payment',[j.payment_mode, j.payment_amount!=null?('₱'+j.payment_amount):null, j.ar_no?('AR '+j.ar_no):null].filter(Boolean).join(' · ')),
-    F('Schedule',j.schedule),F('Negative remark',j.negative_remark),
+    E('Preferred install / schedule','schedule',j.schedule,(/^\d{4}-\d{2}-\d{2}$/.test(String(j.schedule||''))||!j.schedule)?'date':'text'),
+    E('Special note','special_note',j.special_note),F('Negative remark',j.negative_remark),
     (j.status==='rejected'?F('Rejection reason',rejectionReason(j)):'')
   ].join('');
   // ↩ Returned-by-QA (qa.return_job_for_photos): who/when/why + resolved once the team re-completes.
@@ -809,14 +856,11 @@ function openJobDetail(jobId){
     $('#jdInfo').appendChild(_dx);
     const _bx=$('#jdDupEx'); if(_bx) _bx.onclick=()=>jdDupExempt(j.id);
   }
-  // Edit order info (owner 2026-11-25): pampuno/pang-edit ng mga field na inalis sa
-  // GC Sales short form — dispatch/validation editors at superadmin; hindi sa rejected
-  // (may sariling Edit & resubmit flow iyon sa Rejected list).
-  if(window.dashUser&&(dashUser.is_super||dashCanEdit('dispatch')||dashCanEdit('validation'))&&j.status!=='rejected'){
-    const _ei=document.createElement('div');
-    _ei.innerHTML='<b>Order info</b><button type="button" class="assign-btn" id="jdEditInfo">\u270f\ufe0f Edit order info</button>';
-    $('#jdInfo').appendChild(_ei);
-    const _bi=$('#jdEditInfo'); if(_bi) _bi.onclick=()=>{ closeModals(); editOrderInfo(j.id); };
+  if(canEditInfo){
+    const _sv=document.createElement('div'); _sv.style.gridColumn='1/-1';
+    _sv.innerHTML='<button type="button" class="assign-btn" id="jdInfoSave" style="font-weight:800">\ud83d\udcbe Save order info</button><span id="jdInfoMsg" style="margin-left:10px;font-size:11px;color:#c2503a"></span>';
+    $('#jdInfo').appendChild(_sv);
+    const _b=$('#jdInfoSave'); if(_b) _b.onclick=()=>jdInfoSave(j.id);
   }
   // History is no longer carried in the live dashboard payload (it was ~half of it).
   // Rows that still carry it — e.g. the Validation tab, which keeps its own select=* —
