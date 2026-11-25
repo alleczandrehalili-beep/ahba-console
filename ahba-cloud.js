@@ -143,7 +143,7 @@
       rows.push.apply(rows, page);
       if (page.length < 1000) break;
     }
-    return rows.filter(function (j) { return !/^SLRT-/.test(String(j.id || '')); });
+    return rows;   // kasama na ang SLRT- tickets (owner 2026-11-25: Encoders — SLR report)
   }
 
   // Batch history para sa extract: ids → {id: history text}. 150 id bawat request

@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-24.5';
+const APP_VERSION='2026-11-25.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1326,7 +1326,33 @@ async function extractWorkOrders(){
       .forEach((line,i)=>haoa.push([j.id,j.subscriber||'',j.team||'',j.status||'',i+1,line])));
     const ws2=XLSX.utils.aoa_to_sheet(haoa);
     ws2['!cols']=[{wch:18},{wch:28},{wch:14},{wch:14},{wch:4},{wch:95}];
+    // ── Encoder report (owner 2026-11-25): sinong SALES ang nag-encode, saang area,
+    // sinong referral — HIWALAY ang SLI at SLR. created_by = sales account; kapag
+    // CONSOLE/IMPORT ito, nasa encoded_by ang mismong tao.
+    const encAcct=j=>j.created_by||'—';
+    const encName=j=>j.encoded_by||'';
+    const areaOf=j=>[j.area||j.brgy,j.district,j.city].filter(Boolean).join(' · ')||j.address||'—';
+    const encAt=j=>j.created_at?new Date(j.created_at).toLocaleString('en-PH',{timeZone:TZ,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    const encRow=(j,i)=>[i+1, j.id, j.job_order_no||j.ticket_no||'', encAcct(j), encName(j), areaOf(j), j.referral_name||'', j.source_of_sales||'', j.subscriber||'', encAt(j), j.status||''];
+    const ENC_HDR=['#','ID','JO / TICKET NO','ENCODED BY (ACCOUNT)','ENCODER NAME','AREA','REFERRAL','SOURCE OF SALES','SUBSCRIBER','ENCODED AT','STATUS'];
+    const encW=[{wch:4},{wch:18},{wch:14},{wch:18},{wch:18},{wch:30},{wch:18},{wch:16},{wch:26},{wch:18},{wch:12}];
+    const sli=list.filter(j=>j.load_type!=='SLR-TICKET');
+    const slrT=list.filter(j=>j.load_type==='SLR-TICKET');
+    const wsSli=XLSX.utils.aoa_to_sheet([ENC_HDR].concat(sli.map(encRow))); wsSli['!cols']=encW;
+    const wsSlr=XLSX.utils.aoa_to_sheet(slrT.length
+      ? [ENC_HDR].concat(slrT.map(encRow))
+      : [[ (f||tto) ? 'Walang SLR ticket sa napiling range.' : 'Pumili ng From/To date range bago mag-Extract para makasama ang SLR tickets (hindi sila kasama sa live na Work Orders table).' ]]);
+    wsSlr['!cols']=encW;
+    const bySales={};
+    list.forEach(j=>{ const k=(encAcct(j)+(encName(j)?' · '+encName(j):'')); const b=bySales[k]=bySales[k]||{k,sli:0,slr:0,ref:0};
+      if(j.load_type==='SLR-TICKET')b.slr++; else b.sli++; if(j.referral_name)b.ref++; });
+    const wsSum=XLSX.utils.aoa_to_sheet([['ENCODER','SLI','SLR','TOTAL','WITH REFERRAL']]
+      .concat(Object.values(bySales).sort((a,b)=>(b.sli+b.slr)-(a.sli+a.slr)).map(b=>[b.k,b.sli,b.slr,b.sli+b.slr,b.ref])));
+    wsSum['!cols']=[{wch:30},{wch:8},{wch:8},{wch:8},{wch:14}];
     const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,wsSum,'Encoder summary');
+    XLSX.utils.book_append_sheet(wb,wsSli,'Encoders — SLI');
+    XLSX.utils.book_append_sheet(wb,wsSlr,'Encoders — SLR');
     XLSX.utils.book_append_sheet(wb,ws,'Work Orders (raw)');
     XLSX.utils.book_append_sheet(wb,ws2,'JO History (per move)');
     const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
