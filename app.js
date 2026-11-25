@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.2';
+const APP_VERSION='2026-11-25.3';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -808,6 +808,15 @@ function openJobDetail(jobId){
       : '<b>Duplicate check</b><button type="button" class="assign-btn" id="jdDupEx" style="color:#c2503a">🔓 Allow re-encode</button>';
     $('#jdInfo').appendChild(_dx);
     const _bx=$('#jdDupEx'); if(_bx) _bx.onclick=()=>jdDupExempt(j.id);
+  }
+  // Edit order info (owner 2026-11-25): pampuno/pang-edit ng mga field na inalis sa
+  // GC Sales short form — dispatch/validation editors at superadmin; hindi sa rejected
+  // (may sariling Edit & resubmit flow iyon sa Rejected list).
+  if(window.dashUser&&(dashUser.is_super||dashCanEdit('dispatch')||dashCanEdit('validation'))&&j.status!=='rejected'){
+    const _ei=document.createElement('div');
+    _ei.innerHTML='<b>Order info</b><button type="button" class="assign-btn" id="jdEditInfo">\u270f\ufe0f Edit order info</button>';
+    $('#jdInfo').appendChild(_ei);
+    const _bi=$('#jdEditInfo'); if(_bi) _bi.onclick=()=>{ closeModals(); editOrderInfo(j.id); };
   }
   // History is no longer carried in the live dashboard payload (it was ~half of it).
   // Rows that still carry it — e.g. the Validation tab, which keeps its own select=* —
@@ -3736,8 +3745,10 @@ function compressImage(file,maxDim=1000,targetKB=90){
   });
 }
 let ordEditId=null;   // when set, submitOrder UPDATES this rejected order (resubmit) instead of inserting a new one
+let ordInfoEdit=false; // INFO-ONLY console edit (owner 2026-11-25): parehong form, pero hindi ginagalaw ang status/team/load
 // Open the New Work Order form PRE-FILLED from a rejected order, in resubmit mode.
 async function editRejectedOrder(jobId){
+  ordInfoEdit=false;
   let j=(valRejected||[]).find(x=>x.id===jobId)||findJob(jobId);
   // Lite na ang Rejected list — kunin ang buong record para kumpleto ang form pre-fill + banner.
   const _full=await fetchFullJob(jobId);
@@ -3829,6 +3840,16 @@ async function jdDupExempt(oldId){
   if(bx){ const d=bx.parentElement; if(d) d.innerHTML='<b>Duplicate check</b>🔓 Exempted — re-encode of this subscriber is allowed'; }
 }
 let ordSubmitBusy=false;   // in-flight guard — one click = one JO (owner 2026-10-01: twin-JO bug)
+// Console info-edit (owner 2026-11-25): buksan ang BUONG order form para sa isang
+// validated/pending na JO — lahat ng field na inalis sa GC Sales short form ay dito
+// pinupunan/ine-edit ng console user; ang status/team/load ay hindi ginagalaw.
+async function editOrderInfo(jobId){
+  await editRejectedOrder(jobId);
+  if(ordEditId!==jobId) return;   // nabigo ang prefill — huwag i-arm ang info mode
+  ordInfoEdit=true;
+  const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Edit order info';
+  const btn=$('#orderSubmit'); if(btn) btn.textContent='Save changes';
+}
 async function submitOrder(e){
   e.preventDefault();
   if(ordSubmitBusy) return;
@@ -3936,9 +3957,16 @@ async function submitOrderInner(e){
       const patch={...job}; delete patch.id; delete patch.created_by; delete patch.wait_time; delete patch.history;
       delete patch.encoded_by;   // resubmit: panatilihin ang ORIHINAL na encoder (may sariling history line ang resubmit)
       if(!bday) delete patch.birth_date;   // blank on edit = keep whatever the record already has
-      patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
-      const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
-      histLog(ordEditId, `Edited & resubmitted for validation by ${who}`);
+      if(ordInfoEdit){
+        // INFO-ONLY: status/team/load_date ay nananatili — puro order info ang sine-save.
+        patch.updated_at=new Date().toISOString();
+        const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
+        histLog(ordEditId, `Order info edited by ${who} (console)`);
+      } else {
+        patch.status='for_validation'; patch.team=null; patch.load_date=null; patch.updated_at=new Date().toISOString();
+        const {error}=await client.from('jobs').update(patch).eq('id',ordEditId); if(error) throw error;
+        histLog(ordEditId, `Edited & resubmitted for validation by ${who}`);
+      }
     } else {
       const {error}=await client.from('jobs').insert(job); if(error) throw error;
       // Bakas sa history kung SINO ang console user na nag-encode (monitoring, owner 2026-09-24).
@@ -3955,15 +3983,15 @@ async function submitOrderInner(e){
         await client.from('job_docs').insert({job_id:targetId,category:cat,path});
       }
     }
-    const wasEdit=!!ordEditId; ordEditId=null;
+    const wasEdit=!!ordEditId, wasInfo=ordInfoEdit; ordEditId=null; ordInfoEdit=false;
     ordDupClear();
     ordClearDocs();
     const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order';
     const ovb2=$('#ordValBanner'); if(ovb2){ovb2.style.display='none';ovb2.innerHTML='';}
     $('#orderForm').reset(); $$('#orderModal [data-cnt]').forEach(b=>b.textContent='0 file(s)'); populateOrdBrgys(''); if($('#ord_city')) $('#ord_city').value='QUEZON CITY'; setOrderType('SLI');
-    closeModals(); showToast(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`));
+    closeModals(); showToast(wasInfo?'Order info saved':(wasEdit?'Order resubmitted to the Validator':(toValidate?'Job order submitted to the Validator':`${ordType} load dispatched → For Dispatch`)));
     refreshValBadge(); if($('#validationPage')?.classList.contains('active')) renderValidation();
-    if(!toValidate && !wasEdit){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
+    if(wasInfo || (!toValidate && !wasEdit)){ if(window.AHBACloud&&AHBACloud.getJobs){ try{ jobs=await AHBACloud.getJobs(); }catch(e){} } renderJobs(); if($('#timelinePage')?.classList.contains('active'))renderTimeline(); }
   }catch(e2){
     const _m2=String(e2.message||e2);
     // JO-NORM: duplicate JO Number (unique index) → malinaw na mensahe, buo ang form/data.
@@ -6248,7 +6276,7 @@ function init(){
   $('#tlfClear')?.addEventListener('click',()=>{ ['tlfOrg','tlfType','tlfDistrict','tlfBrgy'].forEach(id=>{const e=$('#'+id); if(e)e.value='';}); renderTimeline(); _prodFollow(); });
   $('#tlExportBtn')?.addEventListener('click',exportDispatchXlsx);
   loadOrgMap();
-  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); ordToggleMigCpe(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
+  $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordInfoEdit=false; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); ordToggleMigCpe(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
   $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
