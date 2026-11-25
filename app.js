@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.1';
+const APP_VERSION='2026-11-25.2';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -1303,7 +1303,8 @@ async function extractWorkOrders(){
   const f=$('#woFrom')?.value||'', tto=$('#woTo')?.value||'';
   const prev=btn?btn.innerHTML:''; if(btn){ btn.disabled=true; btn.textContent='Extracting…'; }
   try{
-    try{ await ensureXLSX(); }catch(_){ showToast('Excel library failed to load'); return; }
+    if(!(window.FieldSalesOps&&FieldSalesOps.buildWorkbook)){ showToast('Pivot writer not loaded — hard reload the console'); return; }
+    try{ await ensureJSZip(); }catch(_){ showToast('Excel library failed to load'); return; }
     let list;
     if(f||tto){
       list=await AHBACloud.getJobsRawByDate(f||tto, tto||f);
@@ -1314,52 +1315,51 @@ async function extractWorkOrders(){
       list=list.map(j=>Object.assign({},j,{history:hist[j.id]||j.history||''}));
     }
     if(!list.length){ showToast('Nothing to extract — adjust the date or filters'); return; }
-    // Sheet 1 — isang row bawat JO, LAHAT ng column (lead order muna, tapos ang natitira), history sa dulo.
+    // ── Encoder PIVOT workbook (owner 2026-11-25): totoong Excel PivotTables sa ibabaw ng
+    // isang detail cache — double-click sa kahit anong bilang = drill-through sa mga ticket.
+    // Blank values → explicit token (Excel drops a pivot field na may blangkong shared item).
+    const or_=(v,alt)=>{ const t2=(v==null?'':String(v)).trim(); return t2||alt; };
+    const encDay=j=>j.created_at?new Date(j.created_at).toLocaleDateString('en-CA',{timeZone:TZ}):'(no date)';
+    const DETAIL={name:'Encoders detail',headers:['TYPE','ENCODED BY','AREA','REFERRAL','SOURCE OF SALES','DATE ENCODED (DAY)','STATUS','SUBSCRIBER','ID','JO / TICKET NO','TEAM','TICKET COUNT','WITH REFERRAL','COMPLETED COUNT'],
+      rows:list.map(j=>{
+        const acct=or_(j.created_by,'(unknown)'), nm=(j.encoded_by||'').trim();
+        return [ j.load_type==='SLR-TICKET'?'SLR':'SLI',
+          nm?acct+' · '+nm:acct,
+          or_([j.area||j.brgy,j.district,j.city].filter(Boolean).join(' · ')||j.address,'(no area)'),
+          or_(j.referral_name,'(no referral)'),
+          or_(j.source_of_sales,'(not set)'),
+          encDay(j), or_(j.status,'(none)'), j.subscriber||'', j.id, j.job_order_no||j.ticket_no||'', j.team||'',
+          1, j.referral_name?1:0, String(j.status||'').toLowerCase()==='completed'?1:0 ];
+      })};
+    // plain sheets: ang dating raw dump + buong JO history
     const extra=[...new Set(list.flatMap(j=>Object.keys(j)))].filter(k=>!WO_EXTRACT_LEAD.includes(k)&&k!=='history').sort();
     const cols=[...WO_EXTRACT_LEAD.filter(k=>list.some(j=>j[k]!=null&&j[k]!=='')),...extra,'history'];
-    const aoa=[cols.map(c=>c.toUpperCase())].concat(list.map(j=>cols.map(c=>{const v=j[c];return v==null?'':(typeof v==='object'?JSON.stringify(v):v);})));
-    const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols']=cols.map(c=>({wch:c==='history'?80:(c==='address'||c==='subscriber'?30:14)}));
-    // Sheet 2 — isang row bawat GALAW: hinati ang history text sa bawat linya.
-    const haoa=[['WORK ORDER','SUBSCRIBER','TEAM','CURRENT STATUS','#','HISTORY ENTRY']];
-    list.forEach(j=>String(j.history||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean)
-      .forEach((line,i)=>haoa.push([j.id,j.subscriber||'',j.team||'',j.status||'',i+1,line])));
-    const ws2=XLSX.utils.aoa_to_sheet(haoa);
-    ws2['!cols']=[{wch:18},{wch:28},{wch:14},{wch:14},{wch:4},{wch:95}];
-    // ── Encoder report (owner 2026-11-25): sinong SALES ang nag-encode, saang area,
-    // sinong referral — HIWALAY ang SLI at SLR. created_by = sales account; kapag
-    // CONSOLE/IMPORT ito, nasa encoded_by ang mismong tao.
-    const encAcct=j=>j.created_by||'—';
-    const encName=j=>j.encoded_by||'';
-    const areaOf=j=>[j.area||j.brgy,j.district,j.city].filter(Boolean).join(' · ')||j.address||'—';
-    const encAt=j=>j.created_at?new Date(j.created_at).toLocaleString('en-PH',{timeZone:TZ,year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
-    const encRow=(j,i)=>[i+1, j.id, j.job_order_no||j.ticket_no||'', encAcct(j), encName(j), areaOf(j), j.referral_name||'', j.source_of_sales||'', j.subscriber||'', encAt(j), j.status||''];
-    const ENC_HDR=['#','ID','JO / TICKET NO','ENCODED BY (ACCOUNT)','ENCODER NAME','AREA','REFERRAL','SOURCE OF SALES','SUBSCRIBER','ENCODED AT','STATUS'];
-    const encW=[{wch:4},{wch:18},{wch:14},{wch:18},{wch:18},{wch:30},{wch:18},{wch:16},{wch:26},{wch:18},{wch:12}];
-    const sli=list.filter(j=>j.load_type!=='SLR-TICKET');
-    const slrT=list.filter(j=>j.load_type==='SLR-TICKET');
-    const wsSli=XLSX.utils.aoa_to_sheet([ENC_HDR].concat(sli.map(encRow))); wsSli['!cols']=encW;
-    const wsSlr=XLSX.utils.aoa_to_sheet(slrT.length
-      ? [ENC_HDR].concat(slrT.map(encRow))
-      : [[ (f||tto) ? 'Walang SLR ticket sa napiling range.' : 'Pumili ng From/To date range bago mag-Extract para makasama ang SLR tickets (hindi sila kasama sa live na Work Orders table).' ]]);
-    wsSlr['!cols']=encW;
-    const bySales={};
-    list.forEach(j=>{ const k=(encAcct(j)+(encName(j)?' · '+encName(j):'')); const b=bySales[k]=bySales[k]||{k,sli:0,slr:0,ref:0};
-      if(j.load_type==='SLR-TICKET')b.slr++; else b.sli++; if(j.referral_name)b.ref++; });
-    const wsSum=XLSX.utils.aoa_to_sheet([['ENCODER','SLI','SLR','TOTAL','WITH REFERRAL']]
-      .concat(Object.values(bySales).sort((a,b)=>(b.sli+b.slr)-(a.sli+a.slr)).map(b=>[b.k,b.sli,b.slr,b.sli+b.slr,b.ref])));
-    wsSum['!cols']=[{wch:30},{wch:8},{wch:8},{wch:8},{wch:14}];
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,wsSum,'Encoder summary');
-    XLSX.utils.book_append_sheet(wb,wsSli,'Encoders — SLI');
-    XLSX.utils.book_append_sheet(wb,wsSlr,'Encoders — SLR');
-    XLSX.utils.book_append_sheet(wb,ws,'Work Orders (raw)');
-    XLSX.utils.book_append_sheet(wb,ws2,'JO History (per move)');
-    const out=XLSX.write(wb,{type:'array',bookType:'xlsx'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([out],{type:'application/octet-stream'}));
-    a.download=`AHBA_WorkOrders_RAW_${(f||tto)?(f||tto)+'_to_'+(tto||f):manilaToday()}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+    const RAW={name:'Work Orders (raw)',headers:cols.map(c2=>c2.toUpperCase()),
+      rows:list.map(j=>cols.map(c2=>{const v=j[c2];return v==null?'':(typeof v==='object'?JSON.stringify(v):v);}))};
+    const HIST={name:'JO History (per move)',headers:['WORK ORDER','SUBSCRIBER','TEAM','CURRENT STATUS','#','HISTORY ENTRY'],rows:[]};
+    list.forEach(j=>String(j.history||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean)
+      .forEach((line,i2)=>HIST.rows.push([j.id,j.subscriber||'',j.team||'',j.status||'',i2+1,line])));
+    const VALS=[{field:'TICKET COUNT',name:'Tickets encoded'},
+                {field:'WITH REFERRAL',name:'With referral'},
+                {field:'COMPLETED COUNT',name:'Completed'},
+                {field:'Completion %',name:'Completion %',numFmt:10}];
+    const parts=FieldSalesOps.buildWorkbook({
+      source:DETAIL, sheets:[RAW,HIST],
+      calc:[{name:'Completion %',formula:"IF('TICKET COUNT'=0,0,'COMPLETED COUNT'/'TICKET COUNT')"}],
+      pivots:[
+        {name:'Pivot — Encoders',  rowFields:['TYPE','ENCODED BY'], subtotal:[0], data:VALS},
+        {name:'Pivot — Areas',     rowFields:['TYPE','ENCODED BY','AREA'], subtotal:[0,1], data:[{field:'TICKET COUNT',name:'Tickets encoded'}]},
+        {name:'Pivot — Referrals', rowFields:['TYPE','REFERRAL','ENCODED BY'], subtotal:[0,1], data:[{field:'TICKET COUNT',name:'Tickets encoded'},{field:'COMPLETED COUNT',name:'Completed'}]}
+      ]});
+    const zip=new JSZip();
+    Object.keys(parts).forEach(k=>zip.file(k,parts[k]));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',
+      mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`AHBA_WorkOrders_Encoders_${(f||tto)?(f||tto)+'_to_'+(tto||f):manilaToday()}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),9000);
-    showToast(`${list.length} work order${list.length===1?'':'s'} extracted (with full history)`);
+    showToast(`${list.length} ticket${list.length===1?'':'s'} extracted — may 3 PivotTables (double-click para sa drill-through)`);
   }catch(e){ showToast('Extract failed: '+(e&&e.message||e)); }
   finally{ if(btn){ btn.disabled=false; btn.innerHTML=prev; } }
 }

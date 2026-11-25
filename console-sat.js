@@ -1308,5 +1308,5 @@
     }
     R=build(); ready=true; mount();
   };
-  window.FieldSalesOps = { canOpen: u => !!(u && u.is_super) };
+  window.FieldSalesOps = { canOpen: u => !!(u && u.is_super), buildWorkbook: buildSalesWorkbook };   // reused ng Work Orders Encoder pivot (2026-11-25)
 })();
