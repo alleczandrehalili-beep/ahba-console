@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-  <link rel="stylesheet" href="styles.css?v=2026-11-25.4" />
+  <link rel="stylesheet" href="styles.css?v=2026-11-25.5" />
   <style>
     #mapCanvas{height:356px;position:relative;overflow:hidden}
     #leafletMap{position:absolute;inset:0;z-index:1}
@@ -103,7 +103,11 @@
     .dc-input{display:flex;gap:7px;padding:10px;border-top:1px solid var(--line)}
     .dc-input input{flex:1;border:1px solid #dfe5df;border-radius:9px;padding:9px 11px;font-size:12px}
     .dc-input button{background:var(--deep);color:#fff;border:0;border-radius:9px;padding:0 14px;font-weight:700;font-size:12px;cursor:pointer}
-  </style>
+  #orderForm.ord-short .ord-full-only{display:none!important}
+#orderForm .ord-short-only{display:none}
+#orderForm.ord-short .ord-short-only{display:flex}
+.obrgy-chip{background:#eef6f1;border:1px solid #cfe5d8;color:#17654e;border-radius:14px;padding:6px 10px;font:700 12px system-ui;cursor:pointer}
+</style>
 </head>
 <body>
   <!-- Dashboard login gate -->
@@ -646,39 +650,46 @@
       <div id="ordValBanner" style="display:none"></div>
       <div style="padding:14px 25px 0"><div class="filter-chips" id="ordTypeTabs"><button type="button" class="active" data-ordtype="SLI">SLI Loads</button><button type="button" data-ordtype="Migration">Migration Loads</button><button type="button" data-ordtype="SLR">SLR Loads</button><button type="button" data-ordtype="Transfer">Transfer SDU–MDU</button><button type="button" data-ordtype="IPTV">IPTV Only</button></div></div>
 
+      <div class="form-grid" id="ordSecConn">
+        <div class="field full form-sec">Connection</div>
+        <label class="field"><span>Connection type *</span><select name="dwelling_type" id="ord_dwelling"><option value="SDU">SDU FTTH</option><option value="MDU">MDU FTTH</option><option value="MDU DOCSIS">MDU DOCSIS</option></select></label>
+        <label class="field ord-short-only"><span>Preferred date of installation *</span><input id="ord_pref_date" type="date"></label>
+      </div>
+
       <div class="form-grid">
         <div class="field full form-sec">Subscriber</div>
         <label class="field"><span>First name *</span><input name="first_name" required></label>
         <label class="field"><span>Middle name</span><input name="middle_name"></label>
         <label class="field"><span>Last name *</span><input name="last_name" required></label>
-        <label class="field"><span>Date of birth *</span><input name="birth_date" id="ord_birth" type="date"></label>
+        <label class="field ord-full-only"><span>Date of birth *</span><input name="birth_date" id="ord_birth" type="date"></label>
         <label class="field"><span>Primary no. * (11 digits)</span><input name="primary_no" inputmode="numeric" maxlength="11" required></label>
-        <label class="field"><span id="ordOcnLabel">Secondary contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
+        <label class="field ord-full-only"><span id="ordOcnLabel">Secondary contact no. (11 digits)</span><input name="other_contact_no" inputmode="numeric" maxlength="11"></label>
         <label class="field"><span>Email address *</span><input name="email" type="email" inputmode="email" autocomplete="off" placeholder="name@email.com" required></label>
       </div>
 
       <div class="form-grid">
         <div class="field full form-sec">Address</div>
         <label class="field"><span>House no.</span><input name="house_no"></label>
-        <label class="field"><span>Street name</span><input name="street_name"></label>
+        <label class="field"><span>Street name *</span><input name="street_name"></label>
         <label class="field"><span>Village / Subdivision</span><input name="village"></label>
-        <label class="field"><span>District *</span><select name="district" id="ord_district" required><option value="">— Select district —</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
-        <label class="field"><span>Barangay *</span><select name="brgy" id="ord_brgy" required><option value="">— Select district first —</option></select></label>
-        <label class="field"><span>City *</span><input name="city" id="ord_city" value="QUEZON CITY" readonly required></label>
+        <label class="field ord-short-only"><span>Barangay * <em style="font-style:normal;color:#9aa6a2">(type it — pick from the suggestions)</em></span><input id="ord_brgy_type" autocomplete="off"><div id="ord_brgy_sug" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div></label>
+        <label class="field ord-short-only"><span>District (auto)</span><input id="ord_district_auto" readonly placeholder="— auto from barangay —"></label>
+        <label class="field ord-full-only"><span>District *</span><select name="district" id="ord_district" required><option value="">— Select district —</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+        <label class="field ord-full-only"><span>Barangay *</span><select name="brgy" id="ord_brgy" required><option value="">— Select district first —</option></select></label>
+        <label class="field ord-full-only"><span>City *</span><input name="city" id="ord_city" value="QUEZON CITY" readonly required></label>
       </div>
 
       <div class="form-grid" id="ordSecService">
         <div class="field full form-sec">Service</div>
-        <label class="field"><span>Unit type</span><select name="dwelling_type" id="ord_dwelling"><option>SDU</option><option>MDU</option><option>MDU DOCSIS</option></select></label>
-        <label class="field"><span>Plan</span><select name="plan" id="ord_plan"></select></label>
-        <label class="field"><span>Add-on (optional)</span><select name="add_on" id="ord_addon"></select></label>
-        <label class="field"><span>Reference no.</span><input name="ref_no"></label>
-        <label class="field"><span>1P / 2P</span><select name="play_type" id="ord_play"><option>1-PLAY</option><option>2-PLAY</option></select></label>
-        <label class="field" id="ord_addon_count_wrap" style="display:none"><span>No. of add-ons (2P) *</span><select name="addon_count" id="ord_addon_count"><option value="">— Select —</option><option>1</option><option>2</option><option>3</option></select></label>
-        <label class="field"><span>Installation fee</span><select name="install_fee_type"><option>One Time Payment</option><option>Installment</option></select></label>
-        <label class="field"><span>Amount to collect (₱)</span><input name="amount_to_collect" type="number" inputmode="numeric"></label>
-        <label class="field"><span>Source of sales</span><select name="source_of_sales"><option>Referral</option><option>Organic</option><option>Technician</option></select></label>
-        <label class="field"><span>Referral name</span><input name="referral_name"></label>
+        <label class="field ord-full-only"><span>Plan</span><select name="plan" id="ord_plan"></select></label>
+        <label class="field ord-full-only"><span>Add-on (optional)</span><select name="add_on" id="ord_addon"></select></label>
+        <label class="field ord-full-only"><span>Reference no.</span><input name="ref_no"></label>
+        <label class="field ord-full-only"><span>1P / 2P</span><select name="play_type" id="ord_play"><option>1-PLAY</option><option>2-PLAY</option></select></label>
+        <label class="field ord-full-only" id="ord_addon_count_wrap" style="display:none"><span>No. of add-ons (2P) *</span><select name="addon_count" id="ord_addon_count"><option value="">— Select —</option><option>1</option><option>2</option><option>3</option></select></label>
+        <label class="field ord-full-only"><span>Installation fee</span><select name="install_fee_type"><option>One Time Payment</option><option>Installment</option></select></label>
+        <label class="field ord-full-only"><span>Amount to collect (₱)</span><input name="amount_to_collect" type="number" inputmode="numeric"></label>
+        <label class="field ord-full-only"><span>Source of sales</span><select name="source_of_sales"><option>Referral</option><option>Organic</option><option>Technician</option></select></label>
+        <label class="field"><span>Referral agent</span><input name="referral_name"></label>
         <label class="field full"><span>Special note</span><textarea name="special_note" rows="2"></textarea></label>
       </div>
 
@@ -867,21 +878,21 @@
   <div class="toast" id="toast"><i data-icon="check"></i><span>Saved successfully</span></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- xlsx (~900KB) + jszip are lazy-loaded on first use via ensureXLSX()/ensureJSZip() in app.js — kept off the initial render path -->
-  <script src="qa-wims-export.js?v=2026-11-25.4"></script>
-  <script src="qa-photo-corrections.js?v=2026-11-25.4"></script>
-  <script src="hr-core.js?v=2026-11-25.4"></script>
-  <script src="hr-api.js?v=2026-11-25.4"></script>
-  <script src="hr-attendance-import.js?v=2026-11-25.4"></script>
-  <script src="hr-sheets.js?v=2026-11-25.4"></script>
-  <script src="console-hr.js?v=2026-11-25.4"></script>
-  <script src="hr-entry.js?v=2026-11-25.4"></script>
-  <script src="console-sli-reports.js?v=2026-11-25.4"></script>
-  <script src="app.js?v=2026-11-25.4"></script>
+  <script src="qa-wims-export.js?v=2026-11-25.5"></script>
+  <script src="qa-photo-corrections.js?v=2026-11-25.5"></script>
+  <script src="hr-core.js?v=2026-11-25.5"></script>
+  <script src="hr-api.js?v=2026-11-25.5"></script>
+  <script src="hr-attendance-import.js?v=2026-11-25.5"></script>
+  <script src="hr-sheets.js?v=2026-11-25.5"></script>
+  <script src="console-hr.js?v=2026-11-25.5"></script>
+  <script src="hr-entry.js?v=2026-11-25.5"></script>
+  <script src="console-sli-reports.js?v=2026-11-25.5"></script>
+  <script src="app.js?v=2026-11-25.5"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="ahba-cloud.js?v=2026-11-25.4"></script>
+  <script src="ahba-cloud.js?v=2026-11-25.5"></script>
   <!-- QA Audit (field inspections) — pure modules, mounted lazily by initQA() when the QA Audit page is opened -->
-  <script src="qa-core.js?v=2026-11-25.4"></script><script src="qa-subscriber-info.js?v=2026-11-25.4"></script><script src="qa-api.js?v=2026-11-25.4"></script><script src="console-qa.js?v=2026-11-25.4"></script><script src="console-qa-findings.js?v=2026-11-25.4"></script>
-  <script src="fms-core.js?v=2026-11-25.4"></script><script src="fms-api.js?v=2026-11-25.4"></script><script src="console-fms.js?v=2026-11-25.4"></script>
-  <script src="sat-data.js?v=2026-11-25.4"></script><script src="console-sat.js?v=2026-11-25.4"></script>
+  <script src="qa-core.js?v=2026-11-25.5"></script><script src="qa-subscriber-info.js?v=2026-11-25.5"></script><script src="qa-api.js?v=2026-11-25.5"></script><script src="console-qa.js?v=2026-11-25.5"></script><script src="console-qa-findings.js?v=2026-11-25.5"></script>
+  <script src="fms-core.js?v=2026-11-25.5"></script><script src="fms-api.js?v=2026-11-25.5"></script><script src="console-fms.js?v=2026-11-25.5"></script>
+  <script src="sat-data.js?v=2026-11-25.5"></script><script src="console-sat.js?v=2026-11-25.5"></script>
 </body>
 </html>

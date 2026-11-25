@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.4';
+const APP_VERSION='2026-11-25.5';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -3719,12 +3719,68 @@ function iptvRenderVas(){
 }
 // New Job Order has 3 types: SLI (full + docs), Migration (current/new plan, amount, ref · no docs),
 // SLR (ticket no. only · no service, no docs). Subscriber + Address are shared by all.
+// ── Console SHORT-FORM encode (owner 2026-11-25): parehong proseso ng mobile GC Sales —
+// SDU/MDU FTTH = pinaikling required; MDU DOCSIS = buong dating form. Barangay type-ahead
+// na may typo-autocorrect; District awtomatikong hinahango. Console = GC lagi.
+const ORD_BRGY_DISTRICT=(()=>{ const m={}; Object.keys(QC_BRGYS).forEach(d=>QC_BRGYS[d].forEach(b=>{ m[String(b).toUpperCase()]=String(d); })); return m; })();
+function ordLev(a2,b2){ a2=String(a2);b2=String(b2); if(Math.abs(a2.length-b2.length)>3) return 9;
+  let prev=Array.from({length:b2.length+1},(_,i)=>i);
+  for(let i=1;i<=a2.length;i++){ const cur=[i];
+    for(let j=1;j<=b2.length;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a2[i-1]===b2[j-1]?0:1));
+    prev=cur; }
+  return prev[b2.length]; }
+function ordBrgySuggest(q,limit){
+  q=String(q||'').toUpperCase().trim(); if(!q) return [];
+  const all=Object.keys(ORD_BRGY_DISTRICT);
+  const out=all.filter(b=>b.startsWith(q));
+  all.forEach(b=>{ if(!b.startsWith(q)&&b.includes(q)) out.push(b); });
+  if(!out.length) all.map(b=>[ordLev(q,b),b]).filter(x=>x[0]<=3).sort((x,y)=>x[0]-y[0]).forEach(x=>out.push(x[1]));
+  return out.slice(0,limit||6); }
+function ordBrgyResolve(q){
+  const Q=String(q||'').toUpperCase().trim(); if(!Q) return null;
+  if(ORD_BRGY_DISTRICT[Q]) return Q;
+  const s2=ordBrgySuggest(Q,2);
+  if(s2.length===1) return s2[0];
+  if(s2.length&&ordLev(Q,s2[0])<=2) return s2[0];
+  return null; }
+function ordShortMode(){
+  const form=$('#orderForm'); if(!form) return false;
+  if((form.dataset.ordtype||'SLI')!=='SLI') return false;
+  const dw=($('#ord_dwelling')&&$('#ord_dwelling').value)||'SDU';
+  return dw!=='MDU DOCSIS'; }
+function ordApplyMode(){
+  const form=$('#orderForm'); if(!form) return;
+  const short=ordShortMode();
+  form.classList.toggle('ord-short',short);
+  // hidden na required selects ay haharang sa native validation — i-JS-gate sa short
+  if($('#ord_district')) $('#ord_district').required=!short;
+  if($('#ord_brgy')) $('#ord_brgy').required=!short;
+  const pd=$('#ord_pref_date'); if(pd){ if(!pd.value) pd.value=manilaToday(); pd.min=manilaToday(); }
+}
+function ordBrgyPick(b){
+  const inp=$('#ord_brgy_type'); if(inp) inp.value=b;
+  const d=$('#ord_district_auto'); if(d) d.value=ORD_BRGY_DISTRICT[b]?('District '+ORD_BRGY_DISTRICT[b]):'';
+  const sug=$('#ord_brgy_sug'); if(sug) sug.innerHTML='';
+}
+function ordBrgyWire(){
+  const inp=$('#ord_brgy_type'); if(!inp||inp._wired) return; inp._wired=true;
+  inp.addEventListener('input',()=>{
+    const canon=ORD_BRGY_DISTRICT[inp.value.toUpperCase().trim()];
+    const d=$('#ord_district_auto'); if(d) d.value=canon?('District '+canon):'';
+    const sug=$('#ord_brgy_sug'); if(!sug) return;
+    const list=canon?[]:ordBrgySuggest(inp.value,6);
+    sug.innerHTML=list.map(b=>'<button type="button" class="obrgy-chip" data-obrgy="'+b+'">'+b+'</button>').join('');
+    sug.querySelectorAll('[data-obrgy]').forEach(x=>x.onclick=()=>ordBrgyPick(x.dataset.obrgy));
+  });
+}
 function setOrderType(t){
   t=t||'SLI';
   const form=$('#orderForm'); if(form) form.dataset.ordtype=t;
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.classList.toggle('active',b.dataset.ordtype===t));
   const show=(id,on)=>{const el=$('#'+id); if(el) el.style.display=on?'':'none';};
+  show('ordSecConn', t==='SLI');
   show('ordSecService', t==='SLI');
+  ordApplyMode();
   show('ordSecMigration', t==='Migration');
   show('ordSecSlr', t==='SLR');
   show('ordSecTransfer', t==='Transfer');
@@ -3781,6 +3837,9 @@ async function editRejectedOrder(jobId){
   const note=/^REJECTED/i.test((j.special_note||''))?'':(j.special_note||'');   // drop the rejection text from the editable note
   if(type==='SLI'){
     if($('#ord_dwelling')) $('#ord_dwelling').value=j.dwelling_type||'SDU'; ordPopulatePlans();
+    if($('#ord_brgy_type')) ordBrgyPick(String(j.brgy||'').toUpperCase());
+    if($('#ord_pref_date')) $('#ord_pref_date').value=(/^\d{4}-\d{2}-\d{2}$/.test(String(j.schedule||''))?j.schedule:manilaToday());
+    ordApplyMode();
     if($('#ord_plan')) $('#ord_plan').value=j.plan||''; if($('#ord_addon')) $('#ord_addon').value=j.add_on||'';
     setv('ref_no',j.ref_no); if($('#ord_play')) $('#ord_play').value=j.play_type||'1-PLAY'; ordToggleAddonCount();
     if($('#ord_addon_count')) $('#ord_addon_count').value=j.addon_count||'';
@@ -3876,7 +3935,19 @@ async function submitOrderInner(e){
   const fn=t(f.first_name), ln=t(f.last_name), dist=t(f.district), brgy=t(f.brgy), city=t(f.city)||'QUEZON CITY', pno=t(f.primary_no), ono=t(f.other_contact_no);
   // Email is NOT uppercased (emails are case-sensitive in the local part) — read raw, lowercased.
   const email=(f.email||'').trim().toLowerCase();
-  if(!fn||!ln||!pno||!dist||!brgy){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
+  // SHORT FORM (console, SLI FTTH — owner 2026-11-25): sundan ang mobile GC Sales process.
+  const shortMode=ordShortMode();
+  let shortBrgy='', shortDist='', shortPref='';
+  if(shortMode){
+    shortPref=($('#ord_pref_date')?$('#ord_pref_date').value:'')||manilaToday();
+    const canon=ordBrgyResolve($('#ord_brgy_type')?$('#ord_brgy_type').value:'');
+    if(!fn||!ln){ err('Please fill: first & last name.'); return; }
+    if(!t(f.street_name)){ err('Street name is required.'); return; }
+    if(!canon){ err('Barangay not recognized — type it and pick from the suggestions.'); return; }
+    shortBrgy=canon; shortDist=ORD_BRGY_DISTRICT[canon]||'';
+    if(shortPref<manilaToday()){ err('Preferred installation date cannot be in the past.'); return; }
+  }
+  if(!shortMode && (!fn||!ln||!pno||!dist||!brgy)){ err('Please fill: first & last name, primary no., district, and barangay.'); return; }
   // Transfer/IPTV = existing subscriber na — optional ang email doon; required pa rin sa iba.
   const emailOptional=(ordType==='Transfer'||ordType==='IPTV');
   if(!email && !emailOptional){ err('Email address is required.'); return; }
@@ -3886,14 +3957,14 @@ async function submitOrderInner(e){
   // (laging on) o naka-ON ang contractor flag. Edit/resubmit ng lumang JO = hindi
   // hinaharang (parehong patakaran ng birth_date — nauna ang mga record sa field).
   if(secReqMine===null){ try{ await loadSecReq(); }catch(_e){} }
-  if(!ordEditId && secReqNow() && !ono){ err('Secondary contact no. is required (11 digits).'); return; }
+  if(!ordEditId && !shortMode && secReqNow() && !ono){ err('Secondary contact no. is required (11 digits).'); return; }
   if(ono && !/^\d{11}$/.test(ono)){ err('Secondary contact no. must be 11 digits (numbers only).'); return; }
   // Date of birth: required on NEW encodes; optional on edit/resubmit (old JOs predate the field).
   const bday=(f.birth_date||'').trim();
-  if(!ordEditId && !bday){ err('Date of birth is required.'); return; }
+  if(!ordEditId && !shortMode && !bday){ err('Date of birth is required.'); return; }
   if(bday && bday>manilaToday()){ err('Date of birth cannot be in the future.'); return; }
   if(ordType==='SLI'){
-    if(f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
+    if(!shortMode && f.play_type==='2-PLAY' && !t(f.addon_count)){ err('For 2-PLAY, select how many add-ons are included.'); return; }
     if(!ordEditId && !ordDocs.id.length){ err('A Valid ID photo is required.'); return; }
   }
   if(ordType==='Migration'){
@@ -3921,9 +3992,9 @@ async function submitOrderInner(e){
   // at mapupunta sa GC-only Duplicate registry; ang VALIDATOR pa rin ang live na
   // nakakakita ng % at nagdedesisyon bago ang dispatch.
   const dupPayload={first:fn,middle:t(f.middle_name),last:ln,birth:bday,primary:pno,ocn:ono,email:email,
-    house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:brgy,district:dist,orderType:ordType};
+    house:t(f.house_no),street:t(f.street_name),village:t(f.village),brgy:(shortMode?shortBrgy:brgy),district:(shortMode?shortDist:dist),orderType:ordType};
   const full=[fn,t(f.middle_name),ln].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
-  const addr=[t(f.house_no),t(f.street_name),t(f.village),brgy,'District '+dist,city].filter(Boolean).join(', ');
+  const addr=[t(f.house_no),t(f.street_name),t(f.village),(shortMode?shortBrgy:brgy),'District '+(shortMode?shortDist:dist),city].filter(Boolean).join(', ');
   const jobId='WO-'+new Date().getFullYear()+'-'+Date.now().toString().slice(-6);
   const svcType={SLI:'Installation',Migration:'Migration',SLR:'SLR',Transfer:'Transfer SDU-MDU',IPTV:'IPTV Only'}[ordType];
   // SLI goes to the Validator first; Migration, SLR, Transfer & IPTV go straight to For
@@ -3931,7 +4002,7 @@ async function submitOrderInner(e){
   const toValidate=(ordType==='SLI');
   const job={id:jobId,subscriber:full,service_type:svcType,area:city,address:addr,status:(toValidate?'for_validation':'pending'),wait_time:'Just now',priority:'Normal',schedule:manilaToday()+', 9:00 AM',team:null,created_by:'CONSOLE',encoded_by:((window.dashUser&&(dashUser.username||dashUser.display_name))||null),load_type:ordType,load_date:(toValidate?null:manilaToday()),
     first_name:fn,middle_name:t(f.middle_name),last_name:ln,birth_date:(bday||null),primary_no:pno,other_contact_no:ono,email:email,
-    house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:dist,brgy:brgy,city:city,
+    house_no:t(f.house_no),street_name:t(f.street_name),village:t(f.village),district:(shortMode?shortDist:dist),brgy:(shortMode?shortBrgy:brgy),city:city,
     updated_at:new Date().toISOString()};
   if(ordType==='SLI'){
     Object.assign(job,{plan:t(f.plan),ref_no:t(f.ref_no),play_type:f.play_type,source_of_sales:f.source_of_sales,referral_name:t(f.referral_name),
@@ -3939,6 +4010,8 @@ async function submitOrderInner(e){
       amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),
       add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
       special_note:t(f.special_note)});
+    if(shortMode){ Object.assign(job,{plan:'',ref_no:'',play_type:'',source_of_sales:'',install_fee_type:'',
+      amount_to_collect:null,add_on:'',addon_count:null,other_contact_no:'',schedule:shortPref}); }
   } else if(ordType==='Migration'){
     Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
       amount_to_collect:(t(f.mig_amount)!==''?Number(t(f.mig_amount)):null),
@@ -6287,7 +6360,7 @@ function init(){
   loadOrgMap();
   $$('[data-action="new-order"]').forEach(b=>b.onclick=()=>{ ordEditId=null; ordInfoEdit=false; ordDupClear(); const hd=$('#orderModal .modal-head h2'); if(hd) hd.textContent='Add job order'; const ovb=$('#ordValBanner'); if(ovb){ovb.style.display='none';ovb.innerHTML='';} $('#orderForm').reset(); ordClearDocs(); openModal($('#orderModal')); setOrderType('SLI'); ordPopulatePlans(); ordToggleAddonCount(); ordToggleMigCpe(); iptvRenderVas(); populateOrdBrgys(($('#ord_district')||{}).value||''); });
   $$('#ordTypeTabs [data-ordtype]').forEach(b=>b.onclick=()=>setOrderType(b.dataset.ordtype));
-  $('#ord_dwelling')?.addEventListener('change',ordPopulatePlans);
+  $('#ord_dwelling')?.addEventListener('change',()=>{ ordPopulatePlans(); ordApplyMode(); }); ordBrgyWire();
   $('#ord_district')?.addEventListener('change',e=>populateOrdBrgys(e.target.value));
   $('#ord_play')?.addEventListener('change',ordToggleAddonCount);
   $('#ord_mig_play')?.addEventListener('change',ordToggleMigCpe);
