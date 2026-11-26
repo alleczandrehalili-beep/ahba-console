@@ -49,7 +49,7 @@ async function reqOk(r,what){
   throw new Error(msg);
 }
 // ---- App version stamp + auto "new version" nudge (kills stale-cache confusion after deploy) ----
-const APP_VERSION='2026-11-25.7';
+const APP_VERSION='2026-11-26.1';
 function _stampVersion(){ try{ const el=document.getElementById('appVerStamp'); if(el) el.textContent='v'+APP_VERSION; }catch(e){} }
 function _showVerNudge(){
   if(document.getElementById('verNudge')) return;
@@ -4054,7 +4054,7 @@ async function submitOrderInner(e){
       amount_to_collect:(t(f.amount_to_collect)!==''?Number(t(f.amount_to_collect)):null),
       add_on:t(f.add_on),addon_count:(f.play_type==='2-PLAY'&&t(f.addon_count)!==''?Number(t(f.addon_count)):null),
       special_note:t(f.special_note)});
-    if(shortMode){ Object.assign(job,{plan:'',play_type:'',source_of_sales:'',install_fee_type:'',
+    if(shortMode){ Object.assign(job,{play_type:'',source_of_sales:'',install_fee_type:'',
       amount_to_collect:null,add_on:'',addon_count:null,other_contact_no:'',schedule:shortPref}); }
   } else if(ordType==='Migration'){
     Object.assign(job,{current_plan:t(f.current_plan),plan:t(f.mig_plan),ref_no:t(f.mig_ref),
