@@ -13,7 +13,7 @@
     '.hr-chip{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:800}.hr-chip.open{background:#eef1ed;color:#4a5a55}.hr-chip.computed{background:#fff3cd;color:#8a6100}.hr-chip.locked{background:#e7f7ef;color:#0b6b4d}' +
     '.hr-warn{background:#fff3cd;border:1px solid #ffe08a;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-weight:700;color:#7a5200}' +
     'table.hr-t{width:100%;border-collapse:collapse;font-size:12px}.hr-t th,.hr-t td{padding:6px 8px;border-bottom:1px solid #eef1ed;text-align:left;white-space:nowrap}.hr-t th{background:#f6f9f7;font-size:11px;position:sticky;top:0}.hr-t td.r,.hr-t th.r{text-align:right;font-variant-numeric:tabular-nums}.hr-t tr:hover td{background:#f9fbfa}.hr-t td.ed{background:#fffbe6;cursor:text}.hr-t td.ed.m{box-shadow:inset 3px 0 #ffb000}.hr-scroll{overflow:auto;max-height:70vh;border:1px solid #e3e8e2;border-radius:10px}' +
-    '.dtr td.c{text-align:center;cursor:pointer;min-width:44px;font-weight:700}.dtr td.c.team{background:#e7f7ef}.dtr td.c.punch{background:#e3f0ff}.dtr td.c.manual{background:#fff3cd}.dtr td.c.legal{outline:2px solid #c2503a;outline-offset:-2px}.dtr td.c.special{outline:2px solid #9a6200;outline-offset:-2px}.dtr td.c.rd{outline:2px solid #6b3fa0;outline-offset:-2px}.dtr td.c.fuzzy{outline:2px dashed #e0891a;outline-offset:-2px}.dtr td.c.flag::after{content:" ⚑";color:#c2503a}.dtr td.c.ov::after{content:" ✎";color:#4a5a55}.dtr td.name{position:sticky;left:0;background:#fff;font-weight:700}' +
+    '.dtr td.c{text-align:center;cursor:pointer;min-width:44px;font-weight:700}.dtr td.c.team{background:#e7f7ef}.dtr td.c.punch{background:#e3f0ff}.dtr td.c.manual{background:#fff3cd}.dtr td.c.legal{outline:2px solid #c2503a;outline-offset:-2px}.dtr td.c.special{outline:2px solid #9a6200;outline-offset:-2px}.dtr td.c.rd{outline:2px solid #6b3fa0;outline-offset:-2px}.dtr td.c.fuzzy{outline:2px dashed #e0891a;outline-offset:-2px}.dtr td.c.xsrc{background:#fcd9d4;box-shadow:inset 0 0 0 2px #c2503a}.dtr td.c.flag::after{content:" ⚑";color:#c2503a}.dtr td.c.ov::after{content:" ✎";color:#4a5a55}.dtr td.name{position:sticky;left:0;background:#fff;font-weight:700}' +
     '.hr-pop{position:fixed;z-index:9999;background:#fff;border:1px solid #cfd8d3;border-radius:12px;padding:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);width:280px;font-size:12px}.hr-pop label{display:block;margin:6px 0 2px;font-weight:700;font-size:11px}.hr-pop input,.hr-pop select,.hr-pop textarea{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #cfd8d3;border-radius:8px}.hr-pop .row{display:flex;gap:6px;margin-top:8px}' +
     '.hr-legend{font-size:11px;color:#4a5a55;display:flex;gap:12px;flex-wrap:wrap;margin:6px 0}.hr-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:3px}' +
     '.hr-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9998;display:flex;align-items:center;justify-content:center}.hr-modal .box{background:#fff;border-radius:14px;padding:16px;width:min(720px,94vw);max-height:90vh;overflow:auto}.hr-modal .box h3{margin:0 0 10px}.hr-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}.hr-form label{font-size:11px;font-weight:700;display:block}.hr-form input,.hr-form select{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #cfd8d3;border-radius:8px}.hr-form .w{grid-column:1/-1}' +
@@ -27,9 +27,25 @@
     '.hr-check{margin:10px 0;font-weight:700;font-size:12px;line-height:1.9}.hr-check .ok{color:#0b6b4d}.hr-check .no{color:#8a2f2f}.hr-newpay{background:#18a57b!important;color:#fff!important;border-color:#18a57b!important}.hr-newpay.on{background:#0b6b4d!important}' +
     '.dtr td.c.biometric{background:#eaf2ff}.dtr td.c small.lt{display:block;color:#b8600a;font-size:9px;font-weight:800}.hr-src{font-size:10px;font-weight:800;padding:1px 6px;border-radius:7px;background:#eaf2ff;color:#1d4f91}' +
     '.hr-batch{border:1px solid #b5daca;border-radius:10px;padding:12px;margin:10px 0;background:#f6fbf8}.hr-batch h4{margin:0 0 8px;font-size:13px}.hr-batch textarea{display:block;width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #cfd8d3;border-radius:8px;min-height:48px;font:inherit}.hr-batch label{font-size:12px}.hr-batch-summary{padding:8px 0;font-size:12px;line-height:1.6}.hr-batch-confirm{padding:10px;border:1px solid #e2c46b;border-radius:8px;background:#fff8e1;margin-top:8px}.hr-batch .hr-scroll{max-height:260px;background:#fff}.hr-batch-error{color:#8a2f2f;font-weight:700}.hr-batch [hidden]{display:none!important}' +
+    '.ros td.s0{background:#f2f4f3;color:#8a9894}.ros td.s1{background:#e7f7ef;font-weight:700}.ros td.s2{background:#fdeceb;color:#c2503a;font-weight:700}.ros td.s3{background:#fff;color:#c9d0cc}.ros td.s4{background:#fff4dc;color:#9a6200;font-weight:700}.ros td.c{text-align:center}.ros td .hr-btn{padding:1px 6px;margin:0 1px}' +
     '@media print{.hr-tabs,.hr-bar,.hr-warn{display:none!important}}';
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function money(n) { n = Number(n) || 0; return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  // One employee-form field -> the value to save. An <input type=time> reports value '' both when it was cleared
+  // on purpose AND when it holds a half-typed entry (hour changed, minutes not yet); badInput tells them apart.
+  // badInput cannot tell intent apart for shift_start (a user clearing the segment reports the same signals as a half-typed one,
+  // measured in Chrome), so shift_start is NOT judged by it: empty = null here, and the save handler ASKS before removing a shift
+  // that exists (empShiftClearOk). Every other field keeps the refusal: a half-typed daily_rate must not save null.
+  function empFieldValue(f, el) {
+    if (f[0] !== 'shift_start' && el.validity && el.validity.badInput) return { ok: false };
+    if (el.value === '') return { ok: true, value: null };
+    return { ok: true, value: f[2] === 'number' ? Number(el.value) : el.value };
+  }
+  // Clearing a shift that exists changes which minute punches are judged late against: confirm first. No shift before = nothing destroyed.
+  function empShiftClearOk(prev, next, ask) {
+    if (next !== null || prev == null || prev === '') return true;
+    return !!ask('Remove this employee\'s shift?\n\nTheir shift (' + String(prev).slice(0, 5) + ') will be cleared, and their lateness will then be measured against the uploaded file\'s shift instead.');
+  }
   function fmtDate(s) { if (!s) return '—'; var d = new Date(s + 'T00:00:00'); return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }); }
   function periodLabel(p) {   // workbook style "Aug 21-27,2026"; a week that crosses a month boundary spells both months: "Aug 28-Sep 3,2026"
     var a = new Date(p.period_start + 'T00:00:00'), b = new Date(p.period_end + 'T00:00:00'), md = { month: 'short', day: 'numeric' };
@@ -491,9 +507,22 @@
 
     // ---------- DTR ----------
     function logsFor(eid) { return S.logs.filter(function (l) { return l.employee_id === eid; }); }
-    function cellClass(l, day) { if (!l) return ''; var k = l.source + ' ' + (l.hours_rd > 0 ? 'rd' : l.day_kind !== 'regular' ? l.day_kind : '') + (l.flag ? ' flag' : '') + (l.flag === 'fuzzy_name' ? ' fuzzy' : '') + (l.override_at ? ' ov' : ''); return k; }
-    // flag → words: fuzzy_name = the builder's typo-tolerant match (evidence.matched_as = the crew's spelling) — a ✓ confirms it and learns the alias
-    function flagText(l) { if (!l || !l.flag) return ''; return l.flag === 'fuzzy_name' ? 'similar name: typed ' + String(l.evidence && l.evidence.matched_as || '?') : l.flag; }
+    // owner 2026-10-17: the two CROSS-SOURCE flags — the FieldOps schedule and the biometric file disagree about this
+    // day. They are not punch-quality problems, and only HR Manager or a superadmin may clear them, so they get their
+    // own colour on the DTR instead of sharing the generic ⚑ with a malformed punch.
+    var XSRC = { not_in_biometric: 1, not_in_fieldops: 1, punched_but_absent: 1, absent_from_file: 1 };   // owner 2026-11-27: the roster/file disagreements are gated by verify_logs too
+    function crossSource(l) { return !!(l && XSRC[l.flag]); }
+    // Say plainly that this one is not yours, instead of offering a button the server will refuse. ONLY when me()
+    // states it: an older backend has no such key, and a permission the server has not stated is never guessed here.
+    function seniorBlocked(l) { return crossSource(l) && !!S.me && S.me.can_senior_validate === false; }
+    function cellClass(l, day) { if (!l) return ''; var k = l.source + ' ' + (l.hours_rd > 0 ? 'rd' : l.day_kind !== 'regular' ? l.day_kind : '') + (l.flag ? ' flag' : '') + (l.flag === 'fuzzy_name' ? ' fuzzy' : '') + (crossSource(l) ? ' xsrc' : '') + (l.override_at ? ' ov' : ''); return k; }
+    // flag → words: fuzzy_name = the builder's typo-tolerant match (evidence.matched_as = the crew's spelling) — a ✓ confirms it and learns the alias.
+    // Everything else reads its wording from the import module's FLAG_TEXT, so the DTR and the Validate table cannot drift apart.
+    function flagText(l) {
+      if (!l || !l.flag) return '';
+      if (l.flag === 'fuzzy_name') return 'similar name: typed ' + String(l.evidence && l.evidence.matched_as || '?');
+      return (Att && Att.FLAG_TEXT && Att.FLAG_TEXT[l.flag]) || l.flag;
+    }
     function cellText(l) { if (!l) return ''; var h = Number(l.hours_reg) + Number(l.hours_rd) + Number(l.hours_lh) + Number(l.hours_sh); return h ? String(h) : '0'; }
     TABS.dtr = function () {
       if (!S.period) { $('#hrBody').innerHTML = '<div class="hr-card">Create a period first.</div>'; return; }
@@ -617,8 +646,60 @@
     // One date at a time. Logs grouped by team (evidence.team) / console punches / manual; ✓ per row, "✓ all in team", ✗ = setLog 0 hours + reason,
     // "+ Add present" = markPresent, and a "Who's missing" hint per team (a `team` log for that team in the previous 3 days, no log today).
     // Reads only listLogs / listHolidays / the employee list (names-only for validators) — no rate or money anywhere in this view.
-    function loadValidate() { var d = S.val.date; return api.listLogs(C.addDays(d, -3), d).then(function (r) { S.valLogs = r; }); }
+    // The roster needs the whole week; the team groups' "Who's missing" hint must keep reading exactly d-3..d, so the week is its own read.
+    function rosWeek() { var w = C.periodFor(S.val.date, S.settings && S.settings.week_start_dow); return C.datesBetween(w.period_start, w.period_end); }
+    function loadValidate() { var d = S.val.date, wk = rosWeek(); return Promise.all([api.listLogs(C.addDays(d, -3), d), api.listLogs(wk[0], wk[6])]).then(function (r) { S.valLogs = r[0]; S.rosLogs = r[1]; }); }
     TABS.validate = function () { $('#hrBody').innerHTML = '<div class="hr-card">Loading…</div>'; loadValidate().then(renderValidate).catch(fail); };
+    // owner 2026-11-27: the backend never logs in to FieldOps, so nothing creates their rows — and the Validate tab renders ROWS.
+    // They were not merely tedious, they were INVISIBLE: no list of who had not been done. This region is built from the employee
+    // master, so the unanswered are the point of it.
+    // TWO QUESTIONS, TWO RULES. Do not merge them again.
+    //  1. What to DISPLAY is decided by HOURS: no row = none (untouched); hours above zero = in (present); zero hours = out (absent), whatever
+    //     wrote it. An HR "did not report" row (setLog with a reason, stamps override_*) is a person recorded as not reporting, so it reads absent
+    //     and its reason is shown; a roster-absent row that was later given hours pays that day, so it reads present.
+    //  2. Whether the roster may OVERWRITE a row is decided by PROVENANCE, never by hours (rosterOwned, mirrors hr.correct_roster): source manual,
+    //     no override_*, and evidence.roster = 'absent' or a mark_present 'by' without 'roster'. Punches and HR decisions are not the roster's.
+    // 'na' = outside the employment window (before date_hired / after date_ended): inert, and left out of the count and the week button.
+    function rosHours(l) { return Number(l.hours_reg || 0) + Number(l.hours_rd || 0) + Number(l.hours_lh || 0) + Number(l.hours_sh || 0); }
+    function rosterOwned(l) {
+      var ev = l.evidence || {}, has = function (k) { return Object.prototype.hasOwnProperty.call(ev, k); };
+      return l.source === 'manual' && !l.override_by && !l.override_at && !l.override_reason && (ev.roster === 'absent' || (has('by') && !has('roster')));
+    }
+    function backendRoster(days) {
+      var people = validationEmployees().filter(function (e) { return e.active && !e.deleted_at && e.department === 'office'; });
+      var byKey = {}; (S.rosLogs || []).forEach(function (l) { byKey[l.employee_id + '|' + l.work_date] = l; });
+      function stateOf(e, d) {
+        if ((e.date_hired && d < e.date_hired) || (e.date_ended && d > e.date_ended)) return 'na';
+        var l = byKey[e.id + '|' + d];
+        if (!l) return 'none';
+        if (rosHours(l) > 0) return 'in';
+        // A zero-hours row that is merely unconfirmed (an invalid clock, no punch evidence, an incomplete punch awaiting HR) is NOT a recorded
+        // absence: nobody has decided it. The three-state design exists to keep that apart from a person who was marked out.
+        return incompletePending(l) || pendingEvidenceLabel(l) ? 'unc' : 'out';
+      }
+      var pending = 0;
+      people.forEach(function (e) { days.forEach(function (d) { if (stateOf(e, d) === 'none') pending++; }); });
+      return { people: people, stateOf: stateOf, pending: pending, byKey: byKey };
+    }
+    function rosterHtml(days, canAct) {
+      var R = backendRoster(days), SC = { none: 's0', 'in': 's1', out: 's2', na: 's3', unc: 's4' };
+      var anyLocked = days.some(lockedDay), allLocked = days.every(lockedDay);
+      var head = '<th>Employee</th>' + days.map(function (d) { return '<th class="c">' + dow(d) + ' ' + esc(d.slice(8)) + '</th>'; }).join('') + '<th></th>';
+      var rows = R.people.map(function (e) {
+        var openDays = days.filter(function (d) { return R.stateOf(e, d) !== 'na' && !lockedDay(d); });
+        return '<tr data-emp="' + esc(e.id) + '"><td class="name">' + esc(e.display_name) + '</td>' + days.map(function (d) {
+          var st = R.stateOf(e, d), l = R.byKey[e.id + '|' + d], can = canAct && !lockedDay(d) && st === 'none', fix = canAct && !lockedDay(d) && (st === 'in' || st === 'out') && rosterOwned(l);
+          var dec = st === 'unc' ? ' title="' + esc('Unconfirmed, not absent: ' + (pendingEvidenceLabel(l) || 'incomplete punch, hours provisional') + '. Decide it in the day list above.') + '"' : l && l.override_reason ? ' title="' + esc((st === 'out' ? 'Did not report: ' : '') + l.override_reason) + '"' : st === 'out' ? ' title="absent"' : '';
+          if ((st === 'in' || st === 'out') && !fix && l && !l.override_reason && l.source !== 'manual') dec = ' title="' + esc('from a ' + l.source + ' record; change it in the day list above') + '"';
+          return '<td class="c ' + SC[st] + '" data-cell="' + esc(e.id) + '|' + d + '"' + dec + '>' + (st === 'in' ? '✓' : st === 'out' ? '✗' + (l.override_reason ? ' <span class="hr-dec">✎</span>' : '') : st === 'unc' ? '⚑' : st === 'na' ? '·' :
+            can ? '<button class="hr-btn" data-ros="' + esc(e.id) + '|' + d + '|in" title="Present">✓</button><button class="hr-btn d" data-ros="' + esc(e.id) + '|' + d + '|out" title="Absent">✗</button>' : '?') +
+            (fix ? ' <button class="hr-btn" data-rosfix="' + esc(e.id) + '|' + d + '|' + (st === 'in' ? 'out' : 'in') + '" title="' + (st === 'in' ? 'Wrong? Change to absent' : 'Wrong? Change to present') + '">⇄</button>' : '') + '</td>';
+        }).join('') + '<td>' + (canAct && openDays.length ? '<button class="hr-btn p" data-rosall="' + esc(e.id) + '" title="Present on every open day this week">✓ all week</button>' : '') + '</td></tr>';
+      }).join('');
+      return '<div class="hr-card ros" id="hrRoster"><div class="hr-bar"><h3 style="margin:0">Backend roster</h3><span style="font-size:11px;color:#8a9894">' + esc(days[0]) + ' – ' + esc(days[6]) + ' · <b id="rosPending">' + R.pending + ' unanswered</b> person-days · grey = nobody has answered, green = present, red = absent, amber ⚑ = unconfirmed (not absent) · ⇄ corrects an answer · ✎ = HR decision</span></div>' +
+        (anyLocked ? '<div class="hr-warn">🔒 ' + (allLocked ? 'This week is' : 'Part of this week is') + ' inside a <b>locked payroll week</b> — attendance is frozen; reopen it in Periods to answer.</div>' : '') +
+        (R.people.length ? '<div class="hr-scroll"><table class="hr-t"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>' : '<p class="mut">No active Backend/Office employees.</p>') + '</div>';
+    }
     function renderValidate() {
       var d = S.val.date, unvOnly = S.val.unv, frozen = lockedDay(d), act = !ro() && !frozen, kind = C.classifyDay(d, S.holidays);   // Phase 0 (C1): a locked day offers no attendance action at all
       var allToday = S.valLogs.filter(function (l) { return l.work_date === d; }), allPrev = S.valLogs.filter(function (l) { return l.work_date < d; });
@@ -651,14 +732,16 @@
           '<td>' + esc(l.source === 'biometric' ? t5(ev.time_in) : hhmm(ev.time_in)) + '</td><td>' + (l.source === 'team' ? (ev.gate_out ? '✓ ' + esc(hhmm(ev.gate_out)) : '—') : (ev.time_out ? 'out ' + esc(l.source === 'biometric' ? t5(ev.time_out) : hhmm(ev.time_out)) : '—')) + '</td>' +
           '<td class="r">' + cellText(l) + (problem ? ' <small style="color:#9a6200">unconfirmed</small>' : pending ? ' <small style="color:#9a6200">provisional</small>' : '') + (l.flag ? ' <span title="' + esc(flagText(l)) + '">⚑</span>' : '') + (l.override_at ? ' <span title="' + esc(l.override_reason || '') + '">✎</span>' : '') + '</td>' +
           '<td>' + (problem ? '<span class="hr-chip computed">' + esc(problem) + '</span>' : pending ? '<span class="hr-chip computed">Incomplete punch · pending HR</span>' : ver ? '<span class="hr-chip locked">✓ ' + esc(l.verified_by || '') + ', ' + esc(hhmm(l.verified_at)) + '</span>' : '<span class="hr-chip computed">unverified</span>') + (l.verify_note ? ' <small style="color:#8a9894">' + esc(l.verify_note) + '</small>' : '') + '</td>' +
-          '<td style="text-align:right;white-space:nowrap">' + (rowAct ? (ver ? '' : pending ? '<span class="mut">' + (l.incomplete_issue ? 'Use grouped review above' : 'Evidence needs individual correction') + '</span> ' : '<button class="hr-btn p" data-vok="' + esc(l.id) + '" title="Confirm this day">✓</button> ') + '<button class="hr-btn d" data-vno="' + esc(l.employee_id) + '" title="Did not report — 0 hours + reason">✗</button>' + (drag ? ' <button class="hr-btn" data-vmv="' + esc(l.id) + '" title="Move to another team (or drag the row onto a team card)">⇄</button>' : '') : act ? '<small class="mut">Stored attendance · employee profile / payroll pool needs correction</small>' : '') + '</td></tr>';
+          '<td style="text-align:right;white-space:nowrap">' + (rowAct ? (ver ? '' : pending ? '<span class="mut">' + (l.incomplete_issue ? 'Use grouped review above' : 'Evidence needs individual correction') + '</span> ' : (seniorBlocked(l)
+              ? '<small class="mut" title="' + esc(flagText(l)) + '">HR Manager validates this one</small> '
+              : '<button class="hr-btn p" data-vok="' + esc(l.id) + '" title="' + esc(crossSource(l) ? flagText(l) + ' — HR Manager or superadmin only' : 'Confirm this day') + '">✓</button> ')) + '<button class="hr-btn d" data-vno="' + esc(l.employee_id) + '" title="Did not report — 0 hours + reason">✗</button>' + (drag ? ' <button class="hr-btn" data-vmv="' + esc(l.id) + '" title="Move to another team (or drag the row onto a team card)">⇄</button>' : '') : act ? '<small class="mut">Stored attendance · employee profile / payroll pool needs correction</small>' : '') + '</td></tr>';
       }
       function groupHtml(g) {
-        var rows = unvOnly ? g.rows.filter(function (l) { return !l.verified_at || incompletePending(l); }) : g.rows, unv = g.rows.filter(function (l) { return !l.verified_at || incompletePending(l); }).length, bulk = rows.filter(function (l) { return eligibleEmployees[String(l.employee_id)] && !l.verified_at && !incompletePending(l); });
+        var rows = unvOnly ? g.rows.filter(function (l) { return !l.verified_at || incompletePending(l); }) : g.rows, unv = g.rows.filter(function (l) { return !l.verified_at || incompletePending(l); }).length, bulk = rows.filter(function (l) { return eligibleEmployees[String(l.employee_id)] && !l.verified_at && !incompletePending(l) && !seniorBlocked(l); });
         if (!rows.length && !g.missing.length) return '';
         var label = g.kind === 'team' ? field ? '👥 ' + esc(g.key) : '👥 Recorded attendance · ' + esc(g.key) : g.kind === 'punch' ? '⏱ Console punches' : g.kind === 'biometric' ? '🧬 Biometric attendance' : '✍ Manual';
         return '<div class="hr-card val"' + (act && field && g.kind === 'team' ? ' data-drop="' + esc(g.key) + '"' : '') + '><div class="hr-bar"><h3 style="margin:0">' + label + '</h3><span style="font-size:11px;color:#8a9894">' + g.rows.length + ' logged · ' + unv + ' unverified</span>' +
-          (act && bulk.length ? '<button class="hr-btn p" data-vall="' + esc(g.key) + '">✓ all in ' + (field && g.kind === 'team' ? 'team' : 'group') + ' (' + bulk.length + ')' + (unv > bulk.length ? ' · excludes incomplete / ineligible records' : '') + '</button>' : '') + '</div>' +
+          (act && bulk.length ? '<button class="hr-btn p" data-vall="' + esc(g.key) + '">✓ all in ' + (field && g.kind === 'team' ? 'team' : 'group') + ' (' + bulk.length + ')' + (unv > bulk.length ? ' · excludes incomplete / ineligible records and days only HR Manager may validate' : '') + '</button>' : '') + '</div>' +
           (rows.length ? '<table class="hr-t"><thead><tr><th>Employee</th><th>Source</th><th>Time in</th><th>' + (field ? 'Gate-out / Time out' : 'Time out') + '</th><th class="r">Hours</th><th>Verification</th><th></th></tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table>'
             : '<p class="mut">' + (g.rows.length ? 'all ' + g.rows.length + ' verified' : 'no declaration on this date') + '</p>') +
           (g.missing.length ? '<div class="hr-miss"><b>Who\'s missing</b> <small style="color:#8a9894">— logged with this team in the previous 3 days, no log on this date:</small><br>' +
@@ -675,7 +758,8 @@
         '<p class="mut">All groups on this date: ' + allToday.length + ' logs · ' + allToday.filter(function (l) { return !l.verified_at || incompletePending(l); }).length + ' unverified. Groups follow the employee master department.' + (group === 'unknown' ? ' Unknown departments and missing employee profiles stay here for HR correction.' : '') + '</p>' +
         (frozen ? '<div class="hr-warn">🔒 This day is inside a <b>locked payroll week</b> — attendance is frozen. Reopen the week in Periods (reason required) before validating or correcting anything.</div>' : '') +
         '<p class="mut">' + (field ? 'FieldOps declarations and scheduled teams support field attendance. <b>Drag</b> a row onto another team\'s card (or <b>⇄</b>) when someone was declared under the wrong team. ' : group === 'office' ? 'Backend/Office attendance uses clock records and HR attendance evidence; dispatch or team confirmation is not required. ' : 'Review attendance using clock records and HR evidence; correct the employee master department when available. ') + '<b>✓</b> confirms the day · <b>✗</b> records "did not report" (0 hours + reason) · <b>+ Add present</b> vouches for an employee in this group. Incomplete biometric punches use the grouped HR review below.</p>' + batchPeriods.map(function (_, i) { return '<div id="vIncompleteBatch' + i + '"></div>'; }).join('') + '</div>' +
-        (keys.map(function (k) { return groupHtml(groups[k]); }).join('') || '<div class="hr-card"><p class="mut">No logs in ' + VALIDATION_GROUP_LABELS[group] + ' on this date' + (unvOnly ? ' (or all verified)' : '') + '.' + (act ? ' Use + Add present for attendance supported by HR evidence.' : '') + '</p></div>');
+        (keys.map(function (k) { return groupHtml(groups[k]); }).join('') || '<div class="hr-card"><p class="mut">No logs in ' + VALIDATION_GROUP_LABELS[group] + ' on this date' + (unvOnly ? ' (or all verified)' : '') + '.' + (act ? ' Use + Add present for attendance supported by HR evidence.' : '') + '</p></div>') +
+        rosterHtml(rosWeek(), !ro());
       S.val.batches = S.val.batches || {};
       batchPeriods.forEach(function (pid, i) { var state = S.val.batches[pid] || (S.val.batches[pid] = {}); renderIncompleteBatch('vIncompleteBatch' + i, { state: state, rows: batchRows.filter(function (l) { return l.biometric_period_id === pid; }).map(function (l) { return { l: l }; }), periodId: pid, group: group, scope: validationBatchScope(pid, [d, unvOnly], group), act: act, after: function () { S.val.batches = {}; return loadBase().then(loadValidate).then(renderValidate); }, reload: function () { S.val.batches = {}; TABS.validate(); } }); });
       rootEl.querySelectorAll('[data-v-group]').forEach(function (b) { b.onclick = function () { if (validationGroupChange(S.val, b.dataset.vGroup)) { closeModal(); closePop(); renderValidate(); } }; });
@@ -685,8 +769,29 @@
       $('#vUnv').onchange = function () { S.val.batches = {}; S.val.unv = this.checked; renderValidate(); };
       var ab = $('#vAdd'); if (ab) ab.onclick = function () { openAddPresent(d, loggedToday, group); };
       var vb = $('#vBuild'); if (vb) vb.onclick = function () { vb.disabled = true; api.buildLogs(d, d).then(function (r) { toast('Built ' + r.built + ' · ' + r.unmatched + ' unmatched' + (r.skipped_locked ? ' · ' + r.skipped_locked + ' day(s) skipped (locked)' : '')); return refresh(); }).catch(fail); };
+      // A roster answer sends exactly one call. Both write paths refuse to overwrite a row and check lock + employment window first.
+      rootEl.querySelectorAll('[data-ros]').forEach(function (b) { b.onclick = function () {
+        var p = b.dataset.ros.split('|'), eid = p[0], day = p[1], next = p[2];
+        if (lockedDay(day)) return;
+        b.disabled = true;
+        (next === 'in' ? api.markPresent([eid], [day]) : api.markAbsent([eid], [day])).then(function () { return refresh(); }).catch(fail);
+      }; });
+      // A correction sends exactly one correctRoster call; the backend refuses anything that is not the roster's own answer.
+      rootEl.querySelectorAll('[data-rosfix]').forEach(function (b) { b.onclick = function () {
+        var p = b.dataset.rosfix.split('|');
+        if (lockedDay(p[1])) return;
+        b.disabled = true;
+        api.correctRoster(p[0], p[1], p[2] === 'in').then(function () { toast('Corrected'); return refresh(); }).catch(function (err) { fail(err); refresh(); });
+      }; });
+      // one call, not seven: a backend week is usually uniform. Only open days are sent — a day before the hire date or in a locked week
+      // would make the whole call throw.
+      rootEl.querySelectorAll('[data-rosall]').forEach(function (b) { b.onclick = function () {
+        var e = emp(b.dataset.rosall), R = backendRoster(rosWeek()), ds = rosWeek().filter(function (d) { return R.stateOf(e, d) !== 'na' && !lockedDay(d); });
+        if (!ds.length) return;
+        b.disabled = true; api.markPresent([e.id], ds).then(function () { return refresh(); }).catch(fail);
+      }; });
       rootEl.querySelectorAll('[data-vok]').forEach(function (b) { b.onclick = function () { var l = byId[b.dataset.vok]; if (!l || !eligibleEmployees[String(l.employee_id)]) return; b.disabled = true; api.verifyLogs([l.id]).then(function () { return refresh(); }).catch(fail); }; });
-      rootEl.querySelectorAll('[data-vall]').forEach(function (b) { b.onclick = function () { var ids = groups[b.dataset.vall].rows.filter(function (l) { return eligibleEmployees[String(l.employee_id)] && !l.verified_at && !incompletePending(l); }).map(function (l) { return l.id; }); b.disabled = true; api.verifyLogs(ids).then(function (n) { toast(n + ' verified'); return refresh(); }).catch(fail); }; });
+      rootEl.querySelectorAll('[data-vall]').forEach(function (b) { b.onclick = function () { var ids = groups[b.dataset.vall].rows.filter(function (l) { return eligibleEmployees[String(l.employee_id)] && !l.verified_at && !incompletePending(l) && !seniorBlocked(l); }).map(function (l) { return l.id; }); if (!ids.length) { toast('Nothing in this group is yours to validate — the remaining days need HR Manager'); return; } b.disabled = true; api.verifyLogs(ids).then(function (n) { toast(n + ' verified'); return refresh(); }).catch(fail); }; });
       rootEl.querySelectorAll('[data-vno]').forEach(function (b) { b.onclick = function () {
         if (!eligibleEmployees[b.dataset.vno]) return;
         var why = prompt('Did not report — ' + (emp(b.dataset.vno).display_name || b.dataset.vno) + ' on ' + fmtDate(d) + '.\nReason (required):'); if (!why || !why.trim()) return;
@@ -808,7 +913,10 @@
         ib.disabled = true;
         api.importBiometric({ file_name: w.fileName, rows: w.rows, shift_start: w.shift, period_start: w.cut }).then(function (res) {
           var s = res.summary; w.periodId = res.period.id; w.review = null; w.step = 2; w.imported = res;
-          toast('Imported ' + s.logs + ' attendance days · ' + s.flagged + ' flagged · ' + res.unmatched.length + ' unmatched' + (s.removed_fieldops ? ' · ' + s.removed_fieldops + ' FieldOps day(s) replaced' : ''));
+          toast('Imported ' + s.logs + ' attendance days · ' + s.flagged + ' flagged · ' + res.unmatched.length + ' unmatched' + (s.removed_fieldops ? ' · ' + s.removed_fieldops + ' FieldOps day(s) replaced' : '')
+          // owner 2026-10-17: a declared day the file does not cover is KEPT now, not deleted. Saying so is the
+          // difference between 'the upload worked' and knowing how many people still need a second look.
+          + (s.kept_fieldops ? ' · ' + s.kept_fieldops + ' declared day(s) kept for review' : ''));
           S.period = null; return refresh();   // loadBase picks the newest week (this one) as the current period
         }).catch(function (e) { ib.disabled = false; fail(e); });
       };
@@ -1542,7 +1650,7 @@
     // ---------- Employees ----------
     // Amendment 2: masterlist identity fields (middle name, name extension, team, date regularized); weekly_allowance is legacy (unused by compute) and hidden — the value is carried through untouched
     // Amendment 4: payroll_group options come from settings.payroll_groups at render time (f[3] null → groups()); only the computed group is attendance-built / computed
-    var EMP_FIELDS = [['emp_no', 'Employee no.'], ['last_name', 'Last name'], ['first_name', 'First name'], ['middle_name', 'Middle name'], ['name_ext', 'Name extension (Jr / Sr / III)'], ['status_tag', 'Tag', 'select', ['', 'R', 'T', 'P']], ['position', 'Position'], ['department', 'Department', 'select', ['field', 'office']], ['payroll_group', 'Payroll group', 'select', null], ['team', 'Team (masterlist)'], ['daily_rate', 'Daily rate', 'number'],
+    var EMP_FIELDS = [['emp_no', 'Employee no.'], ['last_name', 'Last name'], ['first_name', 'First name'], ['middle_name', 'Middle name'], ['name_ext', 'Name extension (Jr / Sr / III)'], ['status_tag', 'Tag', 'select', ['', 'R', 'T', 'P']], ['position', 'Position'], ['department', 'Department', 'select', ['field', 'office']], ['shift_start', 'Shift start (blank = not recorded)', 'time'], ['payroll_group', 'Payroll group', 'select', null], ['team', 'Team (masterlist)'], ['daily_rate', 'Daily rate', 'number'],
       ['date_hired', 'Date hired', 'date'], ['date_regularized', 'Date regularized', 'date'], ['date_ended', 'Date ended', 'date'], ['bank_name', 'Bank'], ['bank_account', 'Bank account'], ['sss_no', 'SSS no.'], ['phic_no', 'PhilHealth no.'], ['hdmf_no', 'Pag-IBIG no.'], ['tin', 'TIN'], ['console_username', 'Console username (Time In/Out link)'], ['rest_day', 'Rest day (info only)', 'select', ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']]];
     TABS.employees = function () {
       var q = (S.empQ || '').toLowerCase(), showInactive = !!S.empInactive, showDeleted = !!S.empDeleted, grp = S.empGroup || '', cg = computedGroup();
@@ -1588,6 +1696,7 @@
       var RATE_FIELDS = { daily_rate: 1, weekly_allowance: 1 }, fields = EMP_FIELDS.filter(function (f) { return ratesOK() || !RATE_FIELDS[f[0]]; });   // rates gate
       openModal('<h3>' + (e.id ? 'Edit employee' : 'New employee') + '</h3><div class="hr-form">' + fields.map(function (f) {
           var v = e[f[0]] == null ? '' : e[f[0]], opts = f[3];
+          if (f[0] === 'shift_start') v = String(v).slice(0, 5);   // server returns HH:MM:SS; a time input wants HH:MM. Blank saves as null (never ''), and a half-typed time reads back as '' -> null
           if (f[0] === 'payroll_group') { opts = groups().slice(); if (v === '') v = cg; if (opts.indexOf(String(v)) < 0) opts.push(String(v)); }   // Amendment 4: the settings list (+ the row's own value if it is no longer listed)
           return '<div' + (f[0] === 'console_username' ? ' class="w"' : '') + '><label>' + f[1] + (f[0] === 'payroll_group' ? ' <small style="color:#8a9894;font-weight:400">— only ' + esc(cg) + ' is attendance-built / computed</small>' : '') + '</label>' + (f[2] === 'select' ? '<select name="' + f[0] + '"' + (lock ? ' disabled' : '') + '>' + opts.map(function (o) { return '<option value="' + esc(o) + '"' + (String(v) === o ? ' selected' : '') + '>' + (esc(o) || '—') + '</option>'; }).join('') + '</select>' : '<input name="' + f[0] + '" type="' + (f[2] || 'text') + '" value="' + esc(v) + '"' + (f[2] === 'number' ? ' step="0.01"' : '') + (lock ? ' disabled' : '') + '>') + '</div>'; }).join('') +
         '<div class="w"><label>Aliases (crew-name spellings, comma-separated)</label><input name="aliases" value="' + esc((e.aliases || []).join(', ')) + '"' + (lock ? ' disabled' : '') + '></div><div class="w"><label>Notes</label><input name="notes" value="' + esc(e.notes || '') + '"' + (lock ? ' disabled' : '') + '></div><div class="w"><label><input type="checkbox" name="active"' + (e.active !== false ? ' checked' : '') + (lock ? ' disabled' : '') + '> Active (included in payroll)</label></div>' +
@@ -1597,7 +1706,9 @@
         function (box) {
           box.querySelector('#fNo').onclick = closeModal;
           var ok = box.querySelector('#fOk'); if (ok) ok.onclick = function () {
-            var out = Object.assign({}, e); fields.forEach(function (f) { var el = box.querySelector('[name=' + f[0] + ']'); out[f[0]] = el.value === '' ? null : (f[2] === 'number' ? Number(el.value) : el.value); });
+            var out = Object.assign({}, e), bad = null; fields.forEach(function (f) { var el = box.querySelector('[name=' + f[0] + ']'), r = empFieldValue(f, el); if (!r.ok) { if (!bad) bad = f; return; } out[f[0]] = r.value; });
+            if (bad) return toast('"' + String(bad[1]).replace(/\s*\(.*$/, '') + '" is half-typed — finish it or clear it, then save. Nothing was saved.');
+            if (!empShiftClearOk(e.shift_start, out.shift_start === undefined ? e.shift_start : out.shift_start, function (m) { return root.confirm(m); })) return;
             out.aliases = box.querySelector('[name=aliases]').value.split(',').map(function (s) { return s.trim(); }).filter(Boolean); out.notes = box.querySelector('[name=notes]').value || null; out.active = box.querySelector('[name=active]').checked;
             ENROLLED.forEach(function (f) { out[f[0]] = box.querySelector('[name=' + f[0] + ']').checked; });
             if (!out.last_name || !out.first_name) return toast('Name required'); out.display_name = out.last_name + ', ' + out.first_name;
@@ -1955,5 +2066,5 @@
     if (!document.getElementById('hrCss')) { var s = document.createElement('style'); s.id = 'hrCss'; s.textContent = CSS; document.head.appendChild(s); }
     refresh(); return { refresh: refresh };
   }
-  root.ConsoleHR = { _integrationActionAllowed: integrationActionAllowed, _saveRegisterEdit: saveRegisterEdit, _patchRows: patchRows, _staleOf: staleOf, mount: mount, punchWidget: punchWidget, _esc: esc, _money: money, _periodLabel: periodLabel, _incompleteBatchSummary: incompleteBatchSummary, _attendanceDeductionPatch: attendanceDeductionPatch, _registerView: registerView, _validationGroupView: validationGroupView, _validationGroupChange: validationGroupChange, _validationBatchScope: validationBatchScope, _validationBatchPayload: validationBatchPayload, _validationEmployeePool: validationEmployeePool, _validationWizardRows: validationWizardRows, _driverAllowanceView: driverAllowanceView, _registerAllowanceEdit: registerAllowanceEdit, _loadPayrollPeriod: loadPayrollPeriod, _fieldOpsSnapshot: fieldOpsSnapshot };
+  root.ConsoleHR = { _integrationActionAllowed: integrationActionAllowed, _saveRegisterEdit: saveRegisterEdit, _patchRows: patchRows, _staleOf: staleOf, mount: mount, punchWidget: punchWidget, _esc: esc, _money: money, _periodLabel: periodLabel, _incompleteBatchSummary: incompleteBatchSummary, _attendanceDeductionPatch: attendanceDeductionPatch, _registerView: registerView, _validationGroupView: validationGroupView, _validationGroupChange: validationGroupChange, _validationBatchScope: validationBatchScope, _validationBatchPayload: validationBatchPayload, _validationEmployeePool: validationEmployeePool, _validationWizardRows: validationWizardRows, _driverAllowanceView: driverAllowanceView, _registerAllowanceEdit: registerAllowanceEdit, _loadPayrollPeriod: loadPayrollPeriod, _fieldOpsSnapshot: fieldOpsSnapshot, _empFieldValue: empFieldValue, _empShiftClearOk: empShiftClearOk };
 })(typeof self !== 'undefined' ? self : this);

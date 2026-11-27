@@ -41,6 +41,17 @@
   }
   function cutoffFor(date) { return C.periodFor(date, 5); }
 
+  // owner 2026-11-27: the four late fields are the ONLY thing the shift decides, so they are computed in one
+  // place. analyze() calls this again once the person is known, because a shift belongs to the person and the
+  // file can carry only one. Mutates and returns the row.
+  function applyShift(a, shift) {
+    var m = a.time_in && a.punch_status !== 'invalid' ? lateMinutes(a.time_in, shift) : null;
+    var rule = m == null ? { band: null, deduct_hours: 0, half_day_absent: false } : lateRule(m);
+    a.late_minutes = m; a.late_band = rule.band; a.deduct_hours = rule.deduct_hours; a.half_day_absent = rule.half_day_absent;
+    a.shift_start = shift;
+    return a;
+  }
+
   function analyzeRow(r, opts) {
     var shift = (opts && opts.shift_start) || SHIFT_START;
     var rawPunches = String(r['Punch Time'] == null ? '' : r['Punch Time']).split(';').filter(function (s) { return String(s).trim(); });
@@ -61,12 +72,11 @@
     if (punches.length && count !== punches.length) flags.push('count_mismatch');
     // owner 2026-10-05 (demo): one punch = PRESENT evidence with an incomplete punch — pending HR validation, never an automatic confirmed full day, never silently absent
     var punchStatus = invalid ? 'invalid' : !punches.length ? 'none' : punches.length === 1 ? 'incomplete' : 'complete';
-    var m = timeIn && !invalid ? lateMinutes(timeIn, shift) : null, rule = m == null ? { band: null, deduct_hours: 0, half_day_absent: false } : lateRule(m);
     var pid = String(r['Personnel ID'] == null ? '' : r['Personnel ID']).trim();
-    return { personnel_id: pid, name: (String(r['First Name'] || '').trim() + ' ' + String(r['Last Name'] || '').trim()).trim(), first_name: r['First Name'], last_name: r['Last Name'],
+    return applyShift({ personnel_id: pid, name: (String(r['First Name'] || '').trim() + ' ' + String(r['Last Name'] || '').trim()).trim(), first_name: r['First Name'], last_name: r['Last Name'],
       department: r['Department Name'] || null, date: normDate(r['Record Date']), record_counts: count, punches: punches, time_in: timeIn, time_out: timeOut,
-      late_minutes: m, late_band: rule.band, deduct_hours: rule.deduct_hours, half_day_absent: rule.half_day_absent, flags: flags,
-      punch_status: punchStatus, incomplete_punch: punches.length === 1 };   // one punch = evidence of presence, NOT a confirmed day: HR must decide it (owner 2026-10-05)
+      late_minutes: null, late_band: null, deduct_hours: 0, half_day_absent: false, flags: flags,
+      punch_status: punchStatus, incomplete_punch: punches.length === 1 }, shift);   // one punch = evidence of presence, NOT a confirmed day: HR must decide it (owner 2026-10-05)
   }
 
   // sheet rows (array of arrays: title row(s), then the header row, then data) → objects keyed by the canonical header.
@@ -105,7 +115,16 @@
   var FLAG_TEXT = { no_punches: 'no punches recorded', missing_time_in: 'only an afternoon punch — time in missing', missing_time_out: 'only a morning punch — time out missing',
     extra_punches: '3 or more punches (second-shift / repeat taps)', short_span: 'in and out less than 4 h apart', count_mismatch: 'Record Counts disagrees with the punch list',
     duplicate_row: 'two rows for the same person and date (merged)', fuzzy_name: 'matched by a similar name — confirm the person', unmatched_employee: 'not matched to an employee',
-    not_in_biometric: 'manual day with no punch in the biometric file', invalid_time: 'invalid clock value — HR must correct the attendance evidence' };
+    // owner 2026-10-17: these two are the CROSS-SOURCE flags — they say the FieldOps schedule and the biometric file
+    // disagree about a day, which is a different thing from a punch being malformed. Only HR Manager or a superadmin
+    // may clear them. not_in_biometric is no longer limited to a hand-entered day: a declared day with no punch
+    // carries it too, now that such a day survives the upload instead of being deleted.
+    not_in_biometric: 'declared in FieldOps (or entered by HR) but no punch in the biometric file',
+    not_in_fieldops: 'punched in the biometric file but not declared in FieldOps that day',
+    // owner 2026-11-27: the roster and the file disagree. Same gate: HR Manager or a superadmin decides whether the person was there.
+    punched_but_absent: 'marked absent on the roster but punched in the biometric file',
+    absent_from_file: 'marked present on the roster but not in the biometric file',
+    invalid_time: 'invalid clock value — HR must correct the attendance evidence' };
 
   // rows with a real Personnel ID only (a "Total" footer or a note line has letters / blanks); same person + same date twice → one row, punches unioned, flagged
   function mergeDuplicates(rows) {
@@ -127,6 +146,10 @@
       var a = analyzeRow(r, opts), m = matchEmployee(a, employees), e = m.employee;
       if (r._dup) a.flags.push('duplicate_row');
       a.employee_id = e ? e.id : null; a.employee_name = e ? e.display_name : null; a.match = e ? m.how : null;
+      // owner 2026-11-27: now that the person is known, their own shift wins. employee → file → 08:00.
+      var own = e && validTime(e.shift_start) ? normTime(e.shift_start).slice(0, 5) : '';   // a malformed shift must not win: normTime keeps raw text and secs() would read it as 00:00
+      var shift = own || (opts && opts.shift_start) || SHIFT_START;
+      if (shift !== a.shift_start) applyShift(a, shift);
       if (!e) a.flags.push('unmatched_employee'); else if (m.how === 'fuzzy') a.flags.push('fuzzy_name');
       return a;
     });
@@ -147,5 +170,5 @@
     };
   }
 
-  return { FLAG_TEXT: FLAG_TEXT, PUNCH_STATUS_TEXT: PUNCH_STATUS_TEXT, DISPATCH_TEXT: DISPATCH_TEXT, CANON: CANON, SHIFT_START: SHIFT_START, normTime: normTime, normDate: normDate, lateMinutes: lateMinutes, lateRule: lateRule, cutoffFor: cutoffFor, analyzeRow: analyzeRow, rowsFromAoa: rowsFromAoa, analyze: analyze };
+  return { FLAG_TEXT: FLAG_TEXT, PUNCH_STATUS_TEXT: PUNCH_STATUS_TEXT, DISPATCH_TEXT: DISPATCH_TEXT, CANON: CANON, SHIFT_START: SHIFT_START, normTime: normTime, normDate: normDate, lateMinutes: lateMinutes, lateRule: lateRule, applyShift: applyShift, cutoffFor: cutoffFor, analyzeRow: analyzeRow, rowsFromAoa: rowsFromAoa, analyze: analyze };
 });

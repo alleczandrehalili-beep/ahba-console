@@ -67,6 +67,8 @@
       listLogs: function (a, b) { return ok(h().from('daily_logs').select('*').gte('work_date', a).lte('work_date', b)); },
       setLog: function (eid, d, p) { return rpc('set_log', { p_emp: eid, p_day: d, p: p }); },
       markPresent: function (ids, ds) { return rpc('mark_present', { p_ids: ids, p_dates: ds }); },
+      markAbsent: function (ids, ds) { return rpc('mark_absent', { p_ids: ids, p_dates: ds }); },
+      correctRoster: function (eid, d, present) { return rpc('correct_roster', { p_emp: eid, p_day: d, p_present: !!present }); },
       // Amendment 1 (validators + admins): bulk ✓, and the names-only employee list (definer RPC — validators have no select on hr.employees)
       verifyLogs: function (ids) { return rpc('verify_logs', { p_ids: ids }); },
       listEmployeesBasic: function () { return rpc('employees_basic'); },
